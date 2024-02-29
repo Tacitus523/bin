@@ -2,6 +2,7 @@
 #bn01-bn04
 #cn01-cn28
 #nn01-nn08
+#gtx01-gtx10
 
 if ! command -v qstat &> /dev/null
 then 
@@ -43,6 +44,12 @@ done
 for num in {01..08}
 do
     knecht=nn$num
+    delete_user_scratch_on_knecht
+done
+
+for num in {00..10}
+do
+    knecht=gtx$num
     delete_user_scratch_on_knecht
 done
 

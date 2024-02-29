@@ -21,7 +21,7 @@ done
 CHARGES_MULL_FILE=charges_mull.txt
 CHARGES_HIRSH_FILE=charges_hirsh.txt
 CHARGES_LOEW_FILE=charges_loew.txt
-CHARGES_ESP_FILE=charges_esp.txt
+#CHARGES_ESP_FILE=charges_esp.txt
 ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
 FORCES_FILE=forces.xyz
@@ -38,9 +38,9 @@ if [ -f $CHARGES_LOEW_FILE ]
 then rm $CHARGES_LOEW_FILE
 fi
 
-if [ -f $CHARGES_ESP_FILE ]
-then rm $CHARGES_ESP_FILE
-fi
+# if [ -f $CHARGES_ESP_FILE ]
+# then rm $CHARGES_ESP_FILE
+# fi
 
 if [ -f $ENERGIES_FILE ]
 then rm $ENERGIES_FILE
@@ -60,12 +60,12 @@ do
 	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
 	tac $folder/$3.out | grep -B $(($1+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
 	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
-	awk '{print $5}' $folder/$3.molden.chg | tr '\n' ' ' >> $CHARGES_ESP_FILE
+	#awk '{print $5}' $folder/$3.molden.chg | tr '\n' ' ' >> $CHARGES_ESP_FILE
 
 	echo '' >> $CHARGES_MULL_FILE # basicially makes a \n
 	echo '' >> $CHARGES_HIRSH_FILE # basicially makes a \n 
 	echo '' >> $CHARGES_LOEW_FILE # basicially makes a \n
-	echo '' >> $CHARGES_ESP_FILE # basicially makes a \n 
+	#echo '' >> $CHARGES_ESP_FILE # basicially makes a \n 
 
 	tac $folder/$3.out | grep -m 1 'FINAL SINGLE' | tac | awk '{print $5}' >> $ENERGIES_FILE
 	echo $1 >> $GEOMS_FILE

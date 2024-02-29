@@ -1,46 +1,46 @@
-#!/usr/bin/env python3
-import os
-import argparse
+# Submit the python script to the queue and gives it the name of the current folder in the queue
+# Use the -s flag to keep this process running until it finishes and sync training data to wandb
 
-ap = argparse.ArgumentParser(description="Submit a python-script to the queue")
-ap.add_argument("-i", "--input", type=str, dest="script", action="store", required=True, help="Python script to submit", metavar="script-path")
-ap.add_argument("-n", "--name", default="python-script", type=str, dest="name", action="store", required=False, help="Name in queue", metavar="name")
-ap.add_argument("-e", "--env", default="venv_tf_new", type=str, dest="env", action="store", required=False, help="Conda environment to activate", metavar="environment")
-args = ap.parse_args()
+#python_script="/home/lpetersen/dftb-nn/Behler_4th_Gen.py"
+#python_script="/home/lpetersen/kgcnn_fork/hdnnp4th.py"
+#python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th.py"
+#python_script="/home/lpetersen/kgcnn_fork/hdnnp2nd.py"
+python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th_hyp_param_search.py"
+#python_script="/home/lpetersen/kgcnn_fork/charge_hyp_param_search.py"
+#python_script="/home/lpetersen/kgcnn_fork/test_load_model.py"
+#python_script="/home/lpetersen/kgcnn_fork/retrieve_trial.py"
 
-script = args.script
-job_name = args.name
-environment = args.env
+queue_script="/home/lpetersen/bin/qpython.sh"
 
-job_file = "job_file.sge"
-cwd = os.getcwd()
-# cuts /srv/nfs/ of path
-if cwd.split("/")[1]=="srv":
-    cwd="/"+cwd.split("/",3)[3]
+print_usage() {
+  echo "Usage: 'submit_python_file.sh' to run without wandb or 'submit_python_file.sh -s' to sync to wandb"
+}
 
-cores = 1 #doesn't seem to profit from more cores
+sync=false
+while getopts 's' flag; do
+  case "${flag}" in
+    s) sync=true ;;
+    *) print_usage
+       exit 1 ;;
+  esac
+done
 
-job_string = f'''#!/bin/bash
-#$ -N {job_name}
-#$ -cwd
-#$ -o $JOB_NAME.o$JOB_ID
-#$ -e $JOB_NAME.e$JOB_ID
-#$ -pe nproc {cores}
-export OMP_NUM_THREADS={cores}
-echo "JOB $JOB_NAME: $JOB_ID started on $HOSTNAME -- $(date)"
+# if [ -f train.err ]
+# then rm train.err
+# fi
 
-ulimit -s unlimited
+# if [ -f train.out ]
+# then rm train.out
+# fi
 
-export PATH="~/miniconda3/bin:$PATH"
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate {environment}
-PYTHONPATH=$PWD:$PYTHONPATH
-python3 $PWD/{script}
+name=`basename $PWD`
+job_id=$(qsub -terse -N $name $queue_script $python_script)
+echo "Submitted job $job_id to queue as $name"
 
-/bin/rm -rf {job_file}
-'''
+echo `date`" $PWD" >> /data/$USER/checklist.txt
 
-with open(job_file, "w") as f:
-	f.write(job_string)
-
-os.system(f"qsub {job_file}")
+# for wandb sync
+if $sync
+then
+    nohup sync_wandb.sh $job_id &
+fi

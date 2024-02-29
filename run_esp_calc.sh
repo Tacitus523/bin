@@ -17,14 +17,15 @@ if [ -f $ESP_GRADIENT_FILE ]
 then rm $ESP_GRADIENT_FILE
 fi
 
-export PATH="/home/lpetersen/miniconda3/bin:$PATH"
-source /home/lpetersen/miniconda3/etc/profile.d/conda.sh
-conda activate venv_tf_new
+conda_dir=$(dirname $(dirname $CONDA_EXE))
+export PATH="$conda_dir/bin:$PATH"
+source $conda_dir/etc/profile.d/conda.sh
+conda activate kgcnn
 PYTHONPATH=$PWD:$PYTHONPATH
 
-echo `date`
+echo "Start ESP calculation `date`"
 python3 /home/lpetersen/bin/esp_calculation_from_pc.py --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
-echo `date`
+echo "End ESP calculation `date`"
 
 source_dir=$PWD
 
