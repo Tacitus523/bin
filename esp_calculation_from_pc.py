@@ -40,7 +40,7 @@ def main():
         sp_calculation_location = os.path.dirname(folder_prefix)
         sp_calculation_prefix = os.path.basename(folder_prefix)
         if not sp_calculation_location:
-            sp_calculation_location="."
+            sp_calculation_location = "."
         folders = [os.path.join(sp_calculation_location, f.name) for f in os.scandir(sp_calculation_location) if f.is_dir() and f.name.startswith(sp_calculation_prefix)]
     else:
         folders = [os.getcwd()]

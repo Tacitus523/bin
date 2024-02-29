@@ -1,0 +1,1 @@
+qdel -u $USER

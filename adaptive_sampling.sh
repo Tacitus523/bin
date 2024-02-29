@@ -3,6 +3,9 @@
 GROMACS_NN_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC" # Path to compiled gromacs bin with installed GMXRC
 BLAS_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/OpenBLAS-0.3.10-release/lib"
 PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas-release/lib"
+#GROMACS_NN_PATH="/data/lpetersen/gromacs-adaptive-sampling/bin/GMXRC" # Path to compiled gromacs bin with installed GMXRC
+#BLAS_PATH="/usr/local/run/OpenBLAS-0.3.10/lib"
+#PLUMED_PATH="/usr/local/run/plumed-2.5.1-openblas/lib"
 GMX_N_TF_MODELS=3 # Amount of trained models to use for the adaptive sampling, suffix of the models
 GMX_TF_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
 GMX_FORCE_PREDICTION_STD_THRESHOLD=0.005 # Threshold for the deviation between models for a structure to be considered relevant
@@ -291,6 +294,13 @@ finalize_job()
 # Call finalize_job function as soon as we receive USR1 signal
 trap 'finalize_job' USR1
 
+# #$ -N $batch_name_samp
+# #$ -cwd
+# #$ -o $sampler_out_file
+# #$ -e $sampler_error_file
+# #$ -l qu=gtx
+# #$ -hold_jid "retrain_$((iteration_idx - 1))"
+
 # Function to pad a number with zeros
 pad_with_zeros() {
     local num=\$1
@@ -398,6 +408,13 @@ EOM
 #SBATCH --kill-on-invalid-dep=yes
 #SBATCH --gres=scratch:100 # GB on scratch reserved
 
+# #$ -N $batch_name_orca
+# #$ -cwd
+# #$ -o $batch_out_file
+# #$ -e $batch_error_file
+# #$ -l qu=gtx
+# #$ -hold_jid "samp_${iteration_idx}_$batch_idx"
+
 module load $ORCA_MODULE
 orca_command=\`which orca\`
 orca_path=\$(dirname \$orca_command)
@@ -504,6 +521,13 @@ cat << EOM > $retraining_jobfile
 #SBATCH --dependency=afterok:$orca_job_ids
 #SBATCH --kill-on-invalid-dep=yes
 #SBATCH --gres=gpu:1
+
+# #$ -N retrain_${iteration_idx}
+# #$ -cwd
+# #$ -o $out_file
+# #$ -e $error_file
+# #$ -l qu=gtx
+# #$ -hold_jid "orca_${iteration_idx}_*"
 
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline

@@ -1,4 +1,4 @@
-#!/lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/kgcnn_new/bin/python3
+#!/home/lpetersen/anaconda_interpreter/envs/mda/bin/python3
 import warnings
 warnings.filterwarnings('ignore')
 

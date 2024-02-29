@@ -1,4 +1,23 @@
 #!/bin/bash
+<<<<<<< HEAD
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem=8G
+#SBATCH --time=12:00:00
+#SBATCH --output=train.out
+#SBATCH --error=train.err
+#SBATCH --gres=gpu:1
+
+PYTHON_ENV=kgcnn_new
+
+pythonfile=$1
+config_path="$2" # optional
+
+# Echo important information into file
+echo "# Date: " $(date)
+echo "# Hostname: " $SLURM_JOB_NODELIST
+echo "# Job ID: " $SLURM_JOB_ID
+=======
 #$ -l qu=gtx
 #$ -q gtx01a,gtx01b,gtx01c,gtx01d,gtx02a,gtx02b,gtx02c,gtx02d,gtx03a,gtx03b,gtx03c,gtx03d,gtx04a,gtx04b,gtx04c,gtx04d,gtx05a,gtx05b,gtx05c,gtx05d,gtx06a,gtx06b,gtx06c,gtx06d
 #$ -cwd
@@ -39,6 +58,7 @@ esac
 echo "# Hostname: " `hostname`
 echo "# Job ID: " $JOB_ID
 echo "# gpuid: " $gpu_id
+>>>>>>> 9ab32ee2eed1d0a12c9db1b531265e70c5846fdd
 
 # In case of external API usage I saved some API-keys here
 if [ -f ~/.api_keys ]; then
@@ -48,6 +68,20 @@ fi
 # For WandB:
 export WANDB_MODE=offline # no internet connection during calculation on nodes
 
+<<<<<<< HEAD
+CONDA_HOME=$(dirname $(dirname $CONDA_EXE))
+source $CONDA_HOME/etc/profile.d/conda.sh
+conda activate $PYTHON_ENV
+
+# OpenMP needs this: set stack size to unlimited
+ulimit -s unlimited
+
+if [ -z "$config_path" ]
+then time python3 $pythonfile -g 0
+else time python3 $pythonfile -g 0 -c $config_path
+fi
+
+=======
 # For data readin in kgcnn
 export BABEL_DATADIR="/usr/local/run/openbabel-2.4.1"
 
@@ -86,3 +120,4 @@ HOURS=$(( (duration % 86400) / 3600 ))
 MINS=$(( ((duration % 86400) % 3600) / 60 ))
 SECS=$(( ((duration % 86400) % 3600) % 60 ))
 echo "Time taken: $DAYS days, $HOURS hours, $MINS minutes and $SECS seconds."
+>>>>>>> 9ab32ee2eed1d0a12c9db1b531265e70c5846fdd

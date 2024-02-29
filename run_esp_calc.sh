@@ -1,4 +1,9 @@
 #!/bin/bash
+#$ -N esp_calc
+#$ -cwd
+#$ -o esp_calc.o$JOB_ID
+#$ -e esp_calc.e$JOB_ID
+
 #folder-prefix as $1, file-prefix as $2
 
 ESPS_BY_MM_FILE=esps_by_mm.txt
@@ -14,6 +19,14 @@ fi
 
 echo "Start ESP calculation `date`"
 python3 /lustre/home/ka/ka_ipc/ka_he8978/bin/esp_calculation_from_pc.py --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
+# conda_dir=$(dirname $(dirname $CONDA_EXE))
+# export PATH="$conda_dir/bin:$PATH"
+# source $conda_dir/etc/profile.d/conda.sh
+# conda activate kgcnn
+# PYTHONPATH=$PWD:$PYTHONPATH
+
+# echo "Start ESP calculation `date`"
+# python3 /home/lpetersen/bin/esp_calculation_from_pc.py --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
 echo "End ESP calculation `date`"
 
 source_dir=$PWD

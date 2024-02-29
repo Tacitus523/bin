@@ -1,4 +1,5 @@
 #Give atom number as $1, folder-prefix as $2, file-prefix as $3
+set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
 if [[ -z $1 || -z $2 || -z $3 ]]
 then
