@@ -2,7 +2,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=8G
-#SBATCH --time=12:00:00
+#SBATCH --time=72:00:00
 #SBATCH --output=train.out
 #SBATCH --error=train.err
 #SBATCH --open-mode=append
@@ -33,8 +33,12 @@ conda activate $PYTHON_ENV
 # OpenMP needs this: set stack size to unlimited
 ulimit -s unlimited
 
+echo "Amount of GPUs for job: $SLURM_JOB_GPUS"
+echo "CUDA visible devices: $CUDA_VISIBLE_DEVICES"
+echo "GPU Ordinal: $GPU_DEVICE_ORDINAL"
+
 if [ -z "$config_path" ]
-then time python3 $pythonfile -g 0
+then time python3 $pythonfile -g 0 # SLURM restricts the visible GPUs itself, so GPU_ID is always 0
 else time python3 $pythonfile -g 0 -c $config_path
 fi
 

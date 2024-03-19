@@ -2,7 +2,9 @@
 # Use the -s flag to keep this process running until it finishes and sync training data to wandb
 
 #python_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/force_hdnnp4th.py"
-python_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/force_hdnnp4th_hyp_param_search.py"
+# python_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/force_hdnnp4th_hyp_param_search.py"
+python_script="/home/ka/ka_ipc/ka_he8978/kgcnn_fork/retrieve_trial.py"
+# python_script=/home/ka/ka_ipc/ka_he8978/kgcnn_fork/calc_prediction_std.py
 
 queue_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/qpython_justus.sh"
 # For data readin in kgcnn
@@ -15,8 +17,11 @@ print_usage() {
 
 sync=false
 config_path=""
-while getopts ':c:s' flag; do
+while getopts ':p:c:s' flag; do
   case $flag in
+    p)
+      python_script="$OPTARG"
+      echo "Using Python file: $python_script";;
     s) sync=true ;;
     c)
       config_path="$OPTARG"
