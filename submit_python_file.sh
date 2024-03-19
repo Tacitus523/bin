@@ -5,10 +5,11 @@
 #python_script="/home/lpetersen/kgcnn_fork/hdnnp4th.py"
 #python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th.py"
 #python_script="/home/lpetersen/kgcnn_fork/hdnnp2nd.py"
-python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th_hyp_param_search.py"
+#python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th_hyp_param_search.py"
 #python_script="/home/lpetersen/kgcnn_fork/charge_hyp_param_search.py"
 #python_script="/home/lpetersen/kgcnn_fork/test_load_model.py"
 #python_script="/home/lpetersen/kgcnn_fork/retrieve_trial.py"
+python_script="/home/lpetersen/kgcnn_fork/calc_prediction_std.py"
 
 queue_script="/home/lpetersen/bin/qpython.sh"
 
@@ -17,9 +18,24 @@ print_usage() {
 }
 
 sync=false
-while getopts 's' flag; do
-  case "${flag}" in
+config_path=""
+while getopts ':p:c:s' flag; do
+  case $flag in
+    p)
+      python_script="$OPTARG"
+      echo "Using Python file: $python_script";;
     s) sync=true ;;
+    c)
+      config_path="$OPTARG"
+      echo "Using configs: $config_path";;
+    \?)
+      echo "Invalid option: -$OPTARG"
+      print_usage
+      exit 1;;
+    :)
+      echo "Option -$OPTARG requires an argument."
+      print_usage
+      exit 1;;
     *) print_usage
        exit 1 ;;
   esac
@@ -34,7 +50,7 @@ done
 # fi
 
 name=`basename $PWD`
-job_id=$(qsub -terse -N $name $queue_script $python_script)
+job_id=$(qsub -terse -N $name $queue_script $python_script $config_path)
 echo "Submitted job $job_id to queue as $name"
 
 echo `date`" $PWD" >> /data/$USER/checklist.txt
