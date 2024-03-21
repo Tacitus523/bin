@@ -8,7 +8,7 @@ PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas
 #PLUMED_PATH="/usr/local/run/plumed-2.5.1-openblas/lib"
 GMX_N_TF_MODELS=3 # Amount of trained models to use for the adaptive sampling, suffix of the models
 GMX_TF_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
-GMX_FORCE_PREDICTION_STD_THRESHOLD=0.005 # Threshold for the deviation between models for a structure to be considered relevant
+GMX_FORCE_PREDICTION_STD_THRESHOLD=0.01 # Threshold for the deviation between models for a structure to be considered relevant
 
 N_ITERATIONS=10 # Amount of repeated adaptive samplings+retrainings
 INITIAL_ITERATION=0 # Used to restart after a previous adaptive sampling, some unique actions for initialization will not be performed if > 0
@@ -27,7 +27,7 @@ START_GEOMETRIES_TOPOL_NAME="topol.top" # file name of the .top in the folders a
 
 GROMACS_ORCA_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-orca/bin/GMXRC"
 ORCA_MODULE="chem/orca/5.0.4" # Orca module on Justus2
-ORCA_FOLDER_PREFIX="orca_job_"
+ORCA_FOLDER_PREFIX="orca_job_" # Just used as the name to generate the folders with orca calculations 
 ORCA_BASENAME="sp" # all .top., .mdp, .gro .ORCAINFO, .ndx should start with this as well
 #.ORCAINFO can contain a 1-liner %PAL section for parallelisation
 # TODO: Index file and extra line for charge in mdp?
@@ -35,13 +35,13 @@ ORCA_BASENAME="sp" # all .top., .mdp, .gro .ORCAINFO, .ndx should start with thi
 # For Orca result extraction and dataset expansion
 PYTHON_ENV="kgcnn_new"
 AT_COUNT=15 # Amount of atoms in QM system. Could get it in theory from wc -l sp.inp and wc -l sp.ORCAINFO, but I don't have a way to to the forces for different system sizes yet anyway.
-GEOM_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/ThiolDisulfidExchange.xyz"
-ENERGY_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/energy_diff.txt"
-ENERGY_REFERENCE_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/energy_opt.txt" # to calculate the difference to a reference energy, contains energies of optimized fragments, optional
-CHARGE_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/charges.txt"
-FORCE_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/forces.xyz"
-ESP_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/esps_by_mm.txt"
-ESP_GRADIENT_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/esp_gradients.txt"
+GEOM_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/ThiolDisulfidExchange.xyz" # Unit: Angstrom
+ENERGY_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/energy_diff.txt" # Unit: Hartree
+ENERGY_REFERENCE_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/energy_opt.txt" # to calculate the difference to a reference energy, contains energies of optimized fragments, optional, Unit: Hartree
+CHARGE_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/charges.txt" # Unit: e
+FORCE_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/forces.xyz" # Unit: Hartree/Bohr
+ESP_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/esps_by_mm.txt" # Unit: V
+ESP_GRADIENT_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/esp_gradients.txt" # Unit: e/Bohr^2
 DATA_SOURCES_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water/data_sources.txt" # Optional, Intended to keep track of different sampling methods. 1D column of strings with sampling description for plotting
 CUTOFF=10 # Cutoff for bond existence, should be larger than the symm func cutoff, in Angstrom
 TOTAL_CHARGE=-1 # Charge of the molecule, no support for different charges right now
@@ -278,6 +278,7 @@ do
 #SBATCH --open-mode=append
 #SBATCH --kill-on-invalid-dep=yes
 $sampling_dependency
+#SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
 
 echo "JOB: \$SLURM_JOB_ID started on \$SLURM_JOB_NODELIST -- \$(date)"
 
@@ -342,18 +343,18 @@ do
     gmx grompp -f $absolute_mdp_file_path -c $sampler_prefix.gro -p $sampler_prefix.top -maxwarn 1 -o $sampler_prefix.tpr $redirect # TODO: Index file
     if [ -n "$absolute_plumed_file_path" ]
     then
-        gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $sampler_prefix -plumed $absolute_plumed_file_path $redirect
+        gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $sampler_prefix -plumed $absolute_plumed_file_path $redirect &
     else
-        gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $sampler_prefix $redirect
+        gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $sampler_prefix $redirect &
     fi
+    wait # wait for gmx to finish while still allowing the trap to be executed.
 
     if [ -f adaptive_sampling.xtc ]
     then
         echo 0 | gmx trjconv -s $sampler_prefix.tpr -f adaptive_sampling.xtc -o $ORCA_BASENAME.gro $redirect # Single entry .xtc, has to be converted directly because the .tpr might change
         echo "Sampling step \$sampler_job_idx: \$(grep step $ORCA_BASENAME.gro)" # For output in .out
         cat $ORCA_BASENAME.gro >> "adaptive_sampling.gro"
-        echo "Adaptive Sampling $iteration_idx_padded" >> "data_sources.txt"
-        echo \$random_folder_structure >> "starting_structure_idxs.txt"
+        echo \$random_folder_number >> "starting_structure_idxs.txt"
 
         mkdir -p ../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx
         mv $ORCA_BASENAME.gro ../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx/$ORCA_BASENAME.gro
@@ -538,7 +539,6 @@ echo "JOB: \$SLURM_JOB_ID started on \$SLURM_JOB_NODELIST -- \$(date)"
 ######## SOME MERGING OF PARALLEL DATA COLLECTION ########
 cd "$root_dir/sampling"
 cat samp_${iteration_idx_padded}_*/adaptive_sampling.gro >> "adaptive_sampling_$iteration_idx_padded.gro"
-cat samp_${iteration_idx_padded}_*/data_sources.txt >> "$current_data_source_file"
 
 cd "$root_dir/orca_calculations"
 
@@ -552,6 +552,8 @@ do
     then
         echo "\$job_folder failed"
         mv "\$job_folder" "failed_\$job_folder" # keep folder for error message, but remove from future loops
+    else
+        echo "Adaptive Sampling $iteration_idx_padded" >> "$current_data_source_file"
     fi
 done
 
