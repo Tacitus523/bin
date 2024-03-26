@@ -137,6 +137,7 @@ then
     remove_folder_if_exists "$current_training_data_folder"
     mkdir -p "sampling"
     mkdir -p "orca_calculations"
+    mkdir -p "orca_calculations/failed_calculations"
     mkdir -p "retraining"
     mkdir -p "$current_training_data_folder"
 fi
@@ -551,7 +552,8 @@ do
     if !  grep -q "FINAL SINGLE" \$job_folder/$ORCA_BASENAME.out 2> /dev/null
     then
         echo "\$job_folder failed"
-        mv "\$job_folder" "failed_\$job_folder" # keep folder for error message, but remove from future loops
+        mv "\$job_folder/$ORCA_BASENAME.out" "failed_calculations/\$job_folder_${iteration_idx_padded}.out" # keep .out file for error message
+        rm -r \$job_folder
     else
         echo "Adaptive Sampling $iteration_idx_padded" >> "$current_data_source_file"
     fi
@@ -583,7 +585,7 @@ fi
 export BABEL_DATADIR=$BABEL_PATH
 python3 $preparation_script -c ${current_training_data_folder}/data_prep_config.json 
 
-# Clean orca folder for future runs, failed orca runs might prevail
+# Clean orca folder for future runs
 rm -r $ORCA_FOLDER_PREFIX*
 
 cd "$root_dir/retraining/$iteration_folder"

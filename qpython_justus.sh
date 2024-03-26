@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=8G
+#SBATCH --mem=16G
 #SBATCH --time=72:00:00
 #SBATCH --output=train.out
 #SBATCH --error=train.err
