@@ -1,9 +1,9 @@
 #!/bin/bash
 #$ -l qu=gtx
-#$ -q gtx01a,gtx01b,gtx01c,gtx01d,gtx02a,gtx02b,gtx02c,gtx02d,gtx03a,gtx03b,gtx03c,gtx03d,gtx04a,gtx04b,gtx04c,gtx04d,gtx05a,gtx05b,gtx05c,gtx05d,gtx06a,gtx06b,gtx06c,gtx06d
 #$ -cwd
 #$ -o train.out
-#$ -e train.err 
+#$ -e train.err
+#$ -q gtx01a,gtx01b,gtx01c,gtx01d,gtx02a,gtx02b,gtx02c,gtx02d,gtx03a,gtx03b,gtx03c,gtx03d,gtx05a,gtx05b,gtx05c,gtx05d,gtx06a,gtx06b,gtx06c,gtx06d,gtx09a,gtx09b,gtx09c,gtx09d,gtx10a,gtx10b,gtx10c,gtx10d
 
 pythonfile=$1
 pythonfile=${pythonfile#"/srv/nfs"}
@@ -28,7 +28,7 @@ case $HOSTNAME in
     cores=16;
     ;;
     *)
-    echo "Error: Unknown compute node \$HOSTNAME"
+    echo "Error: Unknown compute node $HOSTNAME"
     echo "       This script only works for gtx01 thru 10!"
     echo
     exit -1

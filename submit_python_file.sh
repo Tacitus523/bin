@@ -41,6 +41,10 @@ while getopts ':p:c:s' flag; do
   esac
 done
 
+if [ -z "$config_path" ]
+then echo "INFO: Did not get a config_file"
+fi
+
 # if [ -f train.err ]
 # then rm train.err
 # fi
