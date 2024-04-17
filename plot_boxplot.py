@@ -13,7 +13,7 @@ DPI=400
 H_to_kcal_mol = 627.509
 
 def main():
-    ap = argparse.ArgumentParser(description="Quickly plot a 1D plot")
+    ap = argparse.ArgumentParser(description="Plot a boxplot")
     ap.add_argument("-f", type=str, dest="file", action="store", required=True, help="File with data to plot", metavar="file")
     ap.add_argument("-s", type=str, dest="data_source_file", action="store", required=False, default=None, help="File with data sources for coloring", metavar="data source file")
     args = ap.parse_args()

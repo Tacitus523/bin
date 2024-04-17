@@ -22,7 +22,8 @@ MARKERSIZE = 12
 DPI=600
 
 DEFAULT_DATA_SOURCE = "Unknown source"
-ORIGINAL_DATA_SOURCE = ["Metadynamics","PES Scan"]
+
+_adaptive_sampling_prefix = "Adaptive Sampling"
 
 def main():
     ap = argparse.ArgumentParser(description="t-SNE analysis for .xyz-trajectories")
@@ -59,17 +60,19 @@ def main():
     df["PCA 2"] = pca_result[:,1] 
     df["PCA 3"] = pca_result[:,2]
     if data_source_file is not None:
-        df["data_source"] = pd.read_csv(data_source_file)
+        df["data_source"] = pd.read_csv(data_source_file, header=None)
         df["original_data"] = df["data_source"]
-        condition = df["data_source"].isin(ORIGINAL_DATA_SOURCE)
-        # Assign a new constant value only when the condition is false
-        df.loc[~condition, 'original_data'] = 'Adaptive Sampling'
+        condition = df["data_source"].str.startswith(_adaptive_sampling_prefix)
+        # Assign a new constant value only when the condition is fullfilled
+        adaptive_sampling_label = "Adaptive Sampling"
+        df.loc[condition, "original_data"] = adaptive_sampling_label
+        original_labels = list(df["original_data"].unique())
+        if adaptive_sampling_label in original_labels:
+            original_labels.remove(adaptive_sampling_label)
+        n_original_labels = len(original_labels)
     else:
         df["data_source"] = ["Unknown source"]*len(df)
         df["original_data"] = [True]*len(df)
-        #print("Reading some hardcoded values for the data sources used for coloring. To prevent this, prepare a data source file and pass it with -s")
-    # df["data_source"] = ["Energy Scan"]*5112 + ["Metadynamic"]*(13548-5112) + ["Adaptive Sampling 0"]*1000 + ["Adaptive Sampling 1"]*1000 + ["Adaptive Sampling 2"]*1000 + ["Adaptive Sampling 3"]*1000 + ["Adaptive Sampling 4"]*1000+ ["Adaptive Sampling 4"]*981
-    # df["data_source"] = ["energy scan"]*5112 + ["metadynamic"]*(13548-5112) + ["random_displacement"]*9000 + ["energy scan"]*5112 + ["metadynamic"]*(13548-5112) + ["random_displacement"]*9000 + ["metadynamic protein env"]*9998
     df["data_source_codes"] = pd.Categorical(df["data_source"]).codes
 
     print(f"Explained variation per first 3 principal component: {pca.explained_variance_ratio_[:3]}")
@@ -132,7 +135,7 @@ def main():
     ax = fig.add_subplot()
     pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
     markers = ["s","^","o"]
-    for i in range(len(ORIGINAL_DATA_SOURCE)):
+    for i in range(n_original_labels):
         pallete[i] = pallete[0] 
     sns.scatterplot(
         data=df,
@@ -140,7 +143,7 @@ def main():
         hue="data_source",
         palette=pallete,
         style="original_data",
-        style_order=ORIGINAL_DATA_SOURCE+['Adaptive Sampling'],
+        style_order=original_labels+[adaptive_sampling_label],
         markers=markers,
         legend="full",
         alpha=0.5
@@ -158,13 +161,13 @@ def main():
     # Create a custom legend with modified handles and labels
     legend_handles, legend_labels = ax.get_legend_handles_labels()
 
-    visible_indices = list(range(1,len(ORIGINAL_DATA_SOURCE)+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
+    visible_indices = list(range(1,n_original_labels+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
     visible_legend_handles = [legend_handles[i] for i in visible_indices]
 
     for i, legend_handle in enumerate(visible_legend_handles):
         legend_handle.set_color(pallete[visible_indices[i]-1])
         legend_handle.set_alpha(1)
-        if i<len(ORIGINAL_DATA_SOURCE):
+        if i<n_original_labels:
             legend_handle.set_marker(markers[i])
         else:
             legend_handle.set_marker(markers[-1])

@@ -8,10 +8,10 @@ PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas
 #PLUMED_PATH="/usr/local/run/plumed-2.5.1-openblas/lib"
 GMX_N_TF_MODELS=3 # Amount of trained models to use for the adaptive sampling, suffix of the models
 GMX_TF_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
-GMX_FORCE_PREDICTION_STD_THRESHOLD=0.01 # Threshold for the deviation between models for a structure to be considered relevant
+GMX_FORCE_PREDICTION_STD_THRESHOLD=0.0025 # Threshold for the deviation between models for a structure to be considered relevant
 
 N_ITERATIONS=10 # Amount of repeated adaptive samplings+retrainings
-INITIAL_ITERATION=0 # Used to restart after a previous adaptive sampling, some unique actions for initialization will not be performed if > 0
+INITIAL_ITERATION=0 # Used to restart after a previous adaptive sampling, unique actions for initialization will not be performed if > 0 (such as DELETING existing content)
 N_SAMPLES=1000 # Amount of new structures to be added to the dataset
 BATCH_SIZE=50 # Amount of samples per independent parallel sampling runs
 
@@ -46,18 +46,20 @@ DATA_SOURCES_FILE="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B
 CUTOFF=10 # Cutoff for bond existence, should be larger than the symm func cutoff, in Angstrom
 TOTAL_CHARGE=-1 # Charge of the molecule, no support for different charges right now
 DATASET_PREFIX="ThiolDisulfidExchange"
+TRAINING_INDICES_FILE="training_indices.pkl"
+
 BABEL_PATH="/opt/bwhpc/common/chem/openbabel/3.1.1"
 
 # For Retraining
-EPOCHS=100 # Epochs each model gets trained with the new dataset
+EPOCHS=200 # Epochs each model gets trained with the new dataset
 
 DEBUG=false # Prints all gromacs outputs, if true. Otherwise redirects to /dev/null
 
 ##### Util ######
 remove_folder_if_exists() {
-    local folder_to_delete=\$1
-    if [ -f "$folder_to_delete" ]
-    then rm -r "$folder_to_delete/*"
+    local folder_to_delete=$1
+    if [ -d "$folder_to_delete" ]
+    then rm -r "$folder_to_delete"
     fi
 }
 
@@ -84,6 +86,7 @@ conda activate $PYTHON_ENV
 absolute_model_prefix="$(readlink -f "$GMX_TF_MODEL_PATH_PREFIX")"
 absolute_mdp_file_path="$(readlink -f "$AS_MDP_FILE")"
 absolute_plumed_file_path="$(readlink -f "$PLUMED_FILE")"
+absolute_training_indices_file_path="$(readlink -f "$TRAINING_INDICES_FILE")"
 
 out_file="adaptive_sampling.out"
 error_file="adaptive_sampling.err"
@@ -107,8 +110,9 @@ then
     if [ -f $error_file ]
     then rm $error_file
     fi
+fi
 
-    cat << EOM > $out_file
+cat << EOM >> $out_file
 MODEL_PREFIX: $absolute_model_prefix
 AS_MDP_FILE: $absolute_mdp_file_path
 PLUMED_FILE: $absolute_plumed_file_path
@@ -122,7 +126,6 @@ START_GEOMETRIES_PREFIX: $START_GEOMETRIES_PREFIX
 START_GEOMETRIES_GRO_NAME: $START_GEOMETRIES_GRO_NAME
 START_DATASET_FOLDER: $(dirname $GEOM_FILE)
 EOM
-fi
 
 source_dir=$PWD
 root_dir="adaptive_sampling"
@@ -207,6 +210,7 @@ EOM
 
 cd "$root_dir"
 
+cp $absolute_training_indices_file_path "retraining/training_indices.pkl"
 cat << EOM > retraining/retraining_config.json
 {
   "DATA_DIRECTORY": "$current_training_data_folder",
@@ -220,14 +224,13 @@ if $DEBUG
 then redirect=""
 else 
     redirect='> /dev/null 2>&1' # Redirects gromacs outputs to nowhere
-    export TF_CPP_MIN_LOG_LEVEL=2 # Supressesses some Tensorflow warnings/infos
+    export TF_CPP_MIN_LOG_LEVEL=2 # Supresses some Tensorflow warnings/infos
 fi
 ######################################################################
 ########################END UNIQUE ACTIONS############################
 ######################################################################
 
-#retraining_job_id=12126133 # Initialize the job id of the training loop for the job depedency, a random job id, that completed successfully
-sampling_dependency="" # Initialize the training loop for the sampling depedency without dependency
+sampling_dependency="" # Initialize the training loop without dependency for the sampling
 for ((iteration_idx=$INITIAL_ITERATION; iteration_idx<$N_ITERATIONS; iteration_idx++))
 do
 iteration_idx_padded="$(printf "%0${padding_length_iterations}d" "$iteration_idx")"
@@ -271,7 +274,7 @@ do
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=8G
+#SBATCH --mem=12G
 #SBATCH --time=12:00:00
 #SBATCH --job-name=$batch_name_samp
 #SBATCH --output=$sampler_out_file
@@ -350,17 +353,24 @@ do
     fi
     wait # wait for gmx to finish while still allowing the trap to be executed.
 
+
+    orca_sampler_folder="../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx"
+    # Clean previous run
+    if [ -d "\$orca_sampler_folder" ]
+        then rm -r "\$orca_sampler_folder"
+    fi
+
     if [ -f adaptive_sampling.xtc ]
     then
         echo 0 | gmx trjconv -s $sampler_prefix.tpr -f adaptive_sampling.xtc -o $ORCA_BASENAME.gro $redirect # Single entry .xtc, has to be converted directly because the .tpr might change
         echo "Sampling step \$sampler_job_idx: \$(grep step $ORCA_BASENAME.gro)" # For output in .out
         cat $ORCA_BASENAME.gro >> "adaptive_sampling.gro"
         echo \$random_folder_number >> "starting_structure_idxs.txt"
-
-        mkdir -p ../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx
-        mv $ORCA_BASENAME.gro ../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx/$ORCA_BASENAME.gro
-        cp $sampler_prefix.top ../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx/topol.top
-        rm adaptive_sampling.xtc
+        
+        mkdir -p "\$orca_sampler_folder"
+        mv adaptive_sampling.xtc \$orca_sampler_folder/$ORCA_BASENAME.xtc
+        mv $ORCA_BASENAME.gro \$orca_sampler_folder/$ORCA_BASENAME.gro
+        cp $sampler_prefix.top \$orca_sampler_folder/topol.top
     fi
 
     rm $sampler_prefix.gro
@@ -463,7 +473,7 @@ do
     cd \$workdir  
 
     gmx grompp -f $ORCA_BASENAME.mdp -c $ORCA_BASENAME.gro -p topol.top -o $ORCA_BASENAME.tpr -maxwarn 1 $redirect
-    gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $ORCA_BASENAME $redirect
+    gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $ORCA_BASENAME -rerun $redirect
 
     rm $ORCA_BASENAME.densities
     rm $ORCA_BASENAME.gbw
@@ -552,7 +562,10 @@ do
     if !  grep -q "FINAL SINGLE" \$job_folder/$ORCA_BASENAME.out 2> /dev/null
     then
         echo "\$job_folder failed"
-        mv "\$job_folder/$ORCA_BASENAME.out" "failed_calculations/\$job_folder_${iteration_idx_padded}.out" # keep .out file for error message
+        if [ -f "\$job_folder/$ORCA_BASENAME.out" ]
+        then
+            mv "\$job_folder/$ORCA_BASENAME.out" "failed_calculations/\${job_folder}_${iteration_idx_padded}.out" # keep .out file for error message
+        fi
         rm -r \$job_folder
     else
         echo "Adaptive Sampling $iteration_idx_padded" >> "$current_data_source_file"
@@ -566,7 +579,7 @@ cat charges_hirsh.txt >> $current_charge_file
 cat forces.xyz >> $current_force_file
 cat esps_by_mm.txt >> $current_esp_file
 cat esp_gradients.txt >> $current_esp_gradient_file
-cat_exit_status=$?
+cat_exit_status=\$?
 if [ ! \$cat_exit_status -eq 0 ]; then
     echo "ESP calculation failed"
     exit 1
@@ -585,11 +598,10 @@ fi
 export BABEL_DATADIR=$BABEL_PATH
 python3 $preparation_script -c ${current_training_data_folder}/data_prep_config.json 
 
-# Clean orca folder for future runs
-rm -r $ORCA_FOLDER_PREFIX*
-
 cd "$root_dir/retraining/$iteration_folder"
+cp "../training_indices.pkl" .
 python3 $retraining_script -g 0 -c ../retraining_config.json
+cp "training_indices.pkl" ..
 
 EOM
 
