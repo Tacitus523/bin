@@ -8,10 +8,11 @@ PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas
 #PLUMED_PATH="/usr/local/run/plumed-2.5.1-openblas/lib"
 GMX_N_TF_MODELS=3 # Amount of trained models to use for the adaptive sampling, suffix of the models
 GMX_TF_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
-GMX_FORCE_PREDICTION_STD_THRESHOLD=0.0025 # Threshold for the deviation between models for a structure to be considered relevant
+GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.002 # Threshold for the energy standard deviation between models for a structure to be considered relevant
+GMX_FORCE_PREDICTION_STD_THRESHOLD=0.004 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
 
 N_ITERATIONS=10 # Amount of repeated adaptive samplings+retrainings
-INITIAL_ITERATION=0 # Used to restart after a previous adaptive sampling, unique actions for initialization will not be performed if > 0 (such as DELETING existing content)
+INITIAL_ITERATION=2 # Used to restart after a previous adaptive sampling, unique actions for initialization will not be performed if > 0 (such as DELETING existing content)
 N_SAMPLES=1000 # Amount of new structures to be added to the dataset
 BATCH_SIZE=50 # Amount of samples per independent parallel sampling runs
 
@@ -116,7 +117,8 @@ cat << EOM >> $out_file
 MODEL_PREFIX: $absolute_model_prefix
 AS_MDP_FILE: $absolute_mdp_file_path
 PLUMED_FILE: $absolute_plumed_file_path
-STD_THRESHOLD: $GMX_FORCE_PREDICTION_STD_THRESHOLD
+ENERGY STD_THRESHOLD: $GMX_ENERGY_PREDICTION_STD_THRESHOLD
+FORCE STD_THRESHOLD: $GMX_FORCE_PREDICTION_STD_THRESHOLD
 N_ITERATIONS: $N_ITERATIONS
 N_SAMPLES: $N_SAMPLES
 BATCH_SIZE: $BATCH_SIZE
@@ -549,49 +551,60 @@ echo "JOB: \$SLURM_JOB_ID started on \$SLURM_JOB_NODELIST -- \$(date)"
 
 ######## SOME MERGING OF PARALLEL DATA COLLECTION ########
 cd "$root_dir/sampling"
-cat samp_${iteration_idx_padded}_*/adaptive_sampling.gro >> "adaptive_sampling_$iteration_idx_padded.gro"
+
+if ls samp_00_*/adaptive_sampling.gro > /dev/null 2>&1 # Check if there are any adaptive_sampling.gro in the sampling folders
+then
+    cat samp_${iteration_idx_padded}_*/adaptive_sampling.gro >> "adaptive_sampling_$iteration_idx_padded.gro"
+    for file in samp_${iteration_idx_padded}_*/adaptive_sampling.gro # Prevent double appending
+    do
+        mv \$file \${file%/*}/adaptive_sampling_${iteration_idx_padded}.gro
+    done
+fi
 
 cd "$root_dir/orca_calculations"
 
 # OpenMP needs this: set stack size to unlimited
 ulimit -s unlimited
 
-# Check for orca calculation failures, rename folder on failure
-for job_folder in $ORCA_FOLDER_PREFIX*
-do
-    if !  grep -q "FINAL SINGLE" \$job_folder/$ORCA_BASENAME.out 2> /dev/null
-    then
-        echo "\$job_folder failed"
-        if [ -f "\$job_folder/$ORCA_BASENAME.out" ]
-        then
-            mv "\$job_folder/$ORCA_BASENAME.out" "failed_calculations/\${job_folder}_${iteration_idx_padded}.out" # keep .out file for error message
-        fi
-        rm -r \$job_folder
-    else
-        echo "Adaptive Sampling $iteration_idx_padded" >> "$current_data_source_file"
-    fi
-done
-
-# Extract orca calculations results
-$extraction_script $AT_COUNT $ORCA_FOLDER_PREFIX $ORCA_BASENAME
-cat geoms.xyz >> $current_geom_file
-cat charges_hirsh.txt >> $current_charge_file
-cat forces.xyz >> $current_force_file
-cat esps_by_mm.txt >> $current_esp_file
-cat esp_gradients.txt >> $current_esp_gradient_file
-cat_exit_status=\$?
-if [ ! \$cat_exit_status -eq 0 ]; then
-    echo "ESP calculation failed"
-    exit 1
-fi
-
-if [ -n "$ENERGY_REFERENCE_FILE" ]
+if [ ! -f geoms.xyz ] # Prevent double appending depending on the existence of the geometries file. orca_calculations gets cleaned every sampling restart
 then
-    python3 $energy_diff_script -e energies.txt -r $ENERGY_REFERENCE_FILE -o energy_diff.txt
-    cat energy_diff.txt >> $current_energy_file
-else
-    echo "No reference energy supplied, appending raw energies!"
-    cat energies.txt >> $current_energy_file
+    # Check for orca calculation failures, rename folder on failure
+    for job_folder in $ORCA_FOLDER_PREFIX*
+    do
+        if !  grep -q "FINAL SINGLE" \$job_folder/$ORCA_BASENAME.out 2> /dev/null
+        then
+            echo "\$job_folder failed"
+            if [ -f "\$job_folder/$ORCA_BASENAME.out" ]
+            then
+                mv "\$job_folder" "failed_calculations/\${job_folder}_${iteration_idx_padded}" # keep .out file for error message
+            fi
+            rm -r \$job_folder
+        else
+            echo "Adaptive Sampling $iteration_idx_padded" >> "$current_data_source_file"
+        fi
+    done
+
+    # Extract orca calculations results
+    $extraction_script $AT_COUNT $ORCA_FOLDER_PREFIX $ORCA_BASENAME
+    cat geoms.xyz >> $current_geom_file
+    cat charges_hirsh.txt >> $current_charge_file
+    cat forces.xyz >> $current_force_file
+    cat esps_by_mm.txt >> $current_esp_file
+    cat esp_gradients.txt >> $current_esp_gradient_file
+    cat_exit_status=\$?
+    if [ ! \$cat_exit_status -eq 0 ]; then
+        echo "ESP calculation failed"
+        exit 1
+    fi
+
+    if [ -n "$ENERGY_REFERENCE_FILE" ]
+    then
+        python3 $energy_diff_script -e energies.txt -r $ENERGY_REFERENCE_FILE -o energy_diff.txt
+        cat energy_diff.txt >> $current_energy_file
+    else
+        echo "No reference energy supplied, appending raw energies!"
+        cat energies.txt >> $current_energy_file
+    fi
 fi
 
 ################# DATA MERGING DONE ####################

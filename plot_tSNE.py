@@ -15,6 +15,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import seaborn as sns
 import time
+from umap import UMAP
 
 FONTSIZE = 30
 LABELSIZE = 18
@@ -24,6 +25,7 @@ DPI=600
 DEFAULT_DATA_SOURCE = "Unknown source"
 
 _adaptive_sampling_prefix = "Adaptive Sampling"
+adaptive_sampling_label = "Adaptive Sampling"
 
 def main():
     ap = argparse.ArgumentParser(description="t-SNE analysis for .xyz-trajectories")
@@ -52,19 +54,12 @@ def main():
         all_self_distances[time_step.frame] = self_distances
         all_sq_distances[time_step.frame] = sq_distances
 
-    pca = PCA(n_components=50)
-    pca_result = pca.fit_transform(all_self_distances)
-
     df = pd.DataFrame()
-    df["PCA 1"] = pca_result[:,0]
-    df["PCA 2"] = pca_result[:,1] 
-    df["PCA 3"] = pca_result[:,2]
     if data_source_file is not None:
         df["data_source"] = pd.read_csv(data_source_file, header=None)
         df["original_data"] = df["data_source"]
         condition = df["data_source"].str.startswith(_adaptive_sampling_prefix)
         # Assign a new constant value only when the condition is fullfilled
-        adaptive_sampling_label = "Adaptive Sampling"
         df.loc[condition, "original_data"] = adaptive_sampling_label
         original_labels = list(df["original_data"].unique())
         if adaptive_sampling_label in original_labels:
@@ -74,6 +69,21 @@ def main():
         df["data_source"] = ["Unknown source"]*len(df)
         df["original_data"] = [True]*len(df)
     df["data_source_codes"] = pd.Categorical(df["data_source"]).codes
+
+    pca_result = PCA_plot(df, all_self_distances)
+    tSNE_plot(df, all_self_distances, original_labels)
+    UMAP_plot(df, all_self_distances, original_labels)
+    
+def PCA_plot(df: pd.DataFrame, features: np.ndarray):
+
+    time_start = time.time()
+    pca = PCA(n_components=50)
+    pca_result = pca.fit_transform(features)
+    print('PCA done! Time elapsed: {} seconds'.format(time.time()-time_start))
+
+    df["PCA 1"] = pca_result[:,0]
+    df["PCA 2"] = pca_result[:,1] 
+    df["PCA 3"] = pca_result[:,2]
 
     print(f"Explained variation per first 3 principal component: {pca.explained_variance_ratio_[:3]}")
     print(f"Explained variation sum of principal components: {np.sum(pca.explained_variance_ratio_)}")
@@ -98,34 +108,39 @@ def main():
     plt.savefig("2D_PCA_plot.png", dpi=DPI)
     plt.close()
     
-    fig = plt.figure(figsize=(16,10))
-    ax = fig.add_subplot(projection='3d')
-    scatter = ax.scatter(
-        xs=df["PCA 1"], 
-        ys=df["PCA 2"], 
-        zs=df["PCA 3"], 
-        c=df["data_source_codes"], 
-        cmap='tab10'
-    )
-    ax.set_xlabel('PCA 1', fontsize=FONTSIZE)
-    ax.set_ylabel('PCA 2', fontsize=FONTSIZE)
-    ax.set_zlabel('PCA 3', fontsize=FONTSIZE)
-    plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
-    legend = ax.legend(*[scatter.legend_elements()[0], 
-                    ["energy_scan", "metadynamic"]], 
-                    #["energy_scan", "metadynamic", "metadynamic protein env", "random_displacement"]], 
-                    title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE)
-    for legend_handle in legend.legendHandles: 
-        legend_handle.set_alpha(1)
-        legend_handle.set_markersize(MARKERSIZE)
-    ax.add_artist(legend)
-    plt.tight_layout()
-    plt.savefig("3D_PCA_plot.png", dpi=DPI)
-    plt.close()
+    # fig = plt.figure(figsize=(16,10))
+    # ax = fig.add_subplot(projection='3d')
+    # scatter = ax.scatter(
+    #     xs=df["PCA 1"], 
+    #     ys=df["PCA 2"], 
+    #     zs=df["PCA 3"], 
+    #     c=df["data_source_codes"], 
+    #     cmap='tab10'
+    # )
+    # ax.set_xlabel('PCA 1', fontsize=FONTSIZE)
+    # ax.set_ylabel('PCA 2', fontsize=FONTSIZE)
+    # ax.set_zlabel('PCA 3', fontsize=FONTSIZE)
+    # plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
+    # labels = list(df["data_source"].unique())
+    # legend = ax.legend(*[scatter.legend_elements()[0], 
+    #                 labels], 
+    #                 title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
+    # for legend_handle in legend.legendHandles: 
+    #     legend_handle.set_alpha(1)
+    #     legend_handle.set_markersize(MARKERSIZE)
+    # ax.add_artist(legend)
+    # plt.tight_layout()
+    # plt.savefig("3D_PCA_plot.png", dpi=DPI)
+    # plt.close()
+
+    return pca_result
+
+def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
+    n_original_labels = len(original_labels)
 
     time_start = time.time()
     tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
-    tsne_results = tsne.fit_transform(all_self_distances)
+    tsne_results = tsne.fit_transform(features)
     print('t-SNE done! Time elapsed: {} seconds'.format(time.time()-time_start))
 
     df['tSNE 1'] = tsne_results[:,0]
@@ -153,10 +168,66 @@ def main():
     ax.set_ylabel('Arbitrary tSNE axis 2',fontsize=FONTSIZE)
     plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
     legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
+
+    # Create a custom legend with modified handles and labels
+    legend_handles, legend_labels = ax.get_legend_handles_labels()
+
+    visible_indices = list(range(1,n_original_labels+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
+    visible_legend_handles = [legend_handles[i] for i in visible_indices]
+
+    for i, legend_handle in enumerate(visible_legend_handles):
+        legend_handle.set_color(pallete[visible_indices[i]-1])
+        legend_handle.set_alpha(1)
+        if i<n_original_labels:
+            legend_handle.set_marker(markers[i])
+        else:
+            legend_handle.set_marker(markers[-1])
+        legend_handle.set_markersize(MARKERSIZE)
+    visible_legend_handles[-2].set_visible(False)
+
+    visible_legend_labels = [legend_labels[i] for i in visible_indices]
+    visible_legend_labels[-2] = "..."
+
+    ax.legend(handles=visible_legend_handles, labels=visible_legend_labels)
+    plt.setp(ax.get_legend().get_texts(), fontsize=LABELSIZE) # for legend text
+
+    plt.tight_layout()
+    plt.savefig("2D_tSNE_plot.png", dpi=DPI, bbox_inches = "tight")
+    plt.close()
+
+def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
+    n_original_labels = len(original_labels)
+
+    time_start = time.time()
+    umap_2d = UMAP(n_components=2, init='random', random_state=0)
+    proj_umap_2d = umap_2d.fit_transform(features)
+    print('UMAP done! Time elapsed: {} seconds'.format(time.time()-time_start))
+
+    df['UMAP 1'] = proj_umap_2d[:,0]
+    df['UMAP 2'] = proj_umap_2d[:,1]
+
+    fig = plt.figure(figsize=(20,10))
+    ax = fig.add_subplot()
+    pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
+    markers = ["s","^","o"]
+    for i in range(n_original_labels):
+        pallete[i] = pallete[0] 
+    sns.scatterplot(
+        data=df,
+        x="UMAP 1", y="UMAP 2",
+        hue="data_source",
+        palette=pallete,
+        style="original_data",
+        style_order=original_labels+[adaptive_sampling_label],
+        markers=markers,
+        legend="full",
+        alpha=0.5
+    )
     
-    # for legend_handle in legend.legendHandles: 
-    #     legend_handle.set_alpha(1)
-    #     legend_handle.set_markersize(MARKERSIZE)
+    ax.set_xlabel('UMAP axis 1',fontsize=FONTSIZE)
+    ax.set_ylabel('UMAP axis 2',fontsize=FONTSIZE)
+    plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
+    legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
 
     # Create a custom legend with modified handles and labels
     legend_handles, legend_labels = ax.get_legend_handles_labels()
@@ -181,7 +252,7 @@ def main():
     plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
 
     plt.tight_layout()
-    plt.savefig("2D_tSNE_plot.png", dpi=DPI, bbox_inches = "tight")
+    plt.savefig("2D_UMAP_plot.png", dpi=DPI, bbox_inches = "tight")
     plt.close()
 
 main()
