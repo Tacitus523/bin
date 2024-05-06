@@ -328,6 +328,36 @@ export LD_LIBRARY_PATH=$BLAS_PATH:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$PLUMED_PATH:$LD_LIBRARY_PATH
 ulimit -s unlimited
 
+# Clean extraction results of previous run
+if [ -f $root_dir/orca_calculations/geoms.xyz ]
+then
+    rm $root_dir/orca_calculations/geoms.xyz
+fi
+if [ -f $root_dir/orca_calculations/charges_hirsh.txt ]
+then
+    rm $root_dir/orca_calculations/charges_hirsh.txt
+fi
+if [ -f $root_dir/orca_calculations/forces.xyz ]
+then
+    rm $root_dir/orca_calculations/forces.xyz
+fi
+if [ -f $root_dir/orca_calculations/energies.txt ]
+then
+    rm $root_dir/orca_calculations/energies.txt
+fi
+if [ -f $root_dir/orca_calculations/energy_diff.txt ]
+then
+    rm $root_dir/orca_calculations/energy_diff.txt
+fi
+if [ -f $root_dir/orca_calculations/esps_by_mm.txt ]
+then
+    rm $root_dir/orca_calculations/esps_by_mm.txt
+fi
+if [ -f $root_dir/orca_calculations/esp_gradients.txt ]
+then
+    rm $root_dir/orca_calculations/esp_gradients.txt
+fi
+
 echo "ITERATION $iteration_idx_padded"
 for sampler_job_idx in \$(seq $lower_limit $upper_limit)
 do
@@ -343,6 +373,21 @@ do
     random_topol=\$random_folder/$START_GEOMETRIES_TOPOL_NAME
     # TODO:Index file per molecule
 
+    orca_sampler_folder="$root_dir/orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx"
+
+    # Clean previous run
+    if [ -d "\$orca_sampler_folder" ]
+        then rm -r "\$orca_sampler_folder"
+    fi
+    if [ -f $sampler_prefix.gro ]
+    then
+        rm $sampler_prefix.gro
+    fi
+    if [ -f $sampler_prefix.top ]
+    then
+        rm $sampler_prefix.top
+    fi
+
     cp \$random_geometry $sampler_prefix.gro
     cp \$random_topol $sampler_prefix.top
 
@@ -354,13 +399,6 @@ do
         gmx mdrun -ntomp 1 -ntmpi 1 -deffnm $sampler_prefix $redirect &
     fi
     wait # wait for gmx to finish while still allowing the trap to be executed.
-
-
-    orca_sampler_folder="../../orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx"
-    # Clean previous run
-    if [ -d "\$orca_sampler_folder" ]
-        then rm -r "\$orca_sampler_folder"
-    fi
 
     if [ -f adaptive_sampling.xtc ]
     then
@@ -374,9 +412,6 @@ do
         mv $ORCA_BASENAME.gro \$orca_sampler_folder/$ORCA_BASENAME.gro
         cp $sampler_prefix.top \$orca_sampler_folder/topol.top
     fi
-
-    rm $sampler_prefix.gro
-    rm $sampler_prefix.top
 done
 EOM
     sampling_job_id=$(sbatch $sampling_jobfile | awk '{print $4}')
@@ -446,6 +481,7 @@ export GMX_MAXBACKUP=-1
 export GMX_QMMM_VARIANT=2
 export OMP_NUM_THREADS=1
 export GMX_QM_ORCA_BASENAME=$ORCA_BASENAME
+export HWLOC_HIDE_ERRORS=2 # I have no idea, hwloc sometimes throws errors, that mess up orca. This seems to suppress them, which makes the orca calculations work
 
 ulimit -s unlimited
 
@@ -552,7 +588,7 @@ echo "JOB: \$SLURM_JOB_ID started on \$SLURM_JOB_NODELIST -- \$(date)"
 ######## SOME MERGING OF PARALLEL DATA COLLECTION ########
 cd "$root_dir/sampling"
 
-if ls samp_00_*/adaptive_sampling.gro > /dev/null 2>&1 # Check if there are any adaptive_sampling.gro in the sampling folders
+if ls samp_${iteration_idx_padded}_*/adaptive_sampling.gro > /dev/null 2>&1 # Check if there are any adaptive_sampling.gro in the sampling folders
 then
     cat samp_${iteration_idx_padded}_*/adaptive_sampling.gro >> "adaptive_sampling_$iteration_idx_padded.gro"
     for file in samp_${iteration_idx_padded}_*/adaptive_sampling.gro # Prevent double appending
@@ -571,7 +607,7 @@ then
     # Check for orca calculation failures, rename folder on failure
     for job_folder in $ORCA_FOLDER_PREFIX*
     do
-        if !  grep -q "FINAL SINGLE" \$job_folder/$ORCA_BASENAME.out 2> /dev/null
+        if ! grep -q "FINAL SINGLE" \$job_folder/$ORCA_BASENAME.out 2> /dev/null
         then
             echo "\$job_folder failed"
             if [ -f "\$job_folder/$ORCA_BASENAME.out" ]
