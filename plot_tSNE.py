@@ -22,7 +22,7 @@ LABELSIZE = 18
 MARKERSIZE = 12
 DPI=600
 
-DEFAULT_DATA_SOURCE = "Unknown source"
+DEFAULT_DATA_SOURCE = "Original Sampling"
 
 _adaptive_sampling_prefix = "Adaptive Sampling"
 adaptive_sampling_label = "Adaptive Sampling"
@@ -137,6 +137,7 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
 
 def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     n_original_labels = len(original_labels)
+    has_adaptive_sampling: bool = adaptive_sampling_label in df["original_data"].unique()
 
     time_start = time.time()
     tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
@@ -149,16 +150,24 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     fig = plt.figure(figsize=(20,10))
     ax = fig.add_subplot()
     pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
-    markers = ["s","^","o"]
-    for i in range(n_original_labels):
-        pallete[i] = pallete[0] 
+    if has_adaptive_sampling:
+        style = "original_data"
+        style_order = original_labels+[adaptive_sampling_label]
+        for i in range(n_original_labels):
+            pallete[i] = pallete[0]
+        markers = ["s","^","o"]
+    else:
+        style = None
+        style_order = None
+        markers = True
+
     sns.scatterplot(
         data=df,
         x="tSNE 1", y="tSNE 2",
         hue="data_source",
         palette=pallete,
-        style="original_data",
-        style_order=original_labels+[adaptive_sampling_label],
+        style=style,
+        style_order=style_order,
         markers=markers,
         legend="full",
         alpha=0.5
@@ -167,36 +176,44 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     ax.set_xlabel('Arbitrary tSNE axis 1',fontsize=FONTSIZE)
     ax.set_ylabel('Arbitrary tSNE axis 2',fontsize=FONTSIZE)
     plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
-    legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
 
-    # Create a custom legend with modified handles and labels
-    legend_handles, legend_labels = ax.get_legend_handles_labels()
+    if has_adaptive_sampling:
+        legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
 
-    visible_indices = list(range(1,n_original_labels+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
-    visible_legend_handles = [legend_handles[i] for i in visible_indices]
+        # Create a custom legend with modified handles and labels
+        legend_handles, legend_labels = ax.get_legend_handles_labels()
+        visible_indices = list(range(1,n_original_labels+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
 
-    for i, legend_handle in enumerate(visible_legend_handles):
-        legend_handle.set_color(pallete[visible_indices[i]-1])
-        legend_handle.set_alpha(1)
-        if i<n_original_labels:
-            legend_handle.set_marker(markers[i])
-        else:
-            legend_handle.set_marker(markers[-1])
-        legend_handle.set_markersize(MARKERSIZE)
-    visible_legend_handles[-2].set_visible(False)
+        visible_legend_handles = [legend_handles[i] for i in visible_indices]
 
-    visible_legend_labels = [legend_labels[i] for i in visible_indices]
-    visible_legend_labels[-2] = "..."
+        for i, legend_handle in enumerate(visible_legend_handles):
+            legend_handle.set_color(pallete[visible_indices[i]-1])
+            legend_handle.set_alpha(1)
+            if i<n_original_labels:
+                legend_handle.set_marker(markers[i])
+            else:
+                legend_handle.set_marker(markers[-1])
+            legend_handle.set_markersize(MARKERSIZE)
+        visible_legend_handles[-2].set_visible(False)
 
-    ax.legend(handles=visible_legend_handles, labels=visible_legend_labels)
-    plt.setp(ax.get_legend().get_texts(), fontsize=LABELSIZE) # for legend text
+        visible_legend_labels = [legend_labels[i] for i in visible_indices]
+        visible_legend_labels[-2] = "..."
 
+        ax.legend(handles=visible_legend_handles, labels=visible_legend_labels)
+    else:
+        legend = plt.legend(title='Data Source', fontsize=FONTSIZE, title_fontsize=FONTSIZE)
+        for legend_handle in legend.legend_handles: 
+            legend_handle.set_alpha(1)
+            legend_handle.set_markersize(MARKERSIZE)
+
+    plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
     plt.tight_layout()
     plt.savefig("2D_tSNE_plot.png", dpi=DPI, bbox_inches = "tight")
     plt.close()
 
 def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     n_original_labels = len(original_labels)
+    has_adaptive_sampling: bool = adaptive_sampling_label in df["original_data"].unique()
 
     time_start = time.time()
     umap_2d = UMAP(n_components=2, init='random', random_state=0)
@@ -209,16 +226,24 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     fig = plt.figure(figsize=(20,10))
     ax = fig.add_subplot()
     pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
-    markers = ["s","^","o"]
-    for i in range(n_original_labels):
-        pallete[i] = pallete[0] 
+    if has_adaptive_sampling:
+        style = "original_data"
+        style_order = original_labels+[adaptive_sampling_label]
+        for i in range(n_original_labels):
+            pallete[i] = pallete[0]
+        markers = ["s","^","o"]
+    else:
+        style = None
+        style_order = None
+        markers = True
+
     sns.scatterplot(
         data=df,
         x="UMAP 1", y="UMAP 2",
         hue="data_source",
         palette=pallete,
-        style="original_data",
-        style_order=original_labels+[adaptive_sampling_label],
+        style=style,
+        style_order=style_order,
         markers=markers,
         legend="full",
         alpha=0.5
@@ -227,30 +252,38 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     ax.set_xlabel('UMAP axis 1',fontsize=FONTSIZE)
     ax.set_ylabel('UMAP axis 2',fontsize=FONTSIZE)
     plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
-    legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
 
-    # Create a custom legend with modified handles and labels
-    legend_handles, legend_labels = ax.get_legend_handles_labels()
+    if has_adaptive_sampling:
+        legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
 
-    visible_indices = list(range(1,n_original_labels+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
-    visible_legend_handles = [legend_handles[i] for i in visible_indices]
+        # Create a custom legend with modified handles and labels
+        legend_handles, legend_labels = ax.get_legend_handles_labels()
+        visible_indices = list(range(1,n_original_labels+2)) + [df["data_source"].nunique()-1, df["data_source"].nunique()]
 
-    for i, legend_handle in enumerate(visible_legend_handles):
-        legend_handle.set_color(pallete[visible_indices[i]-1])
-        legend_handle.set_alpha(1)
-        if i<n_original_labels:
-            legend_handle.set_marker(markers[i])
-        else:
-            legend_handle.set_marker(markers[-1])
-        legend_handle.set_markersize(MARKERSIZE)
-    visible_legend_handles[-2].set_visible(False)
+        visible_legend_handles = [legend_handles[i] for i in visible_indices]
 
-    visible_legend_labels = [legend_labels[i] for i in visible_indices]
-    visible_legend_labels[-2] = "..."
+        for i, legend_handle in enumerate(visible_legend_handles):
+            legend_handle.set_color(pallete[visible_indices[i]-1])
+            legend_handle.set_alpha(1)
+            if i<n_original_labels:
+                legend_handle.set_marker(markers[i])
+            else:
+                legend_handle.set_marker(markers[-1])
+            legend_handle.set_markersize(MARKERSIZE)
+        
+        visible_legend_handles[-2].set_visible(False)
 
-    ax.legend(handles=visible_legend_handles, labels=visible_legend_labels)
+        visible_legend_labels = [legend_labels[i] for i in visible_indices]
+        visible_legend_labels[-2] = "..."
+
+        ax.legend(handles=visible_legend_handles, labels=visible_legend_labels)
+    else:
+        legend = plt.legend(title='Data Source', fontsize=FONTSIZE, title_fontsize=FONTSIZE)
+        for legend_handle in legend.legend_handles: 
+            legend_handle.set_alpha(1)
+            legend_handle.set_markersize(MARKERSIZE)
+
     plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
-
     plt.tight_layout()
     plt.savefig("2D_UMAP_plot.png", dpi=DPI, bbox_inches = "tight")
     plt.close()
