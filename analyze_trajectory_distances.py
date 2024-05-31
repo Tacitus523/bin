@@ -23,9 +23,8 @@ from kgcnn.utils import constants  # type: ignore
 # DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
 # DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
 # DATASET_NAME = "ThiolDisulfidExchange" # Used in naming plots and looking for data
-#DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-#DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
+DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
+#DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
 DATASET_NAME = "Alanindipeptide" # Used in naming plots and looking for data
 
 TRAJECTORY_FILE = "run.xtc" # Path to the trajectory file
@@ -34,9 +33,11 @@ TOPOLOGY_FILE = "run.gro" # Path to the topology file (e.g., .gro or .pdb)
 N_PLOTS = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
 DPI = 100 # DPI for saving plots
 
+# Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
 starting_idxs_file = "starting_structure_idxs.txt" # File containing the indices of the starting structure
 starting_structures_dir = "start_geometries" # Directory containing the starting structures, expected to be inside DATA_DIRECTORY, only used when TOPOLOGY_FILE not present 
-starting_structure_gro = "geom.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
+#starting_structure_gro = "geom.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
+starting_structure_gro = "sp_big_box.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
 
 def main():
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
@@ -85,6 +86,7 @@ def analyze_bond_distances(dataset):
     # Get the atomic numbers and elements of the atoms in the bonds
     atomic_number_element_dict = constants.atomic_number_to_element
     atomic_numbers = np.array(dataset[final_starting_idx].get("node_number")).flatten()
+    n_atoms = len(atomic_numbers)
 
     edge_indices = dataset[final_starting_idx]["edge_indices"]
     filtered_edge_indices = []
@@ -100,12 +102,12 @@ def analyze_bond_distances(dataset):
         print(e, file=sys.stderr)
         return
 
-    all_atoms = u.select_atoms("all")
+    qm_atoms = u.atoms[:n_atoms]
 
     bond_distances_all_timesteps = []
     for timestep in u.trajectory:
         # Calculate the distance matrix
-        distance_matrix = mda.lib.distances.distance_array(all_atoms.positions, all_atoms.positions)
+        distance_matrix = mda.lib.distances.distance_array(qm_atoms.positions, qm_atoms.positions)
         
         # Extract bond_distances from the distance matrix using the specified edge indices
         bond_distances = distance_matrix[filtered_edge_indices[:, 0], filtered_edge_indices[:, 1]]
