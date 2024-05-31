@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import os
 import argparse
+import os
+import json
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -42,9 +43,16 @@ def main():
         if not sp_calculation_location:
             sp_calculation_location = "."
         folders = [os.path.join(sp_calculation_location, f.name) for f in os.scandir(sp_calculation_location) if f.is_dir() and f.name.startswith(sp_calculation_prefix)]
+        folders.sort(key=lambda x: int(x.split(sp_calculation_prefix)[-1])) # Sorts numerically depending on the numer after the prefix, WARNING: Not at all tested on all edge cases
+        with open("folder_order_esp.json", "w") as f:
+            json.dump(folders, f, indent=2)
     else:
         folders = [os.getcwd()]
     original_folder = os.path.abspath(os.getcwd())
+
+    esps_array = []
+    gradients_array = []
+    write_in_folder = True
     for folder in folders:
         os.chdir(folder)
         
@@ -63,10 +71,24 @@ def main():
             esps = esps/angstrom_to_bohr*atomic_units_to_volt # from e/Angstrom to e/Bohr(atomic unit) to V
             
         gradients = gradients/angstrom_to_bohr/angstrom_to_bohr # from e/Angstrom^2 to e/Bohr^2 
-
-        np.savetxt("esps_by_mm.txt", esps, fmt='%3.5f')
-        np.savetxt("esp_gradients.txt", gradients, fmt='%3.7f')
+        
+        esps_array.append(esps)
+        gradients_array.append(gradients)
+        if write_in_folder is True:
+            try:
+                np.savetxt("esps_by_mm.txt", esps, fmt='%3.5f')
+                np.savetxt("esp_gradients.txt", gradients, fmt='%3.7f')
+            except:
+                print("WARNING: Was not able to write into", folder)
+                write_in_folder = False
+        
         os.chdir(original_folder)
+
+    esps_array = np.concatenate(esps_array, axis=0)
+    gradients_array = np.concatenate(gradients_array, axis=0)
+    np.savetxt("esps_by_mm.txt", esps_array, fmt='%3.5f')
+    np.savetxt("esp_gradients.txt", gradients_array, fmt='%3.7f')
+
 
 def test_function():
     qm_coords = np.array([

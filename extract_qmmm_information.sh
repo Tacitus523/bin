@@ -8,7 +8,8 @@ then
     exit 1
 fi
 
-for folder in $2*
+folders=$(find $2* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+for folder in $folders
 do
 	if ! [ -f $folder/$3.out ]
 	then

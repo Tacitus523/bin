@@ -8,7 +8,8 @@ then
     exit 1
 fi
 
-for folder in $2*
+folders=$(find $2* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+for folder in $folders
 do
 	if ! [ -f $folder/$3.out ]
 	then
@@ -18,6 +19,7 @@ do
 	break
 done
 
+FOLDER_FILE=folder_order.txt
 CHARGES_MULL_FILE=charges_mull.txt
 CHARGES_HIRSH_FILE=charges_hirsh.txt
 CHARGES_LOEW_FILE=charges_loew.txt
@@ -25,6 +27,10 @@ CHARGES_LOEW_FILE=charges_loew.txt
 ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
 FORCES_FILE=forces.xyz
+
+if [ -f $FOLDER_FILE ]
+then rm $FOLDER_FILE
+fi
 
 if [ -f $CHARGES_MULL_FILE ]
 then rm $CHARGES_MULL_FILE
@@ -54,9 +60,10 @@ if [ -f $FORCES_FILE ]
 then rm $FORCES_FILE
 fi
 
-for folder in $2*
+for folder in $folders
 do
-	# Updated version, which works with multip steps Orca .outs, only greps last occurence, tac = reverse cat, -m 1 = maximal 1 occurence 
+	echo $folder >> $FOLDER_FILE
+	# works with multip steps Orca .outs, only greps last occurence, tac = reverse cat, -m 1 = maximal 1 occurence 
 	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
 	tac $folder/$3.out | grep -B $(($1+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
 	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
