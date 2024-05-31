@@ -371,10 +371,10 @@ do
     random_folder=$START_GEOMETRIES_PREFIX\$random_folder_number
     random_geometry=\$random_folder/$START_GEOMETRIES_GRO_NAME
     random_topol=\$random_folder/$START_GEOMETRIES_TOPOL_NAME
+    echo \$random_folder_number >> "starting_structure_idxs.txt"
     # TODO:Index file per molecule
 
     orca_sampler_folder="$root_dir/orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx"
-
     # Clean previous run
     if [ -d "\$orca_sampler_folder" ]
         then rm -r "\$orca_sampler_folder"
@@ -405,7 +405,6 @@ do
         echo 0 | gmx trjconv -s $sampler_prefix.tpr -f adaptive_sampling.xtc -o $ORCA_BASENAME.gro $redirect # Single entry .xtc, has to be converted directly because the .tpr might change
         echo "Sampling step \$sampler_job_idx: \$(grep step $ORCA_BASENAME.gro)" # For output in .out
         cat $ORCA_BASENAME.gro >> "adaptive_sampling.gro"
-        echo \$random_folder_number >> "starting_structure_idxs.txt"
         
         mkdir -p "\$orca_sampler_folder"
         mv adaptive_sampling.xtc \$orca_sampler_folder/$ORCA_BASENAME.xtc
