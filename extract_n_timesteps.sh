@@ -1,8 +1,8 @@
 #!/bin/bash
 #Give folder-prefix as $1, out-file as $2
 
-folder_prefix="$1"
-out_file="$2"
+folder_prefix="$1" # samp_
+out_file="$2" # sampling.out
 
 if [[ -z $1 || -z $2 ]]
 then
