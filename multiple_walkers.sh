@@ -1,6 +1,5 @@
 #!/bin/bash
-#SBATCH --nodes=16
-#SBATCH --ntasks-per-node=1
+#SBATCH --nodes=1
 #SBATCH --mem=12G
 #SBATCH --time=48:00:00
 #SBATCH --job-name=metadynamics
@@ -10,12 +9,16 @@
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
 
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
-N_WALKER=16
+
+N_WALKER=$SLURM_NTASKS_PER_NODE
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
 
 echo "Starting multiple walkers: $(date)"
 
 source $GROMACS_PATH
+
+module load system/parallel
+
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
 set -o nounset   # (or set -u) causes the script to treat unset variables as an error and exit immediately
@@ -63,6 +66,10 @@ then
     echo "tpr file not found"
     exit 1
 fi
+if [[ ! $tpr_file == *.tpr ]]; then
+    echo "tpr file must end with .tpr"
+    exit 1
+fi
 if [ ! -f $plumed_file ]
 then
     echo "plumed file not found"
@@ -78,30 +85,24 @@ export GMX_TF_MODEL_PATH_PREFIX=$(readlink -f "model_energy_force") # Just for M
 # Create directories for each walker
 for i in `seq 0 $((N_WALKER-1))`
 do
-mkdir WALKER_$i
-cp $plumed_file WALKER_$i
-cp $tpr_file WALKER_$i
-for file in $other_files
-do
-    if [ -f $file ]
-    then
-        cp $file WALKER_$i
-    fi
+    mkdir WALKER_$i
+    cp $plumed_file WALKER_$i
+    cp $tpr_file WALKER_$i
+    for file in $other_files
+    do
+        if [ -f $file ]
+        then
+            cp $file WALKER_$i
+        fi
+    done
+
+    cd WALKER_$i/
+    sed -i -e 's/NUMWALKER/'${i}'/g' $plumed_file
+    cd ..
 done
 
-cd WALKER_$i/
-sed -i -e 's/NUMWALKER/'${i}'/g' $plumed_file
-cd ..
-done
-
-# Run each walker
-for i in `seq 0 $((N_WALKER-1))`
-do
-cd $workdir/WALKER_$i
-
-gmx mdrun -ntomp 1 -s $tpr_file -plumed $plumed_file &> mdrun.out &
-cd ..
-done
+# Run each walker in parallel using GNU parallel
+parallel -j $N_WALKER "cd WALKER_{}; gmx mdrun -ntomp 1 -s $tpr_file -plumed $plumed_file &> mdrun.out" ::: $(seq 0 $((N_WALKER-1))) &
 
 wait
 
