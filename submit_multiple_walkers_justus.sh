@@ -1,7 +1,7 @@
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
 N_WALKER=16
-WALKER_SCRIPT="/lustre/home/ka/ka_ipc/ka_he8978/bin/multiple_walkers.sh"
+WALKER_SCRIPT="/lustre/home/ka/ka_ipc/ka_he8978/bin/multiple_walkers_justus.sh"
 
 print_usage() {
   echo "Usage: 'submit_python_file.sh tpr_file plumed_file other_files'"
