@@ -1,0 +1,85 @@
+#!/usr/bin/python3
+"""
+  Script creates metad pes from hills
+
+  Change for your needs.
+
+  Credits to DM
+
+  USAGE: METPES e_max
+
+"""
+
+################
+#import modules#
+################
+
+import matplotlib.pyplot as plt
+import numpy as np
+import sys
+
+e_max = float(sys.argv[1])
+if sys.argv[1] == '--help':
+	print('Usage: METPES e_max')
+
+else:
+
+	x, y, srp_m1 = np.loadtxt("fes.dat", usecols=(0,1,2), skiprows=0, unpack=True)
+
+	xx = np.linspace(np.min(x)*360/(2*np.pi), np.max(x)*360/(2*np.pi), 94)
+	yy = np.linspace(np.min(y)*360/(2*np.pi), np.max(y)*360/(2*np.pi), 94)
+	xx, yy = np.meshgrid(xx, yy)
+
+	fig = plt.figure(figsize=[7,8], dpi=400)
+
+	label_fs = 18
+	ticks_fs = 16
+	labelpad = -.8
+
+	ax = plt.gca()
+	ax.set_xlim(-180, 120)
+	ax.set_ylim(-100, 240)
+	# ax.set_xticks(ticks=np.arange(-3.2, 3.2, 0.5))
+	# ax.set_yticks(ticks=np.arange(-3.2, 3.2, 0.5))
+	ax.tick_params(axis='x', labelsize=ticks_fs)
+	ax.tick_params(axis='y', labelsize=ticks_fs)
+	ax.set_aspect('equal')
+	    
+	# labels, latex math style
+	ax.set_xlabel(r"$\varphi$ [°]", 
+	               fontsize=label_fs, labelpad=labelpad)
+	ax.set_ylabel(r"$\psi$ [°]", 
+	               fontsize=label_fs, labelpad=labelpad)
+	
+	######################
+	### plot 1 -- SRP/M1 #
+	######################
+	e_max = e_max
+	lines=np.arange(0, e_max+.1, 1.0)
+	linesf=np.arange(0, e_max+.1, 0.1)
+	cbticks=np.arange(0, e_max+.1, 5)
+	
+	energies = srp_m1
+	ax.set_title(" ", fontsize=label_fs, pad=0, linespacing=0)
+	
+	# kJ/mol 
+	#zz = np.reshape(energies, xx.shape)
+	
+	# kcal/mol
+	zz = np.reshape(energies/4.184, xx.shape)
+	fig1 = ax.contourf(xx, yy, zz, cmap="viridis", levels=linesf)
+	fig2 = ax.contour(xx, yy, zz, levels=lines, colors="black", linewidths=0.3)
+	
+	cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02)
+	cb.set_label("$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
+	cb.ax.tick_params(labelsize=ticks_fs)
+	
+	# Labeling
+	loc_x = 0.2
+	loc_y = 11.3
+	#ax.text(loc_x, loc_y, "A)", fontsize=label_fs+2, fontweight='bold', va='top', ha='right')
+	
+	
+	
+	fig.tight_layout()
+	plt.savefig("PMFs.png")
