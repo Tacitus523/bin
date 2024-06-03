@@ -26,12 +26,10 @@ else:
 
 	x, y, srp_m1 = np.loadtxt("fes.dat", usecols=(0,1,2), skiprows=0, unpack=True)
 
-	xx = np.linspace(np.min(x)*10, np.max(x)*10, 95)
-	yy = np.linspace(np.min(y)*10, np.max(y)*10, 95)
+	xx = np.linspace(np.min(x)*360/(2*np.pi), np.max(x)*360/(2*np.pi), 94)
+	yy = np.linspace(np.min(y)*360/(2*np.pi), np.max(y)*360/(2*np.pi), 94)
 	xx, yy = np.meshgrid(xx, yy)
 
-
-#fig, ((ax0, ax1, ax2), (ax3, ax4, ax5)) = plt.subplots(2, 3, figsize=[14,8], dpi=300)
 	fig = plt.figure(figsize=[7,8], dpi=400)
 
 	label_fs = 18
@@ -39,18 +37,18 @@ else:
 	labelpad = -.8
 
 	ax = plt.gca()
-	ax.set_xlim(1.5, 4)
-	ax.set_ylim(1.5, 4)
-	ax.set_xticks(ticks=np.arange(1.8, 3.7, 0.3))
-	ax.set_yticks(ticks=np.arange(1.8, 3.7, 0.3))
+	ax.set_xlim(-180, 120)
+	ax.set_ylim(-100, 240)
+	# ax.set_xticks(ticks=np.arange(-3.2, 3.2, 0.5))
+	# ax.set_yticks(ticks=np.arange(-3.2, 3.2, 0.5))
 	ax.tick_params(axis='x', labelsize=ticks_fs)
 	ax.tick_params(axis='y', labelsize=ticks_fs)
 	ax.set_aspect('equal')
 	    
 	# labels, latex math style
-	ax.set_xlabel(u"S$^\mathrm{1}$\N{MINUS SIGN}S$^\mathrm{2}$ [\u212B]", 
+	ax.set_xlabel(r"$\varphi$ [°]", 
 	               fontsize=label_fs, labelpad=labelpad)
-	ax.set_ylabel(u"S$^\mathrm{2}$\N{MINUS SIGN}S$^\mathrm{3}$ [\u212B]", 
+	ax.set_ylabel(r"$\psi$ [°]", 
 	               fontsize=label_fs, labelpad=labelpad)
 	
 	######################
@@ -76,14 +74,12 @@ else:
 	cb.set_label("$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
 	cb.ax.tick_params(labelsize=ticks_fs)
 	
-	
-	
 	# Labeling
 	loc_x = 0.2
 	loc_y = 11.3
-	ax.text(loc_x, loc_y, "A)", fontsize=label_fs+2, fontweight='bold', va='top', ha='right')
+	#ax.text(loc_x, loc_y, "A)", fontsize=label_fs+2, fontweight='bold', va='top', ha='right')
 	
 	
 	
-	#fig.tight_layout()
+	fig.tight_layout()
 	plt.savefig("PMFs.png")
