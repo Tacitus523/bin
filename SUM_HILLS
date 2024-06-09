@@ -1,11 +1,14 @@
 #!/usr/bin/bash
 
-if  [ "$1" -eq 16 ]; then
-	echo $1
-	  plumed sum_hills --hills HILLS.0,HILLS.1,HILLS.2,HILLS.3,HILLS.4,HILLS.5,HILLS.6,HILLS.7,HILLS.8,HILLS.9,HILLS.10,HILLS.11,HILLS.12,HILLS.13,HILLS.14,HILLS.15  --kt 2.494339 --mintozero --min 0.18,0.18 --max 1.12,1.12 --bin 94,94
-fi
+all_hills=$(echo HILLS.* | tr ' ' ',')
+echo "Summing hills $all_hills"
 
-# 24 walker
-if  [ "$1" -eq 24 ]; then
-	  plumed sum_hills --hills HILLS.0,HILLS.1,HILLS.2,HILLS.3,HILLS.4,HILLS.5,HILLS.6,HILLS.7,HILLS.8,HILLS.9,HILLS.10,HILLS.11,HILLS.12,HILLS.13,HILLS.14,HILLS.15,HILLS.16,HILLS.17,HILLS.18,HILLS.19,HILLS.20,HILLS.21,HILLS.22,HILLS.23 --kt 2.49339 --mintozero --min 0.18,0.18 --max 1.12,1.12 --bin 94,94
+plumed sum_hills --hills $all_hills --kt 2.494339 --mintozero --min 0.18,0.18 --max 1.12,1.12 --bin 94,94 &> sum_hills.log
+
+plumed_exit_status=$?
+if [ $plumed_exit_status -ne 0 ]; then
+  echo "plumed sum_hills failed with exit status $plumed_exit_status. Check sum_hills.log for more information."
+  exit $plumed_exit_status
+else
+  echo "plumed sum_hills completed successfully"
 fi
