@@ -20,35 +20,47 @@ from kgcnn.utils import constants  # type: ignore
 
 # DEFAULT VALUES
 # DATA READ
-# DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATASET_NAME = "ThiolDisulfidExchange" # Used in naming plots and looking for data
-DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-#DATA_DIRECTORY = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
-DATASET_NAME = "Alanindipeptide" # Used in naming plots and looking for data
+# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
+# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
+# DATASET_NAME: str = "ThiolDisulfidExchange" # Used in naming plots and looking for data
+# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
+DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
+DATASET_NAME: str = "Alanindipeptide" # Used in naming plots and looking for data
 
-TRAJECTORY_FILE = "run.xtc" # Path to the trajectory file
-TOPOLOGY_FILE = "run.gro" # Path to the topology file (e.g., .gro or .pdb)
+#TRAJECTORY_FILE: str = "run.xtc" # Path to the trajectory file
+TRAJECTORY_FILE: str = "traj_comp.xtc" # Path to the trajectory file
+TOPOLOGY_FILE: str = "run.gro" # Path to the topology file (e.g., .gro or .pdb)
 
-N_PLOTS = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
-DPI = 100 # DPI for saving plots
+N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
+N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
+DPI: int = 100 # DPI for saving plots
 
 # Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
 starting_idxs_file = "starting_structure_idxs.txt" # File containing the indices of the starting structure
 starting_structures_dir = "start_geometries" # Directory containing the starting structures, expected to be inside DATA_DIRECTORY, only used when TOPOLOGY_FILE not present 
-#starting_structure_gro = "geom.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
-starting_structure_gro = "sp_big_box.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
+starting_structure_gro = "geom.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
+#starting_structure_gro = "sp_big_box.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
 
-def main():
+default_collection_folder_name: str = "bond_distance_analysis"
+
+def main() -> None:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
-    ap.add_argument("-d", "--dir", default=None, type=str, dest="dir", action="store", required=False, help="Directionary with trajectories, default: None", metavar="directionary")
+    ap.add_argument("-p", "--prefix", default=None, type=str, dest="prefix", action="store", required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
     args = ap.parse_args()
-    if args.dir is None:
+    if args.prefix is None:
         present_dirs = [os.getcwd()]
+        collection_folder_name = None
     else:
-        os.chdir(args.dir)
-        present_dirs = [dir for dir in os.listdir(".") if os.path.isdir(dir)]
-    
+        target_dir = os.path.dirname(args.prefix)
+        if target_dir == "":
+            target_dir = "."
+        os.chdir(target_dir)
+        prefix = os.path.basename(args.prefix)
+        present_dirs = [dir for dir in os.listdir(".") if os.path.isdir(dir) and dir.startswith(prefix)]
+        collection_folder_name = os.path.abspath(default_collection_folder_name)
+        if not os.path.exists(collection_folder_name):
+            os.makedirs(collection_folder_name)
+
     valid_dirs = []
     for dir in present_dirs:
         if not os.path.exists(os.path.join(dir, starting_idxs_file)):
@@ -58,7 +70,10 @@ def main():
         if not os.path.exists(os.path.join(dir, TOPOLOGY_FILE)):
             # Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
             starting_idxs = np.loadtxt(os.path.join(dir,starting_idxs_file), dtype=int)
-            final_starting_idx = int(starting_idxs[-1])
+            if starting_idxs.ndim == 0:
+                final_starting_idx = int(starting_idxs)
+            else:
+                final_starting_idx = int(starting_idxs[-1])
             starting_structure_dirs = next(os.walk(os.path.join(DATA_DIRECTORY, starting_structures_dir)))[1]
             gro_to_copy = [os.path.join(DATA_DIRECTORY, starting_structures_dir, dirname, starting_structure_gro) for dirname in starting_structure_dirs if f"{final_starting_idx}" in dirname][0]
             shutil.copy(gro_to_copy, os.path.join(dir, TOPOLOGY_FILE))
@@ -73,10 +88,11 @@ def main():
     for dir in valid_dirs:
         print(f"Analyzing {dir}")
         os.chdir(dir)
-        analyze_bond_distances(dataset)
+        analyze_bond_distances(dataset, collection_folder_name=collection_folder_name)
         os.chdir(root_dir)
 
-def analyze_bond_distances(dataset):
+
+def analyze_bond_distances(dataset: MemoryGraphDataset, collection_folder_name: str = None) -> None:
     starting_idxs = np.loadtxt(starting_idxs_file, dtype=int)
     if starting_idxs.ndim == 0:
         final_starting_idx = int(starting_idxs)
@@ -141,15 +157,21 @@ def analyze_bond_distances(dataset):
             bond_distances_df = pd.DataFrame(extreme_bond_data, columns=labels)
             bond_distances_df["Time Step"] = np.arange(len(u.trajectory))
             bond_distances_df = bond_distances_df.set_index("Time Step")
-            plot_bond_distances(bond_distances_df, title=f"{data_label}_{size_label}_vs_time_steps.png")
+            title = f"{data_label}_{size_label}_vs_time_steps.png"
+            plot_bond_distances(bond_distances_df, title=title)
     
+            if collection_folder_name is not None:
+                folder_name = os.path.basename(os.getcwd())
+                collection_title = f"{data_label}_{size_label}_vs_time_steps_{folder_name}.png"
+                shutil.copy(title, os.path.join(collection_folder_name, collection_title))
+
 
 def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_distances_vs_time_steps.png"):
     # Plot the bond distances over time
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
-    bond_distances_df = bond_distances_df.iloc[-1000:]
-    sns.lineplot(data=bond_distances_df, palette="tab10")
+    bond_distances_df_shortened = bond_distances_df.iloc[-N_LAST_TIMESTEPS:]
+    sns.lineplot(data=bond_distances_df_shortened, palette="tab10")
     plt.xlabel("Time Step")
     plt.ylabel("Bond Distance [Å]")
     # plt.title("Bond Distances Over Time")
