@@ -10,6 +10,7 @@ GMX_N_TF_MODELS=3 # Amount of trained models to use for the adaptive sampling, s
 GMX_TF_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
 GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.002 # Threshold for the energy standard deviation between models for a structure to be considered relevant
 GMX_FORCE_PREDICTION_STD_THRESHOLD=0.004 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
+GMX_NN_EVAL_FREQ=1 # Frequency of evaluation of the neural network, 1 means every step
 
 N_ITERATIONS=10 # Amount of repeated adaptive samplings+retrainings
 INITIAL_ITERATION=2 # Used to restart after a previous adaptive sampling, unique actions for initialization will not be performed if > 0 (such as DELETING existing content)
@@ -322,7 +323,9 @@ export GMX_QMMM_VARIANT=2
 export OMP_NUM_THREADS=1
 export GMX_N_TF_MODELS=$GMX_N_TF_MODELS # Amount of trained models to use for the adaptive sampling, suffix of the models
 export GMX_TF_MODEL_PATH_PREFIX=$absolute_model_prefix # prefix of the models
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=$GMX_ENERGY_PREDICTION_STD_THRESHOLD # Threshold for the deviation between models for a structure to be considered relevant, energy std threshold has priority
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=$GMX_FORCE_PREDICTION_STD_THRESHOLD # Threshold for the deviation between models for a structure to be considered relevant
+export GMX_NN_EVAL_FREQ=$GMX_NN_EVAL_FREQ # Frequency of evaluation of the neural network
 
 export LD_LIBRARY_PATH=$BLAS_PATH:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$PLUMED_PATH:$LD_LIBRARY_PATH

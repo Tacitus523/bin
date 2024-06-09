@@ -46,9 +46,11 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_QM_COORD=100
 #export GMX_DFTB_MM_COORD=100
 #export GMX_DFTB_MM_COORD_FULL=100
-export GMX_N_TF_MODELS=1
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=-1
+export GMX_N_TF_MODELS=3
+export GMX_TF_MODEL_PATH_PREFIX="model_energy_force"
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.1
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1
+export GMX_NN_EVAL_FREQ=100
 export GMX_MAXBACKUP=-1
 export PLUMED_MAXBACKUP=-1
 
@@ -80,7 +82,7 @@ mkdir -vp $workdir
 cp -r -v $tpr_file $plumed_file $other_files $workdir
 cd $workdir
 
-export GMX_TF_MODEL_PATH_PREFIX=$(readlink -f "model_energy_force") # Just for MLMM
+export GMX_TF_MODEL_PATH_PREFIX=$(readlink -f $GMX_TF_MODEL_PATH_PREFIX) # Convert to absolute path
 
 # Create directories for each walker
 for i in `seq 0 $((N_WALKER-1))`
@@ -104,7 +106,7 @@ done
 # Run each walker in parallel using GNU parallel
 parallel -j $N_WALKER "cd WALKER_{}; gmx mdrun -ntomp 1 -s $tpr_file -plumed $plumed_file &> mdrun.out" ::: $(seq 0 $((N_WALKER-1))) &
 
-wait
+wait # Wait for all parallel processes to finish, also allows trap finalize_job to be called
 
 cd $sourcedir
 rsync -a $workdir/ .
