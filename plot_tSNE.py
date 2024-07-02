@@ -288,4 +288,5 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     plt.savefig("2D_UMAP_plot.png", dpi=DPI, bbox_inches = "tight")
     plt.close()
 
-main()
+if __name__ == "__main__":
+    main()
