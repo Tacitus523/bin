@@ -64,10 +64,10 @@ def main():
         original_labels = list(df["original_data"].unique())
         if adaptive_sampling_label in original_labels:
             original_labels.remove(adaptive_sampling_label)
-        n_original_labels = len(original_labels)
     else:
-        df["data_source"] = ["Unknown source"]*len(df)
-        df["original_data"] = [True]*len(df)
+        df["data_source"] = ["Unknown source"]*n_time_steps
+        df["original_data"] = [True]*n_time_steps
+        original_labels = ["Unknown source"]
     df["data_source_codes"] = pd.Categorical(df["data_source"]).codes
 
     pca_result = PCA_plot(df, all_self_distances)
