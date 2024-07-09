@@ -7,8 +7,6 @@
 EMAIL="lukas.petersen@kit.edu"
 
 queue_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/qpython_justus.sh"
-# For data readin in kgcnn
-export BABEL_DATADIR="/opt/bwhpc/common/chem/openbabel/3.1.1"
 
 print_usage() {
   echo "Usage: 'submit_python_file.sh' to run without wandb or 'submit_python_file.sh -s' to sync to wandb"
