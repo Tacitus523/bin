@@ -26,17 +26,27 @@ export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_develo
     --r_max=8.0 \
     --max_num_epochs=50 \
     --device=cuda \
-    --loss="charges_energy_forces" \
+    --loss="energy_forces" \
+    --energy_key="ref_energy" \
+    --forces_key="ref_force" \
+    --charges_key="ref_charge" \
     --formal_charges_from_data \
-    --charges_key="charge" \
     --error_table="EFQRMSE" \
     --scale_atsize=1.0 \
-    --charges_weight=100 \
+    --energy_weight=1 \
+    --forces_weight=100 \
+    --charges_weight=50 \
+    --swa \
+    --swa_energy_weight=1000 \
+    --swa_forces_weight=100 \
+    --ema \
+    --ema_decay=0.99 \
     --restart_latest \
-    --results_dir="results"\
+    --results_dir="results" \
     --save_cpu \
     --wandb \
     --wandb_project='Dipeptid' \
     --wandb_entity='ml4elstner' \
-    --wandb_name='mace_02' \
+    --wandb_name $(basename $PWD) \
     --wandb_log_hypers lr lr_factor lr_scheduler_gamma batch_size max_num_epochs energy_weight forces_weight charges_weight r_max hidden_irreps MLP_irreps valid_fraction
+    # --start_swa=450 \
