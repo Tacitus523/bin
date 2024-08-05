@@ -1,7 +1,5 @@
 #!/bin/bash
 #$ -cwd
-#$ -o metadynamics.out
-#$ -e metadynamics.err
 
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
