@@ -1,5 +1,7 @@
 #!/bin/bash
 #$ -cwd
+#$ -o metadynamics.out
+#$ -e metadynamics.err
 
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
@@ -31,7 +33,7 @@ export GMX_MAXBACKUP=-1
 export PLUMED_MAXBACKUP=-1
 
 sourcedir=$PWD
-workdir=/scratch/$USER/orca_$JOB_ID
+workdir=/scratch/$USER/metadynamic_$JOB_ID
 
 tpr_file=$1
 shift
