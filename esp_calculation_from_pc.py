@@ -8,6 +8,7 @@ from scipy.spatial.distance import cdist
 
 angstrom_to_bohr = 1.8897259886
 atomic_units_to_volt = 27.211386245988
+atomic_units_to_volt_per_angstrom = 51.4220675112 # 27.21... * 1.88...(H/e to V * Bohr to Angstrom), Wikipedia says 5.1422 and is wrong
 
 # for testing
 testing = False
@@ -65,13 +66,14 @@ def main():
 
         esps, gradients = calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges)
 
+        # Unit conversion
         if unit=="au":
-            esps = esps/angstrom_to_bohr # from e/Angstrom to e/bohr(atomic unit)
+            esps = esps/angstrom_to_bohr # from e/Angstrom to e/Bohr(atomic unit)
+            gradients = gradients/angstrom_to_bohr/angstrom_to_bohr # from e/Angstrom^2 to e/Bohr^2(atomic unit) 
         elif unit=="V":
             esps = esps/angstrom_to_bohr*atomic_units_to_volt # from e/Angstrom to e/Bohr(atomic unit) to V
+            gradients = gradients/angstrom_to_bohr/angstrom_to_bohr*atomic_units_to_volt_per_angstrom # from e/Angstrom^2 to e/Bohr^2(atomic unit) to V/Angstrom
             
-        gradients = gradients/angstrom_to_bohr/angstrom_to_bohr # from e/Angstrom^2 to e/Bohr^2 
-        
         esps_array.append(esps)
         gradients_array.append(gradients)
         if write_in_folder is True:

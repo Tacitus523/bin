@@ -29,7 +29,7 @@ DATASET_NAME: str = "Alanindipeptide" # Used in naming plots and looking for dat
 
 #TRAJECTORY_FILE: str = "run.xtc" # Path to the trajectory file
 TRAJECTORY_FILE: str = "traj_comp.xtc" # Path to the trajectory file
-TOPOLOGY_FILE: str = "run.gro" # Path to the topology file (e.g., .gro or .pdb)
+TOPOLOGY_FILE: str = "geom.gro" # Path to the topology file (e.g., .gro or .pdb)
 
 N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
 N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
@@ -63,12 +63,12 @@ def main() -> None:
 
     valid_dirs = []
     for dir in present_dirs:
-        if not os.path.exists(os.path.join(dir, starting_idxs_file)):
-            continue
         if not os.path.exists(os.path.join(dir, TRAJECTORY_FILE)):
             continue
+        # Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
         if not os.path.exists(os.path.join(dir, TOPOLOGY_FILE)):
-            # Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
+            if not os.path.exists(os.path.join(dir, starting_idxs_file)):
+                continue
             starting_idxs = np.loadtxt(os.path.join(dir,starting_idxs_file), dtype=int)
             if starting_idxs.ndim == 0:
                 final_starting_idx = int(starting_idxs)
@@ -79,6 +79,7 @@ def main() -> None:
             shutil.copy(gro_to_copy, os.path.join(dir, TOPOLOGY_FILE))
         valid_dirs.append(dir)
     valid_dirs = sorted(valid_dirs)
+    print(f"Valid directories: {valid_dirs}")
 
     data_directory = os.path.normpath(DATA_DIRECTORY)
     dataset = MemoryGraphDataset(data_directory=data_directory, dataset_name=DATASET_NAME)
@@ -93,11 +94,15 @@ def main() -> None:
 
 
 def analyze_bond_distances(dataset: MemoryGraphDataset, collection_folder_name: str = None) -> None:
-    starting_idxs = np.loadtxt(starting_idxs_file, dtype=int)
-    if starting_idxs.ndim == 0:
-        final_starting_idx = int(starting_idxs)
-    else:
-        final_starting_idx = int(starting_idxs[-1])
+    try:
+        starting_idxs = np.loadtxt(starting_idxs_file, dtype=int)
+        if starting_idxs.ndim == 0:
+            final_starting_idx = int(starting_idxs)
+        else:
+            final_starting_idx = int(starting_idxs[-1])
+    except FileNotFoundError:
+        print(f"{os.getcwd()}: No starting_idxs file found for bond connectivity, defaulting to 0")
+        final_starting_idx = 0
 
     # Get the atomic numbers and elements of the atoms in the bonds
     atomic_number_element_dict = constants.atomic_number_to_element

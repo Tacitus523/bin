@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --time=72:00:00
 #SBATCH --output=train.out
 #SBATCH --error=train.err
@@ -23,6 +23,9 @@ if [ -f ~/.api_keys ]; then
     . ~/.api_keys
 fi
 
+# For data readin in kgcnn
+module load chem/openbabel
+
 # For WandB:
 export WANDB_MODE=offline # no internet connection during calculation on nodes
 
@@ -40,5 +43,6 @@ echo "GPU Ordinal: $GPU_DEVICE_ORDINAL"
 if [ -z "$config_path" ]
 then time python3 $pythonfile -g 0 # SLURM restricts the visible GPUs itself, so GPU_ID is always 0
 else time python3 $pythonfile -g 0 -c $config_path
+#else time python3 $pythonfile --gpu 0 --category PAiNN.EnergyForceModel --hyper $config_path
 fi
 

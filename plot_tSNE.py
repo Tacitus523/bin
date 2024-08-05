@@ -64,10 +64,10 @@ def main():
         original_labels = list(df["original_data"].unique())
         if adaptive_sampling_label in original_labels:
             original_labels.remove(adaptive_sampling_label)
-        n_original_labels = len(original_labels)
     else:
-        df["data_source"] = ["Unknown source"]*len(df)
-        df["original_data"] = [True]*len(df)
+        df["data_source"] = ["Unknown source"]*n_time_steps
+        df["original_data"] = [True]*n_time_steps
+        original_labels = ["Unknown source"]
     df["data_source_codes"] = pd.Categorical(df["data_source"]).codes
 
     pca_result = PCA_plot(df, all_self_distances)
@@ -81,9 +81,9 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
     pca_result = pca.fit_transform(features)
     print('PCA done! Time elapsed: {} seconds'.format(time.time()-time_start))
 
-    df["PCA 1"] = pca_result[:,0]
-    df["PCA 2"] = pca_result[:,1] 
-    df["PCA 3"] = pca_result[:,2]
+    df["PC 1"] = pca_result[:,0]
+    df["PC 2"] = pca_result[:,1] 
+    df["PC 3"] = pca_result[:,2]
 
     print(f"Explained variation per first 3 principal component: {pca.explained_variance_ratio_[:3]}")
     print(f"Explained variation sum of principal components: {np.sum(pca.explained_variance_ratio_)}")
@@ -91,14 +91,14 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
     fig = plt.figure(figsize=(20,10))
     ax = fig.add_subplot()
     sns.scatterplot(
-    x="PCA 1", y="PCA 2",
+    x="PC 1", y="PC 2",
     hue="data_source",
     palette=sns.color_palette("hls", 10),
     data=df,
     legend="full",
     alpha=0.3)
-    ax.set_xlabel('PCA 1', fontsize=FONTSIZE)
-    ax.set_ylabel('PCA 2', fontsize=FONTSIZE)
+    ax.set_xlabel('PC 1', fontsize=FONTSIZE)
+    ax.set_ylabel('PC 2', fontsize=FONTSIZE)
     plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
     legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE, bbox_to_anchor=(1.05, 1))
     for legend_handle in legend.legend_handles: 
@@ -288,4 +288,5 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     plt.savefig("2D_UMAP_plot.png", dpi=DPI, bbox_inches = "tight")
     plt.close()
 
-main()
+if __name__ == "__main__":
+    main()

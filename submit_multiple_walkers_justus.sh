@@ -1,6 +1,6 @@
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
-N_WALKER=16 # Also has to be adjusted in plumed.dat
+N_WALKER=32 # Also has to be adjusted in plumed.dat
 WALKER_SCRIPT="/lustre/home/ka/ka_ipc/ka_he8978/bin/multiple_walkers_justus.sh"
 
 print_usage() {
