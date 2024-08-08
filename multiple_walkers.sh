@@ -31,7 +31,7 @@ export GMX_MAXBACKUP=-1
 export PLUMED_MAXBACKUP=-1
 
 sourcedir=$PWD
-workdir=/scratch/$USER/orca_$JOB_ID
+workdir=/scratch/$USER/metadynamic_$JOB_ID
 
 tpr_file=$1
 shift

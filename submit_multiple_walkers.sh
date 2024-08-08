@@ -45,4 +45,4 @@ fi
 
 jobname=$(basename $tpr_file .tpr) # Use the tpr file name as the job name
 
-qsub -N $jobname -pe nproc $N_WALKER $WALKER_SCRIPT $tpr_file $plumed_file $other_files
+qsub -N $jobname -pe nproc $N_WALKER -o $out_file -e $error_file $WALKER_SCRIPT $tpr_file $plumed_file $other_files
