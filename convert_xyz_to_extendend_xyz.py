@@ -5,8 +5,9 @@ from typing import Tuple, Generator, Sequence
 
 from ase import Atoms
 
-DATA_FOLDER: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water"
-GEOM_FILE: str = "geoms.xyz" # Angstrom units to Angstrom units
+#DATA_FOLDER: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water"
+DATA_FOLDER: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+GEOM_FILE: str = "ThiolDisulfidExchange.xyz" # Angstrom units to Angstrom units
 ENERGY_FILE: str = "energies.txt" # Hartree to eV
 FORCE_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, assumed to be not actually forces but gradients, transformed to forces by multiplying by -1
 CHARGE_FILE: str = "charges.txt" # e to e
@@ -14,9 +15,19 @@ ESP_FILE: str = "esps_by_mm.txt" # H/e to eV/e, optional, gets filled with zeros
 ESP_GRADIENT_FILE: str = "esp_gradients_conv.xyz" # H/e/B to eV/e/A, xyz format, transformed to electric field by multiplying by -1, optional, gets filled with zeros if not present
 OUTFILE: str = "geoms.extxyz"
 
-TOTAL_CHARGE: float = 0.0 # e to e
-BOXSIZE: float = 3.0 # nm to Angstrom, assuming cubic box, irrelevant unless periodic system
+#TOTAL_CHARGE: float = 0.0 # e to e
+TOTAL_CHARGE: float = -1.0 # e to e
+BOXSIZE: float = 22.0 # nm to Angstrom, assuming cubic box, irrelevant unless periodic system
 
+# Property keys in .extxyz file, are expected like this in mace scripts
+energy_key: str = "ref_energy"
+force_key: str = "ref_force"
+charge_key: str = "ref_charge"
+esp_key: str = "esp"
+esp_gradient_key: str = "electric_field"
+total_charge_key: str = "total_charge"
+
+# Conversion factors
 H_to_eV = 27.211386245988
 H_B_to_eV_A = 51.422086190832
 e_to_e = 1.0
@@ -79,7 +90,7 @@ def write_extxyz(outfile, molecules, energies, forces, charges, esps, electric_f
     with open(outfile, 'w') as file:
         for mol_idx, (n_atoms, comment, atoms) in enumerate(molecules):
             file.write(f"{n_atoms}\n")
-            file.write(f'Lattice="{lattice_vector}" Properties=species:S:1:pos:R:3:ref_force:R:3:ref_charge:R:1:esp:R:1:electric_field:R:3 ref_energy={energies[mol_idx]} total_charge={TOTAL_CHARGE} pbc="F F F" comment="{comment}"\n')
+            file.write(f'Lattice="{lattice_vector}" Properties=species:S:1:pos:R:3:{force_key}:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 {energy_key}={energies[mol_idx]} {total_charge_key}={TOTAL_CHARGE} pbc="F F F" comment="{comment}"\n')
             for at_idx, atom in enumerate(atoms):
                 atom_line = " ".join(atom[:4])  # Assuming atom format is [element, x, y, z]
                 force_line = " ".join(map(lambda x: f"{x: .8f}", forces[mol_idx][at_idx]))
@@ -100,8 +111,8 @@ def main():
     # Read data
     molecules: Sequence[int, str, Atoms] = list(read_xyz(geom_file)) # List of tuples (n_atoms, comment, Atoms)
     energies: np.ndarray = load_energy_data(energy_file)
-    charges: list = load_charge_data(charge_file) # Possibly ragged list
-    forces: list = load_force_data(force_file) # Possibly ragged list
+    charges: Sequence[np.ndarray] = load_charge_data(charge_file) # Possibly ragged list
+    forces: Sequence[np.ndarray] = load_force_data(force_file) # Possibly ragged list
     if os.path.exists(esp_file) and os.path.exists(esp_gradient_file):
         print("ESP files found")
         esps, gradients = load_esp_data(esp_file, esp_gradient_file) # Possibly ragged lists
