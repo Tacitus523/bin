@@ -11,7 +11,7 @@
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
 N_WALKER=$SLURM_NTASKS_PER_NODE
-GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
+GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch/bin/GMXRC"
 
 echo "Starting multiple walkers: $(date)"
 
@@ -46,13 +46,13 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_QM_COORD=100
 #export GMX_DFTB_MM_COORD=100
 #export GMX_DFTB_MM_COORD_FULL=100
-export GMX_N_TF_MODELS=3 # Number of neural network models
-export GMX_TF_MODEL_PATH_PREFIX="model_energy_force_painn" # Prefix of the path to the neural network models
+export GMX_N_MODELS=3 # Number of neural network models
+export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
 export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.01  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
 export GMX_NN_EVAL_FREQ=100 # Frequency of evaluation of the neural network, 1 means every step
-export GMX_NN_ARCHITECTURE="painn" # Architecture of the neural network, hdnnp, schnet or painn
-export GMX_NN_SCALER="scaler.json" # Scaler file for the neural network, optional, empty string if not applicable
+export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or maceqeq for pytorch
+export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
 export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
 
@@ -84,7 +84,7 @@ mkdir -vp $workdir
 cp -r -v $tpr_file $plumed_file $other_files $workdir
 cd $workdir
 
-export GMX_TF_MODEL_PATH_PREFIX=$(readlink -f $GMX_TF_MODEL_PATH_PREFIX) # Convert to absolute path
+export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
 
 # Create directories for each walker
 for i in `seq 0 $((N_WALKER-1))`

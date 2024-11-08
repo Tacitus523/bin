@@ -79,5 +79,7 @@ do
 	echo $folder >> $GEOMS_FILE
 	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'CARTESIAN COORDINATES (ANGSTROEM)' | tac | awk 'FNR>2{print}' >> $GEOMS_FILE
 
+	echo $1 >> $FORCES_FILE
+	echo $folder >> $FORCES_FILE
 	tac $folder/$3.out | grep -B $(($1+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%+4.9f %+4.9f %+4.9f\n", $4, $5, $6}' >> $FORCES_FILE
 done

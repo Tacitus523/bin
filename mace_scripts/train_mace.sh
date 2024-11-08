@@ -23,7 +23,11 @@ MODEL_TYPE="maceQEq"
 WANDB_PROJECT="Dipeptid"
 # WANDB_PROJECT="Thioldisulfide_Water"
 WANDB_ENTITY="ml4elstner" # Gets submitted into the group folder like this
-WANDB_NAME=$(basename $PWD)
+if [ -z $SLURM_JOB_NAME ]; then
+    WANDB_NAME=$(basename $PWD)
+else
+    WANDB_NAME=$SLURM_JOB_NAME
+fi
 
 export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools
 export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange
@@ -33,17 +37,17 @@ export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_develo
     --train_file=$TRAIN_FILE \
     --valid_file=$VALID_FILE \
     --test_file=$TEST_FILE \
-    --batch_size=100 \
-    --valid_batch_size=200 \
+    --batch_size=10 \
+    --valid_batch_size=10 \
     --eval_interval=1 \
     --config_type_weights='{"Default":1.0}' \
     --E0s='{1: -13.575035506869515, 6: -1029.6173622986487, 7: -1485.1410643783852, 8: -2042.617308911902, 16: -10832.265333248919}' \
     --model=$MODEL_TYPE \
     --hidden_irreps='64x0e+64x1o' \
     --r_max=8.0 \
-    --max_num_epochs=50 \
+    --max_num_epochs=100 \
     --device=cuda \
-    --loss="energy_forces" \
+    --loss="charges_energy_forces" \
     --energy_key="ref_energy" \
     --forces_key="ref_force" \
     --charges_key="ref_charge" \
@@ -79,3 +83,5 @@ export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_develo
     # --quadrupole_feature_corrections \ # Polarizable model only
     # --valid_fraction=0.05 \ # Retired with the introduction of the valid.extxyz file
     # --start_swa=450 \ # Default is last 20% of epochs, which seems simpler to use
+
+

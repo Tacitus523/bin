@@ -21,8 +21,8 @@ done
 
 ESPS_FILE=esps_by_qmmm.txt
 
-#bash /lustre/home/ka/ka_ipc/ka_he8978/bin/extract_qm_information.sh $1 $2 $3
-bash /home/lpetersen/bin/extract_qm_information.sh $1 $2 $3
+bash /lustre/home/ka/ka_ipc/ka_he8978/bin/extract_qm_information.sh $1 $2 $3
+#bash /home/lpetersen/bin/extract_qm_information.sh $1 $2 $3
 
 if [ -f $ESPS_FILE ]
 then rm $ESPS_FILE
@@ -35,5 +35,5 @@ fi
 # 	echo '' >> $ESPS_FILE # basicially makes a \n 
 # done
 
-#bash /lustre/home/ka/ka_ipc/ka_he8978/bin/run_esp_calc.sh $2 $3
-qsub /home/lpetersen/bin/run_esp_calc.sh $2 $3
+bash /lustre/home/ka/ka_ipc/ka_he8978/bin/run_esp_calc.sh $1 $2 $3
+#qsub /home/lpetersen/bin/run_esp_calc.sh $1 $2 $3

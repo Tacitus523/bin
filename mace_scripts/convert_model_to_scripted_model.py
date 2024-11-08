@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# This script converts a model saved with torch.save to a scripted model saved with torch.jit.save
+# This script converts a model saved with torch.save to a scripted model saved with torch.jit.save, which can be used in C++.
 import argparse
 import os
 import sys

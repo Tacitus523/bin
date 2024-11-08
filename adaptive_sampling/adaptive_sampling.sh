@@ -6,10 +6,11 @@ PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas
 #GROMACS_NN_PATH="/data/lpetersen/gromacs-adaptive-sampling/bin/GMXRC" # Path to compiled gromacs bin with installed GMXRC
 #BLAS_PATH="/usr/local/run/OpenBLAS-0.3.10/lib"
 #PLUMED_PATH="/usr/local/run/plumed-2.5.1-openblas/lib"
-GMX_N_TF_MODELS=3 # Amount of trained models to use for the adaptive sampling, suffix of the models
-GMX_TF_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
+GMX_N_MODELS=3 # Amount of trained models to use for the adaptive sampling, suffix of the models
+GMX_MODEL_PATH_PREFIX="model_energy_force" # prefix of the models
 GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.002 # Threshold for the energy standard deviation between models for a structure to be considered relevant
 GMX_FORCE_PREDICTION_STD_THRESHOLD=0.004 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
+GMX_NN_ARCHITECTURE="hdnnp" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or maceqeq for pytorch
 GMX_NN_EVAL_FREQ=1 # Frequency of evaluation of the neural network, 1 means every step
 
 N_ITERATIONS=10 # Amount of repeated adaptive samplings+retrainings
@@ -57,6 +58,12 @@ EPOCHS=200 # Epochs each model gets trained with the new dataset
 
 DEBUG=false # Prints all gromacs outputs, if true. Otherwise redirects to /dev/null
 
+
+extraction_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/extract_qmmm_information.sh"
+energy_diff_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/calculate_energy_diff.py"
+preparation_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/prepare_data.py"
+retraining_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/transfer_learning.py"
+
 ##### Util ######
 remove_folder_if_exists() {
     local folder_to_delete=$1
@@ -64,11 +71,6 @@ remove_folder_if_exists() {
     then rm -r "$folder_to_delete"
     fi
 }
-
-extraction_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/extract_qmmm_information.sh"
-energy_diff_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/calculate_energy_diff.py"
-preparation_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/prepare_data.py"
-retraining_script="/lustre/home/ka/ka_ipc/ka_he8978/kgcnn_fork/transfer_learning.py"
 
 ######################################################################
 ######################START UNIQUE ACTIONS############################
@@ -85,7 +87,7 @@ CONDA_HOME=$(dirname $(dirname $CONDA_EXE))
 source $CONDA_HOME/etc/profile.d/conda.sh
 conda activate $PYTHON_ENV
 
-absolute_model_prefix="$(readlink -f "$GMX_TF_MODEL_PATH_PREFIX")"
+absolute_model_prefix="$(readlink -f "$GMX_MODEL_PATH_PREFIX")"
 absolute_mdp_file_path="$(readlink -f "$AS_MDP_FILE")"
 absolute_plumed_file_path="$(readlink -f "$PLUMED_FILE")"
 absolute_training_indices_file_path="$(readlink -f "$TRAINING_INDICES_FILE")"
@@ -321,8 +323,8 @@ export GMX_MAXBACKUP=-1
 export PLUMED_MAXBACKUP=-1
 export GMX_QMMM_VARIANT=2
 export OMP_NUM_THREADS=1
-export GMX_N_TF_MODELS=$GMX_N_TF_MODELS # Amount of trained models to use for the adaptive sampling, suffix of the models
-export GMX_TF_MODEL_PATH_PREFIX=$absolute_model_prefix # prefix of the models
+export GMX_N_MODELS=$GMX_N_MODELS # Amount of trained models to use for the adaptive sampling, suffix of the models
+export GMX_MODEL_PATH_PREFIX=$absolute_model_prefix # prefix of the models
 export GMX_ENERGY_PREDICTION_STD_THRESHOLD=$GMX_ENERGY_PREDICTION_STD_THRESHOLD # Threshold for the deviation between models for a structure to be considered relevant, energy std threshold has priority
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=$GMX_FORCE_PREDICTION_STD_THRESHOLD # Threshold for the deviation between models for a structure to be considered relevant
 export GMX_NN_EVAL_FREQ=$GMX_NN_EVAL_FREQ # Frequency of evaluation of the neural network
@@ -378,6 +380,7 @@ do
     # TODO:Index file per molecule
 
     orca_sampler_folder="$root_dir/orca_calculations/$ORCA_FOLDER_PREFIX\$sampler_job_idx"
+    
     # Clean previous run
     if [ -d "\$orca_sampler_folder" ]
         then rm -r "\$orca_sampler_folder"
