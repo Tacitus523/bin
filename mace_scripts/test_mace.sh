@@ -10,8 +10,9 @@
 
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
-TRAIN_FILE="$DATA_FOLDER/geoms.extxyz"
-VALID_FILE="$DATA_FOLDER/valid.extxyz"
+VALID_FILE="$DATA_FOLDER/geoms.extxyz"
+TEST_FILE="qm_mlmm.extxyz"
+TRAIN_FILE="$TEST_FILE" # Dummy entry, not used, because this gets shuffled anyway
 
 export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools
 export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange
@@ -20,7 +21,7 @@ python /home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/test_mo
     --name="model_test" \
     --train_file="$TRAIN_FILE" \
     --valid_file="$VALID_FILE" \
-    --test_file="qm_mlmm.extxyz" \
+    --test_file="$TEST_FILE" \
     --energy_key="ref_energy" \
     --forces_key="ref_force" \
     --charges_key="ref_charge" \
