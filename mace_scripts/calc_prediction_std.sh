@@ -4,7 +4,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=72:00:00
 #SBATCH --output=std_calc.out
-#SBATCH --error=std_calc.err
+#SBATCH --error=std_calc.out
 #SBATCH --gres=gpu:1
 
 TEST_FILE="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum/test.extxyz"
