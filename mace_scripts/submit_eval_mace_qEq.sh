@@ -1,1 +1,2 @@
-sbatch /home/ka/ka_ipc/ka_he8978/bin/mace_scripts/eval_mace_qEq.sh
+#!/bin/bash
+sbatch eval_mace_qEq.sh
