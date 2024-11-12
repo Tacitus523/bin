@@ -1,23 +1,30 @@
-#Give atom number as $1, folder-prefix as $2, file-prefix as $3
+#Give folder-prefix as $1, file-prefix as $2
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
-if [[ -z $1 || -z $2 || -z $3 ]]
+if [[ -z $1 || -z $2 ]]
 then
-    echo `date`" - Missing mandatory arguments:  total atom number, folder-prefix or file-prefix"
-    echo `date`" - Usage: ./extract_qm_information.sh  [total atom number] [folder-prefix] [file-prefix]"
+    echo `date`" - Missing mandatory arguments: folder-prefix or file-prefix"
+    echo `date`" - Usage: ./extract_qm_information.sh [folder-prefix] [file-prefix]"
     exit 1
 fi
 
-folders=$(find $2* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folders=$(find $1* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
-	if ! [ -f $folder/$3.out ]
+	if ! [ -f $folder/$2.out ]
 	then
-		echo "No file named $folder/$3.out"
+		echo "No file named $folder/$2.out"
 		exit 1
 	fi
 	break
 done
+
+remove_if_exists() {
+	local file=$1
+	if [ -f $file ]
+	then rm $file
+	fi
+}
 
 FOLDER_FILE=folder_order.txt
 CHARGES_MULL_FILE=charges_mull.txt
@@ -28,58 +35,37 @@ ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
 FORCES_FILE=forces.xyz
 
-if [ -f $FOLDER_FILE ]
-then rm $FOLDER_FILE
-fi
-
-if [ -f $CHARGES_MULL_FILE ]
-then rm $CHARGES_MULL_FILE
-fi
-
-if [ -f $CHARGES_HIRSH_FILE ]
-then rm $CHARGES_HIRSH_FILE
-fi
-
-if [ -f $CHARGES_LOEW_FILE ]
-then rm $CHARGES_LOEW_FILE
-fi
-
-# if [ -f $CHARGES_ESP_FILE ]
-# then rm $CHARGES_ESP_FILE
-# fi
-
-if [ -f $ENERGIES_FILE ]
-then rm $ENERGIES_FILE
-fi
-
-if [ -f $GEOMS_FILE ]
-then rm $GEOMS_FILE
-fi
-
-if [ -f $FORCES_FILE ]
-then rm $FORCES_FILE
-fi
+remove_if_exists $FOLDER_FILE
+remove_if_exists $CHARGES_MULL_FILE
+remove_if_exists $CHARGES_HIRSH_FILE
+remove_if_exists $CHARGES_LOEW_FILE
+#remove_if_exists $CHARGES_ESP_FILE
+remove_if_exists $ENERGIES_FILE
+remove_if_exists $GEOMS_FILE
+remove_if_exists $FORCES_FILE
 
 for folder in $folders
 do
+	num_atoms=$(grep -m 1 "Number of atoms" $folder/$2.out | awk '{print $NF}')
+
 	echo $folder >> $FOLDER_FILE
 	# works with multip steps Orca .outs, only greps last occurence, tac = reverse cat, -m 1 = maximal 1 occurence 
-	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
-	tac $folder/$3.out | grep -B $(($1+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
-	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
-	#awk '{print $5}' $folder/$3.molden.chg | tr '\n' ' ' >> $CHARGES_ESP_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $2}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
+	#awk '{print $5}' $folder/$2.molden.chg | tr '\n' ' ' >> $CHARGES_ESP_FILE
 
 	echo '' >> $CHARGES_MULL_FILE # basicially makes a \n
 	echo '' >> $CHARGES_HIRSH_FILE # basicially makes a \n 
 	echo '' >> $CHARGES_LOEW_FILE # basicially makes a \n
 	#echo '' >> $CHARGES_ESP_FILE # basicially makes a \n 
 
-	tac $folder/$3.out | grep -m 1 'FINAL SINGLE' | tac | awk '{print $5}' >> $ENERGIES_FILE
-	echo $1 >> $GEOMS_FILE
+	tac $folder/$2.out | grep -m 1 'FINAL SINGLE' | tac | awk '{print $5}' >> $ENERGIES_FILE
+	echo $num_atoms >> $GEOMS_FILE
 	echo $folder >> $GEOMS_FILE
-	tac $folder/$3.out | grep -B $(($1+1)) -m 1 'CARTESIAN COORDINATES (ANGSTROEM)' | tac | awk 'FNR>2{print}' >> $GEOMS_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+1)) -m 1 'CARTESIAN COORDINATES (ANGSTROEM)' | tac | awk 'FNR>2{print}' >> $GEOMS_FILE
 
-	echo $1 >> $FORCES_FILE
+	echo $num_atoms >> $FORCES_FILE
 	echo $folder >> $FORCES_FILE
-	tac $folder/$3.out | grep -B $(($1+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%+4.9f %+4.9f %+4.9f\n", $4, $5, $6}' >> $FORCES_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%+4.9f %+4.9f %+4.9f\n", $4, $5, $6}' >> $FORCES_FILE
 done

@@ -26,7 +26,7 @@ def calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges):
     gradients = -1*np.sum(directions * gradient_magnitudes[:, :, np.newaxis], axis=1) # shape: (n_qm_atoms, 3)
     return esps, gradients
     
-def write_files(folders, n_atoms, esps_list, gradients_list):
+def write_files(folders, n_qm_atoms_list, esps_list, gradients_list):
     esp_file = open(ESP_FILE_NAME, "w")
     for esp in esps_list:
         esp_string = np.array2string(esp, separator=" ", suppress_small=True, formatter={'float_kind':lambda x: "%3.5f" % x})
@@ -35,26 +35,28 @@ def write_files(folders, n_atoms, esps_list, gradients_list):
     esp_file.close()
 
     esp_grad_file = open(ESP_GRAD_FILE_NAME, "w")
-    for grad, folder in zip(gradients_list, folders):
+    for grad, n_qm_atoms, folder in zip(gradients_list, n_qm_atoms_list, folders):
         grad_string = np.array2string(grad, separator=" ", suppress_small=True, formatter={'float_kind':lambda x: "%3.7f" % x})
         grad_string = "\n".join([line.strip("[] ") for line in grad_string.split("\n")]) + "\n" # Remove brackets and leading spaces
 
-        esp_grad_file.write(f"{n_atoms}\n")
+        esp_grad_file.write(f"{n_qm_atoms}\n")
         esp_grad_file.write(f"{folder}\n")
         esp_grad_file.write(grad_string)
     esp_grad_file.close()
 
 def main():
     ap = argparse.ArgumentParser(description="Calculates the ESP from MM-atoms on QM-atoms from Orca-input and -pointcharge files")
-    ap.add_argument("-n", "--n_atoms", type=int, dest="n_atoms", action="store", required=True, help="Number of atoms in the QM-part of the calculation, default: None", metavar="n_atoms")
     ap.add_argument("-d", "--dir", default=None, type=str, dest="folder_prefix", action="store", required=False, help="Prefix of the directionaries with the orca-calculations, default: None", metavar="folder_prefix")
     ap.add_argument("-i", "--input", type=str, dest="input_prefix", action="store", required=True, help="Prefix of the Input-file for the orca-calculation", metavar="file_prefix")
     ap.add_argument("-u", "--unit", choices=["V", "au"], default="au", type=str, dest="unit", action="store", required=False, help="Unit of the ESP, default: atomic units(au)", metavar="unit")
+    ap.add_argument("-n", "--n_atoms", type=int, default=None, required=False, help="Deprecated: Now read from the input-file")
     args = ap.parse_args()
-    n_atoms = args.n_atoms
     folder_prefix = args.folder_prefix
     input_prefix = args.input_prefix
     unit= args.unit
+    old_n_atoms = args.n_atoms
+    if old_n_atoms is not None:
+        print("WARNING: The argument --n_atoms is deprecated and will be ignored. The number of atoms is now read from the input-file.")
 
     input_file = input_prefix + ".inp"
     point_charge_file = input_prefix + ".pc"
@@ -75,6 +77,7 @@ def main():
 
     esps_list = []
     gradients_list = []
+    n_qm_atoms_list = []
     write_in_folder = True
     for folder in folders:
         os.chdir(folder)
@@ -85,6 +88,7 @@ def main():
         qm_coords = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(1,2,3))
         mm_coords = np.genfromtxt(point_charge_file, skip_header=1, usecols=(1,2,3))
         mm_charges = np.genfromtxt(point_charge_file, skip_header=1, usecols=(0,))
+        n_qm_atoms = qm_coords.shape[0]
 
         esps, gradients = calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges)
 
@@ -98,17 +102,18 @@ def main():
             
         esps_list.append(esps)
         gradients_list.append(gradients)
+        n_qm_atoms_list.append(n_qm_atoms)
 
         if write_in_folder is True:
             try:
-                write_files([folder], n_atoms, [esps], [gradients])
+                write_files([folder], [n_qm_atoms], [esps], [gradients])
             except:
                 print("WARNING: Was not able to write into", folder)
                 write_in_folder = False
         
         os.chdir(original_folder)
 
-    write_files(folders, n_atoms, esps_list, gradients_list)
+    write_files(folders, n_qm_atoms_list, esps_list, gradients_list)
 
 def test_function():
     qm_coords = np.array([
@@ -138,7 +143,7 @@ def test_function():
     assert np.allclose(test_gradients, target_gradients), f"\ntest_gradients:\n{test_gradients}\ntarget_gradients:\n{target_gradients}"
 
     print("Writing test files")
-    write_files(["test_folder"], 3, [test_esps], [test_gradients])
+    write_files(["test_folder"], [3], [test_esps], [test_gradients])
 
     print("Success")
     

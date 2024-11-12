@@ -4,14 +4,13 @@
 #$ -o esp_calc.o$JOB_ID
 #$ -e esp_calc.e$JOB_ID
 
-# atom_number as $1, folder-prefix as $2, file-prefix as $3
+# folder-prefix as $1, file-prefix as $2
 
 #CONDA_DIR="$HOME/miniconda3"
-ESPS_BY_MM_FILE="esps_by_mm.txt"
-ESP_GRADIENT_FILE="esp_gradients.txt"
+ESPS_BY_MM_FILE="esps_by_mm.txt" # file name hardcoded like this in esp_calculation_script
+ESP_GRADIENT_FILE="esp_gradients.txt" # file name hardcoded like this in esp_calculation_script
 
-esp_calculation_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/esp_calculation_from_pc.py"
-#esp_calculation_script="/home/lpetersen/bin/esp_calculation_from_pc.py"
+esp_calculation_script="esp_calculation_from_pc.py"
 
 if [ -f $ESPS_BY_MM_FILE ]
 then rm $ESPS_BY_MM_FILE
@@ -28,16 +27,8 @@ fi
 # PYTHONPATH=$PWD:$PYTHONPATH
 
 echo "Start ESP calculation `date`"
-python3 $esp_calculation_script --n_atoms $1 --dir $2 --input $3 --unit V # ESP in Volt, change to au, if requiered
-# python3 $esp_calculation_script --n_atoms $1 --dir $2 --input $3 --unit V # ESP in Volt, change to au, if requiered
+python3 $esp_calculation_script --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
+# python3 $esp_calculation_script --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
 echo "End ESP calculation `date`"
 
 source_dir=$PWD
-
-# for folder in $1*
-#     do 
-#     cd $folder
-#     cat esps_by_mm.txt >> $source_dir/$ESPS_BY_MM_FILE # first file name hardcoded like this in esp_calculation_from_pc.py
-#     cat esp_gradients.txt >> $source_dir/$ESP_GRADIENT_FILE # first file name hardcoded like this in esp_calculation_from_pc.py
-#     cd $source_dir
-# done
