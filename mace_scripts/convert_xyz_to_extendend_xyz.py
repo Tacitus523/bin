@@ -37,7 +37,7 @@ nm_to_A = 10.0
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Give config file")
     ap.add_argument("-c", "--conf", default=None, type=str, dest="config_path", action="store", required=False, help="Path to config file, default: None", metavar="config")
-    ap.add_argument("-g", "--gpuid", type=int) # Just here as a dummy, nothing actually uses a GPU
+    ap.add_argument("-g", "--gpuid", default=None, type=int, required=False) # Just here as a dummy, nothing actually uses a GPU, other scripts got submitted with --gpuid
     args = ap.parse_args()
     return args
 
