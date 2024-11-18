@@ -1,51 +1,66 @@
 #!/bin/bash
 
-TRAIN_SCRIPT="/lustre/home/ka/ka_ipc/ka_he8978/bin/mace_scripts/train_mace.sh"
+TRAIN_SCRIPT="train_mace.sh"
+
+# Default data folder
+#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
+
+# Default number of epochs
+EPOCHS=100
 
 # Default number of submissions
-num_submissions=1
+NUM_SUBMISSIONS=1
 
 # Default job name
 job_name=$(basename $PWD)
 
 print_usage() {
-    echo "Usage: $0 [-n number_of_submissions]" >&2
+    echo "Usage: $0 [-n number_of_submissions] [-e number_of_epochs] [-d data_folder]" >&2
 }
 
 # Parse arguments
-while getopts "n:" opt
+while getopts "n:e:d:" flag
 do
-    case $opt in
-        n) num_submissions=$OPTARG ;;
+    case $flag in
+        e) EPOCHS=${OPTARG};;
+        d) DATA_FOLDER=${OPTARG};;
+        n) NUM_SUBMISSIONS=$OPTARG ;;
         *) print_usage; exit 1 ;;
     esac
 done
 
 # Input validation
-if [ $num_submissions -lt 1 ]
+if [ $NUM_SUBMISSIONS -lt 1 ]
 then
     echo "Number of submissions must be at least 1" >&2
     exit 1
 fi
 
-if [ $num_submissions -gt 10 ]
+if [ $NUM_SUBMISSIONS -gt 10 ]
 then
     echo "Number of submissions must be at most 10" >&2
     exit 1
 fi
 
 # Submit jobs
-if [ $num_submissions -eq 1 ]
+data_folder=$(realpath $DATA_FOLDER)
+echo "Data folder: $data_folder"
+echo "Number of epochs: $EPOCHS"
+echo "Number of submissions: $NUM_SUBMISSIONS"
+
+if [ $NUM_SUBMISSIONS -eq 1 ]
 then
-    sbatch --job-name=$job_name $TRAIN_SCRIPT
+    sbatch --job-name=$job_name $TRAIN_SCRIPT -e $EPOCHS -d $data_folder
     exit 0
 fi
 
-for ((i=0; i<num_submissions; i++))
+for ((i=0; i<NUM_SUBMISSIONS; i++))
 do
     submission_dir="model_$i"
     mkdir -p $submission_dir
     cd $submission_dir
-    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT
+    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $data_folder
     cd ..
 done

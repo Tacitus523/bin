@@ -11,13 +11,34 @@
 
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
-TRAIN_FILE="$DATA_FOLDER/train.extxyz"
-VALID_FILE="$DATA_FOLDER/valid.extxyz"
-TEST_FILE="$DATA_FOLDER/test.extxyz"
+TRAIN_FILE="train.extxyz"
+VALID_FILE="valid.extxyz"
+TEST_FILE="test.extxyz"
+EPOCHS=100
+
+print_usage() {
+    echo "Usage: $0 [-e number_of_epochs] [-d data_folder]" >&2
+}
+
+# Parse command line arguments for epochs and data folder
+while getopts e:d: flag
+do
+    case "${flag}" in
+        e) EPOCHS=${OPTARG};;
+        d) DATA_FOLDER=${OPTARG};;
+        *) print_usage; exit 1;;
+    esac
+done
+
+data_folder=$(realpath $DATA_FOLDER)
+train_file="$data_folder/$TRAIN_FILE"
+valid_file="$data_folder/$VALID_FILE"
+test_file="$data_folder/$TEST_FILE"
 
 MODEL_NAME="QEq"
 MODEL_TYPE="maceQEq"
 #MODEL_TYPE="Polarizable"
+
 
 # Just if you want to use wandb
 WANDB_PROJECT="Dipeptid"
@@ -32,11 +53,20 @@ fi
 export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools"
 export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange"
 
+echo "Starting training: $(date)"
+echo "Data folder: $data_folder"
+echo "Train file: $train_file"
+echo "Valid file: $valid_file"
+echo "Test file: $test_file"
+echo "Model name: $MODEL_NAME"
+echo "Model type: $MODEL_TYPE"
+echo "Number of epochs: $EPOCHS"
+
 /lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/mace_env/bin/python3.12 /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/martin_train.py  \
     --name=$MODEL_NAME \
-    --train_file=$TRAIN_FILE \
-    --valid_file=$VALID_FILE \
-    --test_file=$TEST_FILE \
+    --train_file=$train_file \
+    --valid_file=$valid_file \
+    --test_file=$test_file \
     --batch_size=10 \
     --valid_batch_size=10 \
     --eval_interval=1 \
@@ -45,7 +75,7 @@ export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_devel
     --model=$MODEL_TYPE \
     --hidden_irreps='64x0e+64x1o' \
     --r_max=8.0 \
-    --max_num_epochs=100 \
+    --max_num_epochs=$EPOCHS \
     --device=cuda \
     --loss="charges_energy_forces" \
     --energy_key="ref_energy" \
@@ -85,3 +115,10 @@ export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_devel
     # --start_swa=450 \ # Default is last 20% of epochs, which seems simpler to use
 
 
+echo "Finished training: $(date)"
+
+# Convert the model to a scripted model
+if [ $? -eq 0 ]
+then
+    convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
+fi
