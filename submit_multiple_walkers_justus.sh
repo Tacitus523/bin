@@ -1,11 +1,22 @@
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
+EMAIL="lukas.petersen@kit.edu"
+
 N_WALKER=32 # Also has to be adjusted in plumed.dat
-WALKER_SCRIPT="/lustre/home/ka/ka_ipc/ka_he8978/bin/multiple_walkers_justus.sh"
+WALKER_SCRIPT="multiple_walkers_justus.sh"
 
 print_usage() {
   echo "Usage: 'submit_multiple_walkers_justus.sh tpr_file plumed_file other_files'"
 }
+
+email_flag=""
+while getopts flag
+do
+    case $flag in
+        e) email_flag="--mail-user=$EMAIL --mail-type=END,FAIL";;
+        *) print_usage; exit 1;;
+    esac
+done
 
 tpr_file=$1
 shift
@@ -31,4 +42,4 @@ then
     exit 1
 fi
 
-sbatch --ntasks-per-node=$N_WALKER $WALKER_SCRIPT $tpr_file $plumed_file $other_files
+sbatch $email_flag --ntasks-per-node=$N_WALKER $WALKER_SCRIPT $tpr_file $plumed_file $other_files

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --mem=12G
-#SBATCH --time=48:00:00
+#SBATCH --time=150:00:00
 #SBATCH --job-name=metadynamics
 #SBATCH --output=metadynamics.out
 #SBATCH --error=metadynamics.err
@@ -12,6 +12,7 @@
 
 N_WALKER=$SLURM_NTASKS_PER_NODE
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch/bin/GMXRC"
+
 
 echo "Starting multiple walkers: $(date)"
 
@@ -36,6 +37,41 @@ finalize_job()
     exit 1
 }
 
+# Handles rerun identification and rerun command generation. Checks if HILLS files are present and if WALKER_* folders are present.
+generate_rerun_command() {
+    local files=$1
+    local rerun=false
+    local rerun_command=""
+    for file in $files
+    do
+        if [ -f $file ] && [[ $file == HILLS* ]]
+        then
+            rerun=true
+            break
+        fi
+    done
+
+    if $rerun
+    then
+        for folder in $files
+        do
+            if [ -d $folder ] && [[ $folder == WALKER_* ]]
+            then
+                rerun_command="-cpi state.cpt -append"
+                break
+            fi
+        done
+    fi
+
+    if $rerun && [ -z "$rerun_command" ]
+    then
+        echo "Found HILLS, but no WALKER_* folders, aborting"
+        exit 1
+    fi
+
+    echo $rerun_command
+}
+
 # Call finalize_job function as soon as we receive USR1 signal
 trap 'finalize_job' USR1
 
@@ -48,9 +84,9 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_MM_COORD_FULL=100
 export GMX_N_MODELS=3 # Number of neural network models
 export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.01  # Threshold for the energy standard deviation between models for a structure to be considered relevant
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.03  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
-export GMX_NN_EVAL_FREQ=100 # Frequency of evaluation of the neural network, 1 means every step
+export GMX_NN_EVAL_FREQ=10 # Frequency of evaluation of the neural network, 1 means every step
 export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or maceqeq for pytorch
 export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
@@ -84,17 +120,18 @@ mkdir -vp $workdir
 cp -r -v $tpr_file $plumed_file $other_files $workdir
 cd $workdir
 
+tpr_prefix=$(basename $tpr_file .tpr)
 export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
 
 # Create directories for each walker
 for i in `seq 0 $((N_WALKER-1))`
 do
-    mkdir WALKER_$i
+    mkdir -p WALKER_$i
     cp $plumed_file WALKER_$i
     cp $tpr_file WALKER_$i
     for file in $other_files
     do
-        if [ -f $file ]
+        if [ ! -d $file ] && [[ ! $file == HILLS* ]] && [[ ! $file == *.pt ]] # Exclude folders, HILLS files and pytorch model files
         then
             cp $file WALKER_$i
         fi
@@ -105,8 +142,10 @@ do
     cd ..
 done
 
+rerun_command=$(generate_rerun_command "$other_files")
+
 # Run each walker in parallel using GNU parallel
-parallel -j $N_WALKER "cd WALKER_{}; gmx mdrun -ntomp 1 -s $tpr_file -plumed $plumed_file &> mdrun.out" ::: $(seq 0 $((N_WALKER-1))) &
+parallel -j $N_WALKER "cd WALKER_{}; gmx mdrun -ntomp 1 -s $tpr_file -plumed $plumed_file $rerun_command &>> mdrun.out" ::: $(seq 0 $((N_WALKER-1))) &
 
 wait # Wait for all parallel processes to finish, also allows trap finalize_job to be called
 
