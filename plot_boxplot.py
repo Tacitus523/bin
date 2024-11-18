@@ -1,4 +1,4 @@
-#!/lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/kgcnn_new/bin/python3
+#!/usr/bin/env python3
 import argparse
 import matplotlib.pyplot as plt
 import seaborn as sns
