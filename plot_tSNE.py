@@ -1,5 +1,4 @@
-#!/lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/kgcnn_new/bin/python3
-#!/home/lpetersen/anaconda_interpreter/envs/mda/bin/python3
+#!/usr/bin/env python
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -20,7 +19,9 @@ from umap import UMAP
 FONTSIZE = 30
 LABELSIZE = 18
 MARKERSIZE = 12
-DPI=600
+MARKER = "."
+ALPHA = 0.5
+DPI=300
 
 DEFAULT_DATA_SOURCE = "Original Sampling"
 
@@ -96,7 +97,9 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
     palette=sns.color_palette("hls", 10),
     data=df,
     legend="full",
-    alpha=0.3)
+    alpha=ALPHA,
+    marker=MARKER
+    )
     ax.set_xlabel('PC 1', fontsize=FONTSIZE)
     ax.set_ylabel('PC 2', fontsize=FONTSIZE)
     plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
@@ -106,7 +109,7 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
         legend_handle.set_markersize(MARKERSIZE)
     plt.tight_layout()
     plt.savefig("2D_PCA_plot.png", dpi=DPI)
-    plt.close()
+    #plt.close()
     
     # fig = plt.figure(figsize=(16,10))
     # ax = fig.add_subplot(projection='3d')
@@ -149,17 +152,19 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
 
     fig = plt.figure(figsize=(20,10))
     ax = fig.add_subplot()
-    pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
     if has_adaptive_sampling:
+        pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
         style = "original_data"
         style_order = original_labels+[adaptive_sampling_label]
         for i in range(n_original_labels):
             pallete[i] = pallete[0]
         markers = ["s","^","o"]
     else:
+        pallete = None
         style = None
         style_order = None
         markers = True
+        marker = MARKER
 
     sns.scatterplot(
         data=df,
@@ -170,7 +175,8 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
         style_order=style_order,
         markers=markers,
         legend="full",
-        alpha=0.5
+        alpha=ALPHA,
+        marker=MARKER
     )
     
     ax.set_xlabel('Arbitrary tSNE axis 1',fontsize=FONTSIZE)
@@ -209,7 +215,7 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
     plt.tight_layout()
     plt.savefig("2D_tSNE_plot.png", dpi=DPI, bbox_inches = "tight")
-    plt.close()
+    #plt.close()
 
 def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     n_original_labels = len(original_labels)
@@ -225,17 +231,19 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
 
     fig = plt.figure(figsize=(20,10))
     ax = fig.add_subplot()
-    pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
     if has_adaptive_sampling:
+        pallete = sns.color_palette("dark:#5A9", df["data_source"].nunique()) # Pallete with just enough colors
         style = "original_data"
         style_order = original_labels+[adaptive_sampling_label]
         for i in range(n_original_labels):
             pallete[i] = pallete[0]
         markers = ["s","^","o"]
     else:
+        pallete = None
         style = None
         style_order = None
         markers = True
+        marker = MARKER
 
     sns.scatterplot(
         data=df,
@@ -246,7 +254,8 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
         style_order=style_order,
         markers=markers,
         legend="full",
-        alpha=0.5
+        alpha=ALPHA,
+        marker=MARKER
     )
     
     ax.set_xlabel('UMAP axis 1',fontsize=FONTSIZE)
@@ -286,7 +295,7 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
     plt.tight_layout()
     plt.savefig("2D_UMAP_plot.png", dpi=DPI, bbox_inches = "tight")
-    plt.close()
+    #plt.close()
 
 if __name__ == "__main__":
     main()
