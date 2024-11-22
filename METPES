@@ -26,11 +26,16 @@ if sys.argv[1] == '--help':
 	exit()
 
 e_max = float(sys.argv[1])
-x, y, srp_m1 = np.loadtxt("fes.dat", usecols=(0,1,2), skiprows=0, unpack=True)
+x, y, energies = np.loadtxt("fes.dat", usecols=(0,1,2), skiprows=0, unpack=True) # in rad
+x = (x*360/(2*np.pi)) # in deg
+y = (y*360/(2*np.pi)) # in deg
+xx = np.reshape(x, (94, 94))
+yy = np.reshape(y, (94, 94))
+periodic_xx = np.concatenate([xx-360, xx, xx+360], axis=1)
+periodic_xx = np.concatenate([periodic_xx, periodic_xx, periodic_xx], axis=0)
+periodic_yy = np.concatenate([yy-360, yy, yy+360], axis=0)
+periodic_yy = np.concatenate([periodic_yy, periodic_yy, periodic_yy], axis=1)
 
-xx = np.linspace(np.min(x)*360/(2*np.pi), np.max(x)*360/(2*np.pi), 94)
-yy = np.linspace(np.min(y)*360/(2*np.pi), np.max(y)*360/(2*np.pi), 94)
-xx, yy = np.meshgrid(xx, yy)
 
 fig = plt.figure(figsize=[7,8], dpi=400)
 
@@ -56,21 +61,18 @@ ax.set_ylabel(r"$\psi$ [°]",
 ######################
 ### plot 1 -- SRP/M1 #
 ######################
-e_max = e_max
 lines=np.arange(0, e_max+.1, 1.0)
 linesf=np.arange(0, e_max+.1, 0.1)
 cbticks=np.arange(0, e_max+.1, 5)
 
-energies = srp_m1
 ax.set_title(" ", fontsize=label_fs, pad=0, linespacing=0)
-
-# kJ/mol 
-#zz = np.reshape(energies, xx.shape)
 
 # kcal/mol
 zz = np.reshape(energies/4.184, xx.shape)
-fig1 = ax.contourf(xx, yy, zz, cmap="viridis", levels=linesf)
-fig2 = ax.contour(xx, yy, zz, levels=lines, colors="black", linewidths=0.3)
+periodic_zz = np.concatenate([zz, zz, zz], axis=0)
+periodic_zz = np.concatenate([periodic_zz, periodic_zz, periodic_zz], axis=1)
+fig1 = ax.contourf(periodic_xx, periodic_yy, periodic_zz, cmap="viridis", levels=linesf)
+fig2 = ax.contour(periodic_xx, periodic_yy, periodic_zz, levels=lines, colors="black", linewidths=0.3)
 
 cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02)
 cb.set_label("$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
@@ -80,8 +82,6 @@ cb.ax.tick_params(labelsize=ticks_fs)
 loc_x = 0.2
 loc_y = 11.3
 #ax.text(loc_x, loc_y, "A)", fontsize=label_fs+2, fontweight='bold', va='top', ha='right')
-
-
 
 fig.tight_layout()
 plt.savefig("PMFs.png")
