@@ -168,10 +168,11 @@ def main() -> None:
     total_charges: Sequence[np.ndarray]
     charges, total_charges = load_charge_data(charge_file) 
     forces: Sequence[np.ndarray] = load_force_data(force_file) # Possibly ragged list
+    esps: Sequence[np.ndarray] # Possibly ragged list
+    gradients: Sequence[np.ndarray] # Possibly ragged list
     if os.path.exists(esp_file) and os.path.exists(esp_gradient_file):
         print("ESP files found")
-        esps: Sequence[np.ndarray] # Possibly ragged list
-        esps, gradients = load_esp_data(esp_file, esp_gradient_file) # Possibly ragged lists
+        esps, gradients = load_esp_data(esp_file, esp_gradient_file)
     else:
         print("ESP files not found, filling with zeros")
         esps = [np.zeros(len(molecule[2])) for molecule in molecules]
