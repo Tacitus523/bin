@@ -6,17 +6,18 @@ N_WALKER=32 # Also has to be adjusted in plumed.dat
 WALKER_SCRIPT="multiple_walkers_justus.sh"
 
 print_usage() {
-  echo "Usage: 'submit_multiple_walkers_justus.sh tpr_file plumed_file other_files'"
+  echo "Usage: 'submit_multiple_walkers_justus.sh [-e] tpr_file plumed_file other_files'"
 }
 
 email_flag=""
-while getopts flag
+while getopts "e" flag
 do
     case $flag in
         e) email_flag="--mail-user=$EMAIL --mail-type=END,FAIL";;
         *) print_usage; exit 1;;
     esac
 done
+shift $((OPTIND - 1))
 
 tpr_file=$1
 shift

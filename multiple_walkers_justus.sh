@@ -1,17 +1,18 @@
 #!/bin/bash
 #SBATCH --nodes=1
-#SBATCH --mem=12G
-#SBATCH --time=150:00:00
+#SBATCH --mem=48G
+#SBATCH --time=300:00:00
 #SBATCH --job-name=metadynamics
 #SBATCH --output=metadynamics.out
 #SBATCH --error=metadynamics.err
 #SBATCH --gres=scratch:100 # GB on scratch reserved
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
+#SBATCH --gres=gpu:1
 
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
 N_WALKER=$SLURM_NTASKS_PER_NODE
-GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch/bin/GMXRC"
+GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
 
 
 echo "Starting multiple walkers: $(date)"
@@ -19,6 +20,8 @@ echo "Starting multiple walkers: $(date)"
 source $GROMACS_PATH
 
 module load system/parallel
+module load lib/cudnn/9.0.0_cuda-12.3
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
@@ -84,7 +87,7 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_MM_COORD_FULL=100
 export GMX_N_MODELS=3 # Number of neural network models
 export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.03  # Threshold for the energy standard deviation between models for a structure to be considered relevant
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.3  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
 export GMX_NN_EVAL_FREQ=10 # Frequency of evaluation of the neural network, 1 means every step
 export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or maceqeq for pytorch
@@ -145,7 +148,21 @@ done
 rerun_command=$(generate_rerun_command "$other_files")
 
 # Run each walker in parallel using GNU parallel
-parallel -j $N_WALKER "cd WALKER_{}; gmx mdrun -ntomp 1 -s $tpr_file -plumed $plumed_file $rerun_command &>> mdrun.out" ::: $(seq 0 $((N_WALKER-1))) &
+run_mdrun() {
+    local walker_id=$1
+    local tpr_file=$2
+    local plumed_file=$3
+    local rerun_command=$4
+    cd "WALKER_$walker_id"
+    if [ "$walker_id" -eq 0 ]; then
+        gmx mdrun -ntomp 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command
+    else
+        gmx mdrun -ntomp 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command &>> mdrun.out
+    fi
+}
+
+export -f run_mdrun
+parallel -j $N_WALKER "run_mdrun {} $tpr_file $plumed_file $rerun_command" ::: $(seq 0 $((N_WALKER-1))) &
 
 wait # Wait for all parallel processes to finish, also allows trap finalize_job to be called
 
