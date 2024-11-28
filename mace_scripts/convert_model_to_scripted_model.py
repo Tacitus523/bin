@@ -27,6 +27,9 @@ def main():
     if len(model_paths) == 0:
         print(f'No models found with prefix {args.model_prefix}')
         return
+    elif len(model_paths) == 1:
+        target_model_path = model_paths[0]
+        print(f'Using the model: {target_model_path}')
     elif len(model_paths) > 1:
         print(f'Multiple models found with prefix {args.model_prefix}: {model_paths}')
         swa_model_paths = [f for f in model_paths if 'swa' in f]
