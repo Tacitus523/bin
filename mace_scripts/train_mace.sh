@@ -62,7 +62,7 @@ echo "Model name: $MODEL_NAME"
 echo "Model type: $MODEL_TYPE"
 echo "Number of epochs: $EPOCHS"
 
-/lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/mace_env/bin/python3.12 /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/martin_train.py  \
+python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/martin_train.py  \
     --name=$MODEL_NAME \
     --train_file=$train_file \
     --valid_file=$valid_file \
