@@ -25,16 +25,55 @@ if sys.argv[1] == '--help':
 	print('Usage: METPES e_max')
 	exit()
 
+kj_to_kcal = 1/4.184
+
+def analyze_fes_file(file_path: str) -> list:
+	"""
+	Extracts the nbins numbers from a plumed generated fes.dat file
+	"""
+	nbins_list = []
+	periodicity_list = []
+	with open(file_path, 'r') as file:
+		for line in file.readlines():
+			if not line.startswith('#!'):
+				break
+			if 'nbins' in line:
+				nbins = int(line.split()[-1])
+				nbins_list.append(nbins)
+			if 'periodic' in line:
+				if 'true' in line:
+					periodicity_list.append(True)
+				elif 'false' in line:
+					periodicity_list.append(False)
+				else:
+					raise ValueError(f'Could not parse periodicity from line: {line}')
+	assert len(nbins_list) > 0, f'No nbins found in file {file_path}'
+	assert len(periodicity_list) > 0, f'No periodicity found in file {file_path}'
+	assert len(nbins_list) == len(periodicity_list), f'Number of nbins and periodicity do not match'
+	if len(nbins_list) > 2:
+		raise ValueError(f'Found more than 2 nbins in file {file_path}')
+	return nbins_list, periodicity_list
+
 e_max = float(sys.argv[1])
+nbins_list, periodicity_list = analyze_fes_file('fes.dat')
 x, y, energies = np.loadtxt("fes.dat", usecols=(0,1,2), skiprows=0, unpack=True) # in rad
-x = (x*360/(2*np.pi)) # in deg
-y = (y*360/(2*np.pi)) # in deg
-xx = np.reshape(x, (94, 94))
-yy = np.reshape(y, (94, 94))
-periodic_xx = np.concatenate([xx-360, xx, xx+360], axis=1)
-periodic_xx = np.concatenate([periodic_xx, periodic_xx, periodic_xx], axis=0)
-periodic_yy = np.concatenate([yy-360, yy, yy+360], axis=0)
-periodic_yy = np.concatenate([periodic_yy, periodic_yy, periodic_yy], axis=1)
+xx = np.reshape(x, nbins_list)
+yy = np.reshape(y, nbins_list)
+
+if periodicity_list[0] is True:
+	xx = (xx*360/(2*np.pi)) # in deg
+	xx = np.concatenate([xx-360, xx, xx+360], axis=1)
+	xx = np.concatenate([xx, xx, xx], axis=0)
+else:
+	xx = (xx*10) # in Angstrom
+
+if periodicity_list[1] is True:
+	yy = (yy*360/(2*np.pi)) # in deg
+	yy = np.concatenate([yy-360, yy, yy+360], axis=0)
+	yy = np.concatenate([yy, yy, yy], axis=1)
+else:
+	yy = (yy*10) # in Angstrom
+
 
 
 fig = plt.figure(figsize=[7,8], dpi=400)
@@ -44,19 +83,29 @@ ticks_fs = 16
 labelpad = -.8
 
 ax = plt.gca()
-ax.set_xlim(-180, 120)
-ax.set_ylim(-100, 240)
-# ax.set_xticks(ticks=np.arange(-3.2, 3.2, 0.5))
-# ax.set_yticks(ticks=np.arange(-3.2, 3.2, 0.5))
+if periodicity_list[0] is True:
+	ax.set_xlim(-180, 120)
+	ax.set_xlabel(r"$\varphi$ [°]", 
+					fontsize=label_fs, labelpad=labelpad)
+else:
+	ax.set_xlim(1.5, 4)
+	ax.set_xlabel(r"S$^\mathrm{1}$-S$^\mathrm{2}$" + u" [\u212B]", 
+					fontsize=label_fs, labelpad=labelpad)
+
+if periodicity_list[1] is True:
+	ax.set_ylim(-100, 240)
+	ax.set_ylabel(r"$\psi$ [°]", 
+				fontsize=label_fs, labelpad=labelpad)
+else:
+	ax.set_ylim(1.5, 4)
+	ax.set_ylabel(r"S$^\mathrm{2}$---S$^\mathrm{3}$" + u" [\u212B]", 
+					fontsize=label_fs, labelpad=labelpad)
+
 ax.tick_params(axis='x', labelsize=ticks_fs)
 ax.tick_params(axis='y', labelsize=ticks_fs)
 ax.set_aspect('equal')
-	
-# labels, latex math style
-ax.set_xlabel(r"$\varphi$ [°]", 
-				fontsize=label_fs, labelpad=labelpad)
-ax.set_ylabel(r"$\psi$ [°]", 
-				fontsize=label_fs, labelpad=labelpad)
+
+
 
 ######################
 ### plot 1 -- SRP/M1 #
@@ -68,19 +117,20 @@ cbticks=np.arange(0, e_max+.1, 5)
 ax.set_title(" ", fontsize=label_fs, pad=0, linespacing=0)
 
 # kcal/mol
-zz = np.reshape(energies/4.184, xx.shape)
-periodic_zz = np.concatenate([zz, zz, zz], axis=0)
-periodic_zz = np.concatenate([periodic_zz, periodic_zz, periodic_zz], axis=1)
-fig1 = ax.contourf(periodic_xx, periodic_yy, periodic_zz, cmap="viridis", levels=linesf)
-fig2 = ax.contour(periodic_xx, periodic_yy, periodic_zz, levels=lines, colors="black", linewidths=0.3)
+zz = np.reshape(energies*kj_to_kcal, nbins_list)
+for CV_idx, periodicity_bool in enumerate(periodicity_list):
+	if periodicity_bool is True:
+		zz = np.concatenate([zz, zz, zz], axis=CV_idx)
+fig1 = ax.contourf(xx, yy, zz, cmap="viridis", levels=linesf)
+fig2 = ax.contour(xx, yy, zz, levels=lines, colors="black", linewidths=0.3)
 
 cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02)
-cb.set_label("$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
+cb.set_label(r"$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
 cb.ax.tick_params(labelsize=ticks_fs)
 
 # Labeling
-loc_x = 0.2
-loc_y = 11.3
+# loc_x = 0.2
+# loc_y = 11.3
 #ax.text(loc_x, loc_y, "A)", fontsize=label_fs+2, fontweight='bold', va='top', ha='right')
 
 fig.tight_layout()
