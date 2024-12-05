@@ -124,7 +124,7 @@ def load_esp_data(esp_file: str, esp_gradient_file: str) -> Tuple[Sequence[np.nd
 
 def write_extxyz(
         outfile: str,
-        molecules: Sequence[int, str, Atoms],
+        molecules: Sequence[Tuple[int, str, Atoms]],
         energies: np.ndarray,
         forces: Sequence[np.ndarray],
         charges: Sequence[np.ndarray],
@@ -162,7 +162,7 @@ def main() -> None:
     outfile                 = os.path.join(data_folder, config_data["OUTFILE"])
 
     # Read data
-    molecules: Sequence[int, str, Atoms] = list(read_xyz(geom_file)) # List of tuples (n_atoms, comment, Atoms)
+    molecules: Sequence[Tuple[int, str, Atoms]] = list(read_xyz(geom_file)) # List of tuples (n_atoms, comment, Atoms)
     energies: np.ndarray = load_energy_data(energy_file)
     charges: Sequence[np.ndarray] # Possibly ragged list
     total_charges: Sequence[np.ndarray]
