@@ -63,7 +63,7 @@ def read_config(args: argparse.Namespace) -> dict:
     config_data.setdefault("OUTFILE", OUTFILE)
     config_data.setdefault("BOXSIZE", BOXSIZE)
 
-    TOTAL_CHARGE = config_data.get("TOTAL_CHARGE", TOTAL_CHARGE)
+    TOTAL_CHARGE = config_data.get("TOTAL_CHARGE", None)
     if TOTAL_CHARGE is not None:
         print("INFO: Giving total charge as directly as input is deprecated. Using charge-file instead.")
 
