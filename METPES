@@ -98,7 +98,7 @@ if periodicity_list[1] is True:
 				fontsize=label_fs, labelpad=labelpad)
 else:
 	ax.set_ylim(1.5, 4)
-	ax.set_ylabel(r"S$^\mathrm{2}$---S$^\mathrm{3}$" + u" [\u212B]", 
+	ax.set_ylabel(r"S$^\mathrm{2}$-S$^\mathrm{3}$" + u" [\u212B]", 
 					fontsize=label_fs, labelpad=labelpad)
 
 ax.tick_params(axis='x', labelsize=ticks_fs)
