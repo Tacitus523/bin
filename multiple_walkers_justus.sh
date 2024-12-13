@@ -60,7 +60,8 @@ generate_rerun_command() {
         do
             if [ -d $folder ] && [[ $folder == WALKER_* ]]
             then
-                rerun_command="-cpi state.cpt -append"
+                #rerun_command="-cpi state.cpt -append"
+                rerun_command="-append"
                 break
             fi
         done
