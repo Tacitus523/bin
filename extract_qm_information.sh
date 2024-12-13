@@ -51,7 +51,7 @@ do
 	echo $folder >> $FOLDER_FILE
 	# works with multip steps Orca .outs, only greps last occurence, tac = reverse cat, -m 1 = maximal 1 occurence 
 	tac $folder/$2.out | grep -B $(($num_atoms+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
-	tac $folder/$2.out | grep -B $(($num_atoms+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $2}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
 	tac $folder/$2.out | grep -B $(($num_atoms+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
 	#awk '{print $5}' $folder/$2.molden.chg | tr '\n' ' ' >> $CHARGES_ESP_FILE
 
