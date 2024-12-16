@@ -2,7 +2,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32G
-#SBATCH --time=72:00:00
+#SBATCH --time=200:00:00
 #SBATCH --output=train.out
 #SBATCH --error=train.err
 #SBATCH --open-mode=append
