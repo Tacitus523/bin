@@ -9,27 +9,15 @@
 #SBATCH --mail-user=lukas.petersen@kit.edu
 #SBATCH --mail-type=END,FAIL
 
+export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools"
+export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange"
+
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
-EPOCHS=100
-
-print_usage() {
-    echo "Usage: $0 [-e number_of_epochs] [-d data_folder]" >&2
-}
-
-# Parse command line arguments for epochs and data folder
-while getopts e:d: flag
-do
-    case "${flag}" in
-        e) EPOCHS=${OPTARG};;
-        d) DATA_FOLDER=${OPTARG};;
-        *) print_usage; exit 1;;
-    esac
-done
-
 TRAIN_FILE="train.extxyz"
 VALID_FILE="valid.extxyz"
 TEST_FILE="test.extxyz"
+EPOCHS=100
 
 MODEL_NAME="QEq"
 MODEL_TYPE="maceQEq"
@@ -46,13 +34,24 @@ else
     WANDB_NAME=$SLURM_JOB_NAME
 fi
 
+print_usage() {
+    echo "Usage: $0 [-e number_of_epochs] [-d data_folder]" >&2
+}
+
+# Parse command line arguments for epochs and data folder
+while getopts e:d: flag
+do
+    case "${flag}" in
+        e) EPOCHS=${OPTARG};;
+        d) DATA_FOLDER=${OPTARG};;
+        *) print_usage; exit 1;;
+    esac
+done
+
 data_folder=$(realpath $DATA_FOLDER)
 train_file="$data_folder/$TRAIN_FILE"
 valid_file="$data_folder/$VALID_FILE"
 test_file="$data_folder/$TEST_FILE"
-
-export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools"
-export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange"
 
 echo "Starting training: $(date)"
 echo "Data folder: $data_folder"
