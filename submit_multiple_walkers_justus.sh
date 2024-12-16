@@ -27,20 +27,22 @@ other_files=$@
 
 if [ ! -f $tpr_file ]
 then
-    echo "tpr file not found"
+    echo "tpr file not found. Got $tpr_file"
     print_usage
     exit 1
 fi
 if [[ ! $tpr_file == *.tpr ]]; then
-    echo "tpr file must end with .tpr"
+    echo "tpr file must end with .tpr. Got $tpr_file"
     print_usage
     exit 1
 fi
 if [ ! -f $plumed_file ]
 then
-    echo "plumed file not found"
+    echo "plumed file not found. Got $plumed_file"
     print_usage
     exit 1
 fi
 
-sbatch $email_flag --ntasks-per-node=$N_WALKER $WALKER_SCRIPT $tpr_file $plumed_file $other_files
+job_name=$(basename $tpr_file .tpr)_metaD
+
+sbatch $email_flag --ntasks-per-node=$N_WALKER --job-name=$job_name $WALKER_SCRIPT $tpr_file $plumed_file $other_files

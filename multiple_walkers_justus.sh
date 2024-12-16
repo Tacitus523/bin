@@ -2,7 +2,6 @@
 #SBATCH --nodes=1
 #SBATCH --mem=48G
 #SBATCH --time=300:00:00
-#SBATCH --job-name=metadynamics
 #SBATCH --output=metadynamics.out
 #SBATCH --error=metadynamics.err
 #SBATCH --gres=scratch:100 # GB on scratch reserved
@@ -12,10 +11,10 @@
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
 N_WALKER=$SLURM_NTASKS_PER_NODE
+#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
 
-
-echo "Starting multiple walkers: $(date)"
+echo "Starting multiple walkers on $SLURM_JOB_NODELIST: $(date)"
 
 source $GROMACS_PATH
 
@@ -88,7 +87,7 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_MM_COORD_FULL=100
 export GMX_N_MODELS=3 # Number of neural network models
 export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.3  # Threshold for the energy standard deviation between models for a structure to be considered relevant
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.05  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
 export GMX_NN_EVAL_FREQ=10 # Frequency of evaluation of the neural network, 1 means every step
 export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or maceqeq for pytorch
@@ -107,16 +106,16 @@ other_files=$@
 
 if [ ! -f $tpr_file ]
 then
-    echo "tpr file not found"
+    echo "tpr file not found. Got $tpr_file"
     exit 1
 fi
 if [[ ! $tpr_file == *.tpr ]]; then
-    echo "tpr file must end with .tpr"
+    echo "tpr file must end with .tpr. Got $tpr_file"
     exit 1
 fi
 if [ ! -f $plumed_file ]
 then
-    echo "plumed file not found"
+    echo "plumed file not found. Got $plumed_file"
     exit 1
 fi
 
@@ -124,7 +123,6 @@ mkdir -vp $workdir
 cp -r -v $tpr_file $plumed_file $other_files $workdir
 cd $workdir
 
-tpr_prefix=$(basename $tpr_file .tpr)
 export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
 
 # Create directories for each walker
@@ -156,9 +154,9 @@ run_mdrun() {
     local rerun_command=$4
     cd "WALKER_$walker_id"
     if [ "$walker_id" -eq 0 ]; then
-        gmx mdrun -ntomp 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command
+        gmx mdrun -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command
     else
-        gmx mdrun -ntomp 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command &>> mdrun.out
+        gmx mdrun -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command &>> mdrun.out
     fi
 }
 
