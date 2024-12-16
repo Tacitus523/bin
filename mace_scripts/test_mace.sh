@@ -9,7 +9,7 @@
 #SBATCH --mail-type=END,FAIL
 
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
+#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 VALID_FILE="$DATA_FOLDER/geoms.extxyz"
 TEST_FILE="qm_mlmm.extxyz"
 TRAIN_FILE="$TEST_FILE" # Dummy entry, not used, because this gets shuffled anyway

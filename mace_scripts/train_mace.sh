@@ -11,9 +11,6 @@
 
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
-TRAIN_FILE="train.extxyz"
-VALID_FILE="valid.extxyz"
-TEST_FILE="test.extxyz"
 EPOCHS=100
 
 print_usage() {
@@ -30,10 +27,9 @@ do
     esac
 done
 
-data_folder=$(realpath $DATA_FOLDER)
-train_file="$data_folder/$TRAIN_FILE"
-valid_file="$data_folder/$VALID_FILE"
-test_file="$data_folder/$TEST_FILE"
+TRAIN_FILE="train.extxyz"
+VALID_FILE="valid.extxyz"
+TEST_FILE="test.extxyz"
 
 MODEL_NAME="QEq"
 MODEL_TYPE="maceQEq"
@@ -49,6 +45,11 @@ if [ -z $SLURM_JOB_NAME ]; then
 else
     WANDB_NAME=$SLURM_JOB_NAME
 fi
+
+data_folder=$(realpath $DATA_FOLDER)
+train_file="$data_folder/$TRAIN_FILE"
+valid_file="$data_folder/$VALID_FILE"
+test_file="$data_folder/$TEST_FILE"
 
 export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools"
 export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange"
@@ -114,11 +115,12 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
     # --valid_fraction=0.05 \ # Retired with the introduction of the valid.extxyz file
     # --start_swa=450 \ # Default is last 20% of epochs, which seems simpler to use
 
+training_exit_status=$?
 
 echo "Finished training: $(date)"
 
 # Convert the model to a scripted model
-if [ $? -eq 0 ]
+if [ $training_exit_status -eq 0 ]
 then
     convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
 fi
