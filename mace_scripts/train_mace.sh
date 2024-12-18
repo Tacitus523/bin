@@ -83,7 +83,7 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
     --forces_key="ref_force" \
     --charges_key="ref_charge" \
     --esp_key="esp" \
-    --esp_gradients_key="esp_gradients" \
+    --esp_gradient_key="esp_gradients" \
     --formal_charges_from_data \
     --error_table="EFQRMSE" \
     --scale_atsize=1.0 \
