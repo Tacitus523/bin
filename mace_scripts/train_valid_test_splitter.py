@@ -7,8 +7,9 @@ import numpy as np
 from ase.io import read, write
 from sklearn.model_selection import train_test_split
 
-DATA_FOLDER: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+#DATA_FOLDER: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #DATA_FOLDER: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+DATA_FOLDER: str = os.getcwd()
 GEOM_FILE: str = "geoms.extxyz" # Name of the file containing the dataset, format: .extxyz
 TRAIN_FILE: str = "train.extxyz" # Hardcoded like this in training script train_mace.sh
 VALID_FILE: str = "valid.extxyz" # Hardcoded like this in training script train_mace.sh
@@ -21,6 +22,8 @@ def parse_args():
     parser.add_argument("-t", "--train-file", type=str, default=TRAIN_FILE, required=False, help="Name of the file training set is saved to")
     parser.add_argument("-v", "--valid-file", type=str, default=VALID_FILE, required=False, help="Name of the file validation set is saved to")
     parser.add_argument("-e", "--test-file", type=str, default=TEST_FILE, required=False, help="Name of the file test set is saved to")
+    parser.add_argument("--p_test", type=float, default=0.2, required=False, help="Proportion of the whole dataset used for the test set")
+    parser.add_argument("--p_valid", type=float, default=0.2, required=False, help="Proportion of the not-test part of the dataset used for the validation set")
     args = parser.parse_args()
     return args
 
@@ -36,8 +39,8 @@ def main():
     print(f"Loaded {len(data)} configurations from 'geoms.extxyz'")
 
     # Split the dataset into training, validation and test set
-    train_data, test_data = train_test_split(data, test_size=0.2, random_state=42, shuffle=False)
-    train_data, valid_data = train_test_split(train_data, test_size=0.2, random_state=42, shuffle=False)
+    train_data, test_data = train_test_split(data, test_size=args.p_test, random_state=42, shuffle=False)
+    train_data, valid_data = train_test_split(train_data, test_size=args.p_valid, random_state=42, shuffle=False)
 
     # Save the training, validation and test set in smaller .extxyz files
     write(train_file, train_data, format="extxyz")
