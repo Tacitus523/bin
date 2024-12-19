@@ -12,8 +12,7 @@
 export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools"
 export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange"
 
-# Default value, gets overwritten by the command line argument from submit_train_mace.sh
-DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+# Relative paths in the data folder
 TRAIN_FILE="train.extxyz"
 VALID_FILE="valid.extxyz"
 TEST_FILE="test.extxyz"
@@ -63,7 +62,7 @@ echo "Model name: $MODEL_NAME"
 echo "Model type: $MODEL_TYPE"
 echo "Number of epochs: $EPOCHS"
 
-python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/martin_train.py  \
+python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/lukas_train.py  \
     --name=$MODEL_NAME \
     --train_file=$train_file \
     --valid_file=$valid_file \
