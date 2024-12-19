@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import seaborn as sns
 
-#sys.path.append("/home/ka/ka_ipc/ka_he8978/kgcnn_fork")
-sys.path.append("/home/lpetersen/kgcnn_fork")
+sys.path.append("/home/ka/ka_ipc/ka_he8978/kgcnn_fork")
+#sys.path.append("/home/lpetersen/kgcnn_fork")
+
 from kgcnn.data.base import MemoryGraphDataset  # type: ignore
 from kgcnn.utils import constants  # type: ignore
 
@@ -26,18 +27,16 @@ from kgcnn.utils import constants  # type: ignore
 # DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
 # DATASET_NAME: str = "ThiolDisulfidExchange" # Used in naming plots and looking for data
 # DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
+DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
 # DATA_DIRECTORY: str = "/data/lpetersen/training_data/alanindipeptid/B3LYP_aug-cc-pVTZ_vacuum"
-DATA_DIRECTORY: str = "/data/lpetersen/alanindipeptide/B3LYP_aug-cc-pVTZ_vacuum/03_halved_H_bond_harmonics"
+# DATA_DIRECTORY: str = "/data/lpetersen/alanindipeptide/B3LYP_aug-cc-pVTZ_vacuum/03_halved_H_bond_harmonics"
 DATASET_NAME: str = "Alanindipeptide" # Used in naming plots and looking for data
 
 #TRAJECTORY_FILE: str = "run.xtc" # Path to the trajectory file
-#TRAJECTORY_FILE: str = "traj_comp.xtc" # Path to the trajectory file
-#TRAJECTORY_FILE: str = "traj.xtc" # Path to the trajectory file
-TRAJECTORY_FILE: str = "dipeptid.xtc" # Path to the trajectory file
-# TOPOLOGY_FILE: str = "geom.gro" # Path to the topology file (e.g., .gro or .pdb)
+TRAJECTORY_FILE: str = "traj_comp.xtc" # Path to the trajectory file
+#TRAJECTORY_FILE: str = "dipeptid.xtc" # Path to the trajectory file
+TOPOLOGY_FILE: str = "../geom.gro" # Path to the topology file (e.g., .gro or .pdb)
 # TOPOLOGY_FILE: str = "geom_box.gro" # Path to the topology file (e.g., .gro or .pdb)
-TOPOLOGY_FILE: str = "dipeptid.gro" # Path to the topology file (e.g., .gro or .pdb)
 
 N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
 N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
@@ -54,6 +53,10 @@ default_collection_folder_name: str = "bond_distance_analysis"
 def main() -> None:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
     ap.add_argument("-p", "--prefix", default=None, type=str, dest="prefix", action="store", required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
+    ap.add_argument("-d", "--data_directory", default=DATA_DIRECTORY, type=str, dest="data_directory", action="store", required=False, help="Folder containing DATASET_NAME.kgcnn.pickle", metavar="data_directory")
+    ap.add_argument("-n", "--dataset_name", default=DATASET_NAME, type=str, dest="dataset_name", action="store", required=False, help="Name of the dataset", metavar="dataset_name")
+    ap.add_argument("-t", "--trajectory_file", default=TRAJECTORY_FILE, type=str, dest="trajectory_file", action="store", required=False, help="Relative path to the trajectory file", metavar="trajectory_file")
+    ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, dest="topology_file", action="store", required=False, help="Relative path to the topology file, not a .top, but a .gro or similar", metavar="topology_file")
     args = ap.parse_args()
     if args.prefix is None:
         present_dirs = [os.getcwd()]
@@ -68,13 +71,14 @@ def main() -> None:
         collection_folder_name = os.path.abspath(default_collection_folder_name)
         if not os.path.exists(collection_folder_name):
             os.makedirs(collection_folder_name)
+    args.data_directory = os.path.normpath(args.data_directory)
 
     valid_dirs = []
     for dir in present_dirs:
-        if not os.path.exists(os.path.join(dir, TRAJECTORY_FILE)):
+        if not os.path.exists(os.path.join(dir, args.trajectory_file)):
             continue
-        # Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
-        if not os.path.exists(os.path.join(dir, TOPOLOGY_FILE)):
+        # Backwards compatibility for missing topology, find and copy the starting structure
+        if not os.path.exists(os.path.join(dir, args.topology_file)):
             if not os.path.exists(os.path.join(dir, starting_idxs_file)):
                 continue
             starting_idxs = np.loadtxt(os.path.join(dir,starting_idxs_file), dtype=int)
@@ -82,16 +86,15 @@ def main() -> None:
                 final_starting_idx = int(starting_idxs)
             else:
                 final_starting_idx = int(starting_idxs[-1])
-            starting_structure_dirs = next(os.walk(os.path.join(DATA_DIRECTORY, starting_structures_dir)))[1]
-            gro_to_copy = [os.path.join(DATA_DIRECTORY, starting_structures_dir, dirname, starting_structure_gro) for dirname in starting_structure_dirs if f"{final_starting_idx}" in dirname][0]
-            shutil.copy(gro_to_copy, os.path.join(dir, TOPOLOGY_FILE))
+            starting_structure_dirs = next(os.walk(os.path.join(args.data_directory, starting_structures_dir)))[1]
+            gro_to_copy = [os.path.join(args.data_directory, starting_structures_dir, dirname, starting_structure_gro) for dirname in starting_structure_dirs if f"{final_starting_idx}" in dirname][0]
+            shutil.copy(gro_to_copy, os.path.join(dir, args.topology_file))
         valid_dirs.append(dir)
     valid_dirs = sorted(valid_dirs)
     print(f"Valid directories: {valid_dirs}")
     assert len(valid_dirs) > 0, "No valid directories found"
 
-    data_directory = os.path.normpath(DATA_DIRECTORY)
-    dataset = MemoryGraphDataset(data_directory=data_directory, dataset_name=DATASET_NAME)
+    dataset = MemoryGraphDataset(data_directory=args.data_directory, dataset_name=args.dataset_name)
     dataset.load()
 
     root_dir = os.getcwd()
@@ -99,7 +102,7 @@ def main() -> None:
     for dir in valid_dirs:
         print(f"Analyzing {dir}")
         os.chdir(dir)
-        bond_distances, edge_indices, atomic_numbers_bonds, elements_bonds = analyze_local_bond_distances(dataset, collection_folder_name=collection_folder_name)
+        bond_distances, edge_indices, atomic_numbers_bonds, elements_bonds = analyze_local_bond_distances(args, dataset, collection_folder_name=collection_folder_name)
         os.chdir(root_dir)
         bond_distances_all_walkers.append(bond_distances)
     
@@ -112,7 +115,7 @@ def main() -> None:
     analyze_global_bond_distances(bond_distances_all_walkers, edge_indices, atomic_numbers_bonds, elements_bonds) 
 
 
-def analyze_local_bond_distances(dataset: MemoryGraphDataset, collection_folder_name: str = None) -> None:
+def analyze_local_bond_distances(args: argparse.Namespace, dataset: MemoryGraphDataset, collection_folder_name: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     try:
         starting_idxs = np.loadtxt(starting_idxs_file, dtype=int)
         if starting_idxs.ndim == 0:
@@ -126,7 +129,7 @@ def analyze_local_bond_distances(dataset: MemoryGraphDataset, collection_folder_
     n_atoms, atomic_numbers, unique_edge_indices, atomic_numbers_bonds, elements_bonds = get_atomic_numbers_and_elements(dataset, final_starting_idx)
 
     try:
-        u = mda.Universe(TOPOLOGY_FILE, TRAJECTORY_FILE)
+        u = mda.Universe(args.topology_file, args.trajectory_file)
     except Exception as e:
         print(f"{os.getcwd()}: Problem with Topology, skipping analysis", file=sys.stderr)
         print(e, file=sys.stderr)
