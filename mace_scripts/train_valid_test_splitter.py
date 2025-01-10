@@ -33,6 +33,8 @@ def parse_args():
     parser.add_argument("--p_test", type=float, default=0.2, required=False, help="Proportion of the whole dataset used for the test set")
     parser.add_argument("--p_valid", type=float, default=0.2, required=False, help="Proportion of the not-test part of the dataset used for the validation set")
     args = parser.parse_args()
+    for arg in vars(args):
+        print(f"{arg}: {getattr(args, arg)}")
     return args
 
 def do_train_val_test_split(args):
