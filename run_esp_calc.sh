@@ -1,8 +1,8 @@
 #!/bin/bash
 #$ -N esp_calc
 #$ -cwd
-#$ -o esp_calc.o$JOB_ID
-#$ -e esp_calc.e$JOB_ID
+#$ -o esp_calc.out
+#$ -e esp_calc.err
 
 # folder-prefix as $1, file-prefix as $2
 
@@ -27,7 +27,7 @@ fi
 # PYTHONPATH=$PWD:$PYTHONPATH
 
 echo "Start ESP calculation `date`"
-python3 $esp_calculation_script --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
+$esp_calculation_script --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
 # python3 $esp_calculation_script --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
 echo "End ESP calculation `date`"
 

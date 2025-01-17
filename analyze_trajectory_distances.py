@@ -182,6 +182,12 @@ def analyze_local_bond_distances(args: argparse.Namespace, dataset: MemoryGraphD
     return bond_distances_all_timesteps, unique_edge_indices, atomic_numbers_bonds, elements_bonds
 
 def analyze_global_bond_distances(bond_distances: np.ndarray, edge_indices: np.ndarray, atomic_numbers_bonds: np.ndarray, elements_bonds: np.ndarray) -> None:
+    bond_types = [f"({elements_bond[0]}-{elements_bond[1]})" for elements_bond in elements_bonds]
+    flat_bond_distances = bond_distances.flatten()
+    bond_distances_df = pd.DataFrame(flat_bond_distances, columns=["Bond Length"])
+    bond_distances_df["Bond Type"] = bond_types*np.shape(bond_distances)[0] # Repeat the bond types for each timestep
+    plot_bond_length_distribution(bond_distances_df)
+
     # Get the bonds involving hydrogen atoms
     is_h_bond_involved = np.any(atomic_numbers_bonds == 1, axis=1) # Check if any of the atoms in the bond is a hydrogen atom, shape: (n_bonds,)
     h_bond_edges = edge_indices[is_h_bond_involved] # Get the edge indices of the bonds involving hydrogen atoms, shape: (n_h_bonds, 2)
@@ -257,6 +263,17 @@ def plot_h_bond_length_distribution(h_bond_distances_df: pd.DataFrame, title: st
     plt.xlabel("Hydrogen Bond Length [Å]")
     plt.ylabel("Frequency")
     plt.title("Hydrogen Bond Length Distribution")
+    plt.tight_layout()
+    plt.savefig(title, dpi=DPI)
+
+def plot_bond_length_distribution(h_bond_distances_df: pd.DataFrame, title: str = "bond_lengths_distribution.png"):
+    # Plot the distribution of hydrogen bond lengths
+    plt.figure(figsize=(10,10))
+    sns.set_context(context="talk", font_scale=1.3)
+    sns.histplot(h_bond_distances_df, x="Bond Length", hue="Bond Type", palette="tab10", multiple="stack", stat="probability", common_norm=True)
+    plt.xlabel("Bond Length [Å]")
+    plt.ylabel("Frequency")
+    plt.title("Bond Length Distribution")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
 
