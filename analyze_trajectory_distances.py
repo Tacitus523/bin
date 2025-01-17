@@ -27,17 +27,16 @@ from kgcnn.utils import constants  # type: ignore
 # DATASET_NAME: str = "ThiolDisulfidExchange" # Used in naming plots and looking for data
 # DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
 # DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATA_DIRECTORY: str = "/data/lpetersen/training_data/alanindipeptid/B3LYP_aug-cc-pVTZ_vacuum"
-DATA_DIRECTORY: str = "/data/lpetersen/alanindipeptide/B3LYP_aug-cc-pVTZ_vacuum/03_halved_H_bond_harmonics"
+DATA_DIRECTORY: str = "/data/lpetersen/training_data/alanindipeptid/B3LYP_aug-cc-pVTZ_vacuum"
 DATASET_NAME: str = "Alanindipeptide" # Used in naming plots and looking for data
 
 #TRAJECTORY_FILE: str = "run.xtc" # Path to the trajectory file
 #TRAJECTORY_FILE: str = "traj_comp.xtc" # Path to the trajectory file
-#TRAJECTORY_FILE: str = "traj.xtc" # Path to the trajectory file
-TRAJECTORY_FILE: str = "dipeptid.xtc" # Path to the trajectory file
+TRAJECTORY_FILE: str = "traj.xtc" # Path to the trajectory file
+#TRAJECTORY_FILE: str = "dipeptid.xtc" # Path to the trajectory file
 # TOPOLOGY_FILE: str = "geom.gro" # Path to the topology file (e.g., .gro or .pdb)
-# TOPOLOGY_FILE: str = "geom_box.gro" # Path to the topology file (e.g., .gro or .pdb)
-TOPOLOGY_FILE: str = "dipeptid.gro" # Path to the topology file (e.g., .gro or .pdb)
+TOPOLOGY_FILE: str = "geom_box.gro" # Path to the topology file (e.g., .gro or .pdb)
+#TOPOLOGY_FILE: str = "dipeptid.gro" # Path to the topology file (e.g., .gro or .pdb)
 
 N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
 N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
@@ -179,6 +178,12 @@ def analyze_local_bond_distances(dataset: MemoryGraphDataset, collection_folder_
     return bond_distances_all_timesteps, unique_edge_indices, atomic_numbers_bonds, elements_bonds
 
 def analyze_global_bond_distances(bond_distances: np.ndarray, edge_indices: np.ndarray, atomic_numbers_bonds: np.ndarray, elements_bonds: np.ndarray) -> None:
+    bond_types = [f"({elements_bond[0]}-{elements_bond[1]})" for elements_bond in elements_bonds]
+    flat_bond_distances = bond_distances.flatten()
+    bond_distances_df = pd.DataFrame(flat_bond_distances, columns=["Bond Length"])
+    bond_distances_df["Bond Type"] = bond_types*np.shape(bond_distances)[0] # Repeat the bond types for each timestep
+    plot_bond_length_distribution(bond_distances_df)
+
     # Get the bonds involving hydrogen atoms
     is_h_bond_involved = np.any(atomic_numbers_bonds == 1, axis=1) # Check if any of the atoms in the bond is a hydrogen atom, shape: (n_bonds,)
     h_bond_edges = edge_indices[is_h_bond_involved] # Get the edge indices of the bonds involving hydrogen atoms, shape: (n_h_bonds, 2)
@@ -254,6 +259,17 @@ def plot_h_bond_length_distribution(h_bond_distances_df: pd.DataFrame, title: st
     plt.xlabel("Hydrogen Bond Length [Å]")
     plt.ylabel("Frequency")
     plt.title("Hydrogen Bond Length Distribution")
+    plt.tight_layout()
+    plt.savefig(title, dpi=DPI)
+
+def plot_bond_length_distribution(h_bond_distances_df: pd.DataFrame, title: str = "bond_lengths_distribution.png"):
+    # Plot the distribution of hydrogen bond lengths
+    plt.figure(figsize=(10,10))
+    sns.set_context(context="talk", font_scale=1.3)
+    sns.histplot(h_bond_distances_df, x="Bond Length", hue="Bond Type", palette="tab10", multiple="stack", stat="probability", common_norm=True)
+    plt.xlabel("Bond Length [Å]")
+    plt.ylabel("Frequency")
+    plt.title("Bond Length Distribution")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
 

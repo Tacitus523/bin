@@ -6,8 +6,10 @@ import json
 import numpy as np
 from scipy.spatial.distance import cdist
 
+from ase.data import atomic_numbers, chemical_symbols
+
 ESP_FILE_NAME: str = "esps_by_mm.txt"
-ESP_GRAD_FILE_NAME: str = "esp_gradients.txt"
+ESP_GRAD_FILE_NAME: str = "esp_gradients.xyz"
 
 angstrom_to_bohr = 1.8897259886
 atomic_units_to_volt = 27.211386245988
@@ -26,18 +28,23 @@ def calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges):
     gradients = -1*np.sum(directions * gradient_magnitudes[:, :, np.newaxis], axis=1) # shape: (n_qm_atoms, 3)
     return esps, gradients
     
-def write_files(folders, n_qm_atoms_list, esps_list, gradients_list):
+def write_files(folders, qm_atomic_numbers_list, n_qm_atoms_list, esps_list, gradients_list):
     esp_file = open(ESP_FILE_NAME, "w")
     for esp in esps_list:
-        esp_string = np.array2string(esp, separator=" ", suppress_small=True, formatter={'float_kind':lambda x: "%3.5f" % x})
+        esp_string = np.array2string(esp, separator=" ", suppress_small=True,
+                                     formatter={'float_kind':lambda x: "%3.5f" % x}, threshold=np.inf, max_line_width=np.inf)
         esp_string = "\n".join([line.strip("[] ") for line in esp_string.split("\n")]) + "\n" # Remove brackets and leading spaces
         esp_file.write(esp_string)
     esp_file.close()
 
     esp_grad_file = open(ESP_GRAD_FILE_NAME, "w")
-    for grad, n_qm_atoms, folder in zip(gradients_list, n_qm_atoms_list, folders):
+    for grad, qm_atomic_numbers, n_qm_atoms, folder in zip(gradients_list, qm_atomic_numbers_list, n_qm_atoms_list, folders):
         grad_string = np.array2string(grad, separator=" ", suppress_small=True, formatter={'float_kind':lambda x: "%3.7f" % x})
-        grad_string = "\n".join([line.strip("[] ") for line in grad_string.split("\n")]) + "\n" # Remove brackets and leading spaces
+        grad_string = [line.strip("[] ") for line in grad_string.split("\n")] # Remove brackets and leading spaces
+        elements = [chemical_symbols[atomic_number] for atomic_number in qm_atomic_numbers]
+        grad_string = [[elements[i]] + grad_string[i].split() for i in range(n_qm_atoms)] # Add element to each line
+        grad_string = [" ".join(line) for line in grad_string] # Join the elements of each line
+        grad_string = "\n".join(grad_string) + "\n" # Join the lines
 
         esp_grad_file.write(f"{n_qm_atoms}\n")
         esp_grad_file.write(f"{folder}\n")
@@ -75,6 +82,10 @@ def main():
         folders = [os.getcwd()]
     original_folder = os.path.abspath(os.getcwd())
 
+    with open(orcainfo_file, "r") as f:
+        num_header_lines = sum(1 for line in f) + 3
+    
+    qm_atomic_numbers_list = []
     esps_list = []
     gradients_list = []
     n_qm_atoms_list = []
@@ -82,9 +93,7 @@ def main():
     for folder in folders:
         os.chdir(folder)
         
-        with open(orcainfo_file, "r") as f:
-            num_header_lines = sum(1 for line in f) + 3
-
+        atomic_numbers = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(0,), dtype=int)
         qm_coords = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(1,2,3))
         mm_coords = np.genfromtxt(point_charge_file, skip_header=1, usecols=(1,2,3))
         mm_charges = np.genfromtxt(point_charge_file, skip_header=1, usecols=(0,))
@@ -99,7 +108,8 @@ def main():
         elif unit=="V":
             esps = esps/angstrom_to_bohr*atomic_units_to_volt # from e/Angstrom to e/Bohr(atomic unit) to V
             gradients = gradients/angstrom_to_bohr/angstrom_to_bohr*atomic_units_to_volt_per_angstrom # from e/Angstrom^2 to e/Bohr^2(atomic unit) to V/Angstrom
-            
+
+        qm_atomic_numbers_list.append(atomic_numbers)    
         esps_list.append(esps)
         gradients_list.append(gradients)
         n_qm_atoms_list.append(n_qm_atoms)
@@ -113,7 +123,7 @@ def main():
         
         os.chdir(original_folder)
 
-    write_files(folders, n_qm_atoms_list, esps_list, gradients_list)
+    write_files(folders, qm_atomic_numbers_list, n_qm_atoms_list, esps_list, gradients_list)
 
 def test_function():
     qm_coords = np.array([
@@ -143,7 +153,7 @@ def test_function():
     assert np.allclose(test_gradients, target_gradients), f"\ntest_gradients:\n{test_gradients}\ntarget_gradients:\n{target_gradients}"
 
     print("Writing test files")
-    write_files(["test_folder"], [3], [test_esps], [test_gradients])
+    write_files(["test_folder"], [[6, 7]], [2], [test_esps], [test_gradients])
 
     print("Success")
     

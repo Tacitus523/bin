@@ -1,4 +1,6 @@
 #Give folder-prefix as $1, file-prefix as $2
+ESPS_FILE=esps_by_qmmm.txt
+
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
 if [[ -z $1 || -z $2 ]]
@@ -7,6 +9,7 @@ then
     echo `date`" - Usage: ./extract_qmmm_information.sh [folder-prefix]] [file-prefix] . "
     exit 1
 fi
+
 
 folders=$(find $1* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
@@ -19,9 +22,8 @@ do
 	break
 done
 
-ESPS_FILE=esps_by_qmmm.txt
 
-bash extract_qm_information.sh $1 $2
+#extract_qm_information.sh $1 $2
 
 if [ -f $ESPS_FILE ]
 then rm $ESPS_FILE
@@ -34,5 +36,11 @@ fi
 # 	echo '' >> $ESPS_FILE # basicially makes a \n 
 # done
 
-bash run_esp_calc.sh $1 $2
-#qsub run_esp_calc.sh $1 $2
+# run_esp_calc.sh $1 $2
+if [ -f "esp_calc.out" ]
+then rm "esp_calc.out"
+fi
+if [ -f "esp_calc.err" ]
+then rm "esp_calc.err"
+fi
+qsub -v PATH $(which run_esp_calc.sh) $1 $2 

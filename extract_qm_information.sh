@@ -67,5 +67,5 @@ do
 
 	echo $num_atoms >> $FORCES_FILE
 	echo $folder >> $FORCES_FILE
-	tac $folder/$2.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%+4.9f %+4.9f %+4.9f\n", $4, $5, $6}' >> $FORCES_FILE
+	tac $folder/$2.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%s %+4.9f %+4.9f %+4.9f\n", $2, $4, $5, $6}' >> $FORCES_FILE
 done
