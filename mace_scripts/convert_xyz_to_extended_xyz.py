@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 import numpy as np
-from typing import Tuple, Generator, Sequence
+from typing import Tuple, Generator, Sequence, Dict
 
 from ase import Atoms
 
@@ -124,7 +124,7 @@ def load_esp_data(esp_file: str, esp_gradient_file: str) -> Tuple[Sequence[np.nd
     return esps, gradients
 
 def write_extxyz(
-        outfile: str,
+        config_data: Dict[str, str|int|float],
         molecules: Sequence[Tuple[int, str, Atoms]],
         energies: np.ndarray,
         forces: Sequence[np.ndarray],
@@ -133,7 +133,8 @@ def write_extxyz(
         esps: Sequence[np.ndarray],
         electric_fields: Sequence[np.ndarray]
     ) -> None:
-    boxsize = BOXSIZE*nm_to_A 
+    outfile = config_data["OUTFILE"]
+    boxsize = config_data["BOXSIZE"]*nm_to_A 
     lattice_vector = f'{boxsize:0.1f} 0.0 0.0 0.0 {boxsize:0.1f} 0.0 0.0 0.0 {boxsize:0.1f}'
     file = open(outfile, 'w')
     for mol_idx in range(len(molecules)):
@@ -151,7 +152,7 @@ def write_extxyz(
 
 def main() -> None:
     args: argparse.Namespace = parse_args()
-    config_data: dict = read_config(args)
+    config_data: Dict[str, str|int|float] = read_config(args)
 
     data_folder             = config_data["DATA_FOLDER"]
     geom_file               = os.path.join(data_folder, config_data["GEOMETRY_FILE"])
@@ -179,13 +180,21 @@ def main() -> None:
         esps = [np.zeros(len(molecule[2])) for molecule in molecules]
         gradients = [np.zeros((len(molecule[2]), 3)) for molecule in molecules]
 
+    # Check and assert data
+    assert len(molecules) == len(energies), f"Number of geometries ({len(molecules)}) does not match number of energies ({len(energies)})"
+    assert len(molecules) == len(charges), f"Number of geometries ({len(molecules)}) does not match number of charge arrays ({len(charges)})"
+    assert len(molecules) == len(total_charges), f"Number of geometries ({len(molecules)}) does not match number of total charges ({len(total_charges)})"
+    assert len(molecules) == len(forces), f"Number of geometries ({len(molecules)}) does not match number of force arrays ({len(forces)})"
+    assert len(molecules) == len(esps), f"Number of geometries ({len(molecules)}) does not match number of ESP arrays ({len(esps)})"
+    assert len(molecules) == len(gradients), f"Number of geometries ({len(molecules)}) does not match number of ESP gradient arrays ({len(gradients)})"
+
     # Convert units
     energies *= H_to_eV
     forces = [force_matrix * H_B_to_eV_A * -1 for force_matrix in forces]
     esps = [esp_array * H_to_eV for esp_array in esps]
     esp_gradients = [gradient_matrix * H_B_to_eV_A for gradient_matrix in gradients]
 
-    write_extxyz(outfile, molecules, energies, forces, charges, total_charges, esps, esp_gradients)
+    write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients)
 
 if __name__ == "__main__":
     main()
