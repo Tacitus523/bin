@@ -23,7 +23,7 @@ do
 done
 
 
-#extract_qm_information.sh $1 $2
+extract_qm_information.sh $1 $2
 
 if [ -f $ESPS_FILE ]
 then rm $ESPS_FILE
