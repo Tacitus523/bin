@@ -26,7 +26,7 @@ energy_key: str = "ref_energy"
 force_key: str = "ref_force"
 charge_key: str = "ref_charge"
 esp_key: str = "esp"
-esp_gradient_key: str = "electric_field"
+esp_gradient_key: str = "esp_gradient"
 total_charge_key: str = "total_charge"
 
 # Conversion factors

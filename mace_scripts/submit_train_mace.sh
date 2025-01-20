@@ -3,8 +3,8 @@
 TRAIN_SCRIPT="train_mace.sh"
 
 # Default data folder
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
 
 # Default number of epochs
@@ -59,6 +59,7 @@ fi
 for ((i=0; i<NUM_SUBMISSIONS; i++))
 do
     submission_dir="model_$i"
+    split_data_folder="$data_folder/split_$i"
     mkdir -p $submission_dir
     cd $submission_dir
     sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $data_folder
