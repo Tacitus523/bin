@@ -19,9 +19,9 @@ echo "Assuming old conda pkgs: $CONDA_PKGS"
 
 echo "Adding new conda envs: $NEW_CONDA_ENVS"
 conda config --add envs_dirs $CONDA_ENVS
-conda config --add envs_dirs $NEW_CONDA_ENVS
+conda config --add envs_dirs $NEW_CONDA_ENVS # Takes precedence over old envs
 
 echo "Adding new conda pkgs: $NEW_CONDA_PKGS"
 conda config --add pkgs_dirs $CONDA_PKGS
-conda config --add pkgs_dirs $NEW_CONDA_PKGS
+conda config --add pkgs_dirs $NEW_CONDA_PKGS # Takes precedence over old pkgs
 
