@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 
+set -e # Exit on error
+set -u # Exit on using unset variable
+
 which conda
 if [ $? -ne 0 ]; then
     echo "Conda not found. Please install conda and try again."
@@ -9,7 +12,7 @@ fi
 NEW_CONDA_ENVS=/home/conda/envs
 NEW_CONDA_PKGS=/home/conda/pkgs
 
-CONDA_HOME=dirname $(dirname $(which conda))
+CONDA_HOME=$(dirname $(dirname $(which conda)))
 CONDA_ENVS=$CONDA_HOME/envs
 CONDA_PKGS=$CONDA_HOME/pkgs
 
