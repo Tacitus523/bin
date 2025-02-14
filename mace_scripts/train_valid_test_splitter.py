@@ -41,7 +41,7 @@ def do_train_val_test_split(args):
     geom_file = os.path.join(args.data_folder, args.geom_file)
     # Load the complete dataset from a .extxyz file
     data = read(geom_file, ":", format="extxyz")
-    print(f"Loaded {len(data)} configurations from 'geoms.extxyz'")
+    print(f"Loaded {len(data)} configurations from {geom_file}")
 
     # Split the dataset into training, validation and test set
     train_data, test_data = train_test_split(data, test_size=args.p_test, random_state=42, shuffle=False)
