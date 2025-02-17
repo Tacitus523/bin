@@ -15,8 +15,8 @@ GEOMETRY_FILE: str = "ThiolDisulfidExchange.xyz" # Angstrom units to Angstrom un
 ENERGY_FILE: str = "energies.txt" # Hartree to eV
 FORCE_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, assumed to be not actually forces but gradients, transformed to forces by multiplying by -1
 CHARGE_FILE: str = "charges.txt" # e to e
-ESP_FILE: str = "esps_by_mm.txt" # H/e to eV/e, optional, gets filled with zeros if not present
-ESP_GRAD_FILE: str = "esp_gradients_conv.xyz" # H/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
+ESP_FILE: str = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
+ESP_GRAD_FILE: str = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
 OUTFILE: str = "geoms.extxyz"
 
 BOXSIZE: float = 22.0 # nm to Angstrom, assuming cubic box, not individual per geometry so far, TODO: read from input file
@@ -191,8 +191,8 @@ def main() -> None:
     # Convert units
     energies *= H_to_eV
     forces = [force_matrix * H_B_to_eV_A * -1 for force_matrix in forces]
-    esps = [esp_array * H_to_eV for esp_array in esps]
-    esp_gradients = [gradient_matrix * H_B_to_eV_A for gradient_matrix in gradients]
+    esps = [esp_array for esp_array in esps]
+    esp_gradients = [gradient_matrix for gradient_matrix in gradients]
 
     write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients)
 
