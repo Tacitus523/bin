@@ -12,7 +12,7 @@ then
 fi
 
 target_file="timesteps.csv"
-search_term="step"
+search_term="Hit a significant structure at step"
 plot_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/plot_boxplot_timesteps.py"
 
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
@@ -29,7 +29,7 @@ do
     iteration_index="${iteration_index%_*}"     # Remove everything after the last underscore
     if [ -f $out_file ]
     then
-        time_steps=$(grep $search_term $out_file | awk '{print $NF}')
+        time_steps=$(grep "$search_term" $out_file | awk '{print $NF}')
         for time_step in $time_steps
         do
             echo "Iteration $iteration_index;$time_step" >> $target_file_absolute_path
