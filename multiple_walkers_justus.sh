@@ -152,11 +152,13 @@ run_mdrun() {
     local tpr_file=$2
     local plumed_file=$3
     local rerun_command=$4
+    basename_tpr=$(basename $tpr_file .tpr)
+
     cd "WALKER_$walker_id"
     if [ "$walker_id" -eq 0 ]; then
-        gmx mdrun -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command
+        gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command
     else
-        gmx mdrun -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command &>> mdrun.out
+        gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command &>> mdrun.out
     fi
 }
 
