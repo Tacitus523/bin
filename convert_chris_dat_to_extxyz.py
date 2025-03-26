@@ -22,11 +22,13 @@ DEFAULT_OUTPUT_FILE = "{}.extxyz"
 # Conversion factors
 H_to_eV = 27.211386245988
 H_B_to_eV_A = 51.422086190832
+nm_to_A = 10
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Converts a .dat file from the custom format to an extended xyz file")
     parser.add_argument("-i","--input_file", required=True, type=str, help="Input .dat file")
     parser.add_argument("-o", "--output_file", required=False, default=None, type=str, help="Output .extxyz file")
+    parser.add_argument("-b", "--box_size", required=False, default=None, type=float, help="Box size in nm for periodic boundary conditions, assuming cubic box")
     args = parser.parse_args()
     if args.output_file is None:
         input_file_basename = os.path.splitext(os.path.basename(args.input_file))[0]
@@ -113,9 +115,11 @@ def write_extxyz_file(args: argparse.Namespace, configs: List[Tuple[str, float, 
         if excitation_energy is not None:
             state_energy += excitation_energy
 
-        info_line = f"Properties=species:S:1:pos:R:3:forces:R:3:esp:R:1 energy={state_energy} electronic_energy={electronic_energy} repulsive_energy={repulsive_energy}"
+        info_line = f"Properties=species:S:1:pos:R:3:ref_force:R:3:esp:R:1 ref_energy={state_energy} electronic_energy={electronic_energy} repulsive_energy={repulsive_energy}"
         if excitation_energy is not None:
             info_line += f" excitation_energy={excitation_energy}"
+        if args.box_size is not None:
+            info_line += f" Lattice=\"{args.box_size*nm_to_A} 0.0 0.0 0.0 {args.box_size*nm_to_A} 0.0 0.0 0.0 {args.box_size*nm_to_A}\""
         info_line += " pbc=\"F F F\"\n"
         output_file.write(info_line)
         
