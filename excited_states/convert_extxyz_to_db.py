@@ -3,13 +3,19 @@ import argparse
 from ase import Atoms
 from ase.io import read
 from ase.db import connect
+import datetime
 import os 
 import numpy as np
 from typing import List, Dict
 
+#TODO: Dipole moments properly
+
 # Default file names
 EXTXYZ_FILE = "geoms.extxyz"
 DB_FILE = "geoms.db"
+
+# Default reference method
+REFERENCE_METHOD = "DFTB/ob2-1-1"
 
 # Expected property keys in the .extxyz file
 N_STATES_KEY = "n_states"
@@ -42,8 +48,6 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
 
     # setting up for creating atomsobject // right format for schnetpack
     for molecule_idx, molecule in enumerate(molecule_list): 
-        n_atoms = len(molecule)
-
         # Reading in number of states
         n_states = molecule.info.get(N_STATES_KEY)
         if n_states is None: 
@@ -67,9 +71,10 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
         if forces is None: 
             raise ValueError(f"Could not find forces key {FORCES_KEY} in the .extxyz file for molecule {molecule_idx}")
         else: 
-            forces = np.array(forces).reshape((n_states, n_atoms, 3)) # Hartree/Bohr, shape (n_states, n_atoms, 3)
+            forces = np.array(forces)
+            forces = np.stack([forces[:, i:i+3] for i in range(0, n_states*3, 3)], axis=0) # Hartree/Bohr, shape (n_states, n_atoms, 3)
             gradients = forces * -1 # Hartree/Bohr, shape (n_states, n_atoms, 3)
-            has_gradients = np.ones(((1,)))
+            has_gradients = np.ones(((1,)), dtype=np.int64)
         
         # electrostatic potential
         esp = molecule.arrays.get(ESP_KEY)
@@ -90,7 +95,8 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
         if electric_field_gradient is None:
             raise ValueError(f"Could not find electric field gradient key {ELECTRIC_FIELD_GRADIENT_KEY} in the .extxyz file for molecule {molecule_idx}")
         else:
-            electric_field_gradient = np.array(electric_field_gradient).reshape((n_atoms, 3, 3))
+            electric_field_gradient = np.array(electric_field_gradient)
+            electric_field_gradient = np.stack([electric_field_gradient[:, i:i+3] for i in range(0, 9, 3)], axis=1) # Hartree/Bohr^2/e, shape (n_atoms, 3, 3)
 
         # oscillator strength
         osc_strengths = []
@@ -103,16 +109,20 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
                 osc_strengths.append(osc_str)
         osc_strengths = np.array(osc_strengths) # unitless, shape (n_states,)
 
+        # dummy dipole moments
+        n_dipole_moments = n_states * (n_states - 1) // 2
+        dipole_moments = np.zeros((n_states, 3))
 
         properties = {
-            "energy": energy,
+            "energy": energies,
             "forces": forces,
             "gradients": gradients,
             "has_gradients": has_gradients,
             "esp": esp,
             "electric_field": electric_field,
             "dFdr": electric_field_gradient,
-            "oscillator_strength": osc_strengths
+            "oscillator_strength": osc_strengths,
+            "dipoles": dipole_moments
         }
         property_list.append(properties)
 
@@ -120,9 +130,23 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
     if os.path.exists(args.database):
         os.remove(args.database)
 
+    metadata = {
+        "n_singlets": n_states,
+        "n_triplets": 0,
+        "reference method": REFERENCE_METHOD,
+        "coordinates_units": "Angstrom",
+        "energy_units": "Ha",
+        "force_units": "Ha/Bohr",
+        "esp_units": "Ha/e",
+        "electric_field_units": "Ha/Bohr/e",
+        "electric_field_gradient_units": "Ha/Bohr^2/e",
+        "oscillator_strength_units": "unitless",
+        "dipole_units": "dummy"
+    }
 
     # WRITING TO DB
     with connect(args.database) as db: # with context manager to enforce single transaction
+        db.metadata = metadata
         for molecule, properties in zip(molecule_list, property_list):
             db.write(molecule, data=properties)
 
