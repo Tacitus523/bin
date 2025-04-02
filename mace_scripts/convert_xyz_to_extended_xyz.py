@@ -17,6 +17,7 @@ FORCE_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, a
 CHARGE_FILE: str = "charges.txt" # e to e
 ESP_FILE: str = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
 ESP_GRAD_FILE: str = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
+DIPOLE_FILE: str = "dipoles.txt" # au to au, optional, gets filled with zeros if not present
 OUTFILE: str = "geoms.extxyz"
 
 BOXSIZE: float = 22.0 # nm to Angstrom, assuming cubic box, not individual per geometry so far, TODO: read from input file
@@ -28,6 +29,7 @@ charge_key: str = "ref_charge"
 esp_key: str = "esp"
 esp_gradient_key: str = "esp_gradient"
 total_charge_key: str = "total_charge"
+dipole_key: str = "dipole"
 
 # Conversion factors
 H_to_eV = 27.211386245988
@@ -61,6 +63,7 @@ def read_config(args: argparse.Namespace) -> dict:
     config_data.setdefault("CHARGE_FILE", CHARGE_FILE)
     config_data.setdefault("ESP_FILE", ESP_FILE)
     config_data.setdefault("ESP_GRAD_FILE", ESP_GRAD_FILE)
+    config_data.setdefault("DIPOLE_FILE", DIPOLE_FILE)
     config_data.setdefault("OUTFILE", OUTFILE)
     config_data.setdefault("BOXSIZE", BOXSIZE)
 
@@ -123,6 +126,10 @@ def load_esp_data(esp_file: str, esp_gradient_file: str) -> Tuple[Sequence[np.nd
                 break
     return esps, gradients
 
+def load_dipole_data(dipole_file: str) -> np.ndarray:
+    dipoles = np.loadtxt(dipole_file)
+    return dipoles
+
 def write_extxyz(
         config_data: Dict[str, str|int|float],
         molecules: Sequence[Tuple[int, str, Atoms]],
@@ -131,7 +138,8 @@ def write_extxyz(
         charges: Sequence[np.ndarray],
         total_charges: np.ndarray,
         esps: Sequence[np.ndarray],
-        electric_fields: Sequence[np.ndarray]
+        electric_fields: Sequence[np.ndarray],
+        dipoles: np.ndarray
     ) -> None:
     outfile = config_data["OUTFILE"]
     boxsize = config_data["BOXSIZE"]*nm_to_A 
@@ -140,7 +148,8 @@ def write_extxyz(
     for mol_idx in range(len(molecules)):
         n_atoms, comment, atoms = molecules[mol_idx]
         file.write(f"{n_atoms}\n")
-        file.write(f'Lattice="{lattice_vector}" Properties=species:S:1:pos:R:3:{force_key}:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 {energy_key}={energies[mol_idx]} {total_charge_key}={total_charges[mol_idx]: .1f} pbc="F F F" comment="{comment}"\n')
+        info_line = f'Lattice="{lattice_vector}" Properties=species:S:1:pos:R:3:{force_key}:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 {energy_key}={energies[mol_idx]} {total_charge_key}={total_charges[mol_idx]:1.1f} {dipole_key}="{dipoles[mol_idx,0]:1.5f} {dipoles[mol_idx,1]:1.5f} {dipoles[mol_idx,2]:1.5f}" pbc="F F F" comment="{comment}"\n'
+        file.write(info_line)
         for at_idx, atom in enumerate(atoms):
             atom_line = " ".join(atom[:4])  # Assuming atom format is [element, x, y, z]
             force_line = " ".join(map(lambda x: f"{x: .8f}", forces[mol_idx][at_idx]))
@@ -161,7 +170,7 @@ def main() -> None:
     charge_file             = os.path.join(data_folder, config_data["CHARGE_FILE"])
     esp_file                = os.path.join(data_folder, config_data["ESP_FILE"])
     esp_gradient_file       = os.path.join(data_folder, config_data["ESP_GRAD_FILE"])
-    outfile                 = os.path.join(data_folder, config_data["OUTFILE"])
+    dipole_file             = os.path.join(data_folder, config_data["DIPOLE_FILE"])
 
     # Read data
     molecules: Sequence[Tuple[int, str, Atoms]] = list(read_xyz(geom_file)) # List of tuples (n_atoms, comment, Atoms)
@@ -179,6 +188,12 @@ def main() -> None:
         print("ESP files not found, filling with zeros")
         esps = [np.zeros(len(molecule[2])) for molecule in molecules]
         gradients = [np.zeros((len(molecule[2]), 3)) for molecule in molecules]
+    if os.path.exists(dipole_file):
+        print("Dipole file found")
+        dipoles: np.ndarray = load_dipole_data(dipole_file)
+    else:
+        print("Dipole file not found, filling with zeros")
+        dipoles = np.zeros((len(molecules), 3))
 
     # Check and assert data
     assert len(molecules) == len(energies), f"Number of geometries ({len(molecules)}) does not match number of energies ({len(energies)})"
@@ -187,6 +202,7 @@ def main() -> None:
     assert len(molecules) == len(forces), f"Number of geometries ({len(molecules)}) does not match number of force arrays ({len(forces)})"
     assert len(molecules) == len(esps), f"Number of geometries ({len(molecules)}) does not match number of ESP arrays ({len(esps)})"
     assert len(molecules) == len(gradients), f"Number of geometries ({len(molecules)}) does not match number of ESP gradient arrays ({len(gradients)})"
+    assert len(molecules) == len(dipoles), f"Number of geometries ({len(molecules)}) does not match number of dipoles ({len(dipoles)})"
 
     # Convert units
     energies *= H_to_eV
@@ -194,7 +210,7 @@ def main() -> None:
     esps = [esp_array for esp_array in esps]
     esp_gradients = [gradient_matrix for gradient_matrix in gradients]
 
-    write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients)
+    write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients, dipoles)
 
 if __name__ == "__main__":
     main()
