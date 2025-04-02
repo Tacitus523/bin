@@ -34,6 +34,7 @@ CHARGES_LOEW_FILE=charges_loew.txt
 ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
 FORCES_FILE=forces.xyz
+DIPOLE_FILE=dipoles.txt
 
 remove_if_exists $FOLDER_FILE
 remove_if_exists $CHARGES_MULL_FILE
@@ -43,6 +44,7 @@ remove_if_exists $CHARGES_LOEW_FILE
 remove_if_exists $ENERGIES_FILE
 remove_if_exists $GEOMS_FILE
 remove_if_exists $FORCES_FILE
+remove_if_exists $DIPOLE_FILE
 
 for folder in $folders
 do
@@ -68,4 +70,6 @@ do
 	echo $num_atoms >> $FORCES_FILE
 	echo $folder >> $FORCES_FILE
 	tac $folder/$2*.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%s %+4.9f %+4.9f %+4.9f\n", $2, $4, $5, $6}' >> $FORCES_FILE
+
+	tac $folder/$2*.out | grep -m 1 'Total Dipole Moment' | tac | awk '{print $5, $6, $7}' >> $DIPOLE_FILE
 done
