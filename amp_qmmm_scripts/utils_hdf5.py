@@ -11,7 +11,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Unpack datasets from an HDF5 file and save them as .npy files.")
     parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
     parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for .npy files.")
-    parser.add_argument("--view", action="store_true", help="View the structure of the HDF5 file.")
+    parser.add_argument("-v", "--view", action="store_true", help="View the structure of the HDF5 file.")
     args = parser.parse_args()
 
     if not os.path.exists(args.hdf5_file_path):
