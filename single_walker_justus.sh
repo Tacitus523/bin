@@ -56,7 +56,7 @@ for file in "${additional_files[@]}"; do
 done
 
 #GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
-GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda-debug/bin/GMXRC"
 
 echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
 
