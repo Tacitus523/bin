@@ -88,7 +88,7 @@ def unpack_single_system(hdf5_file_path, output_dir, index: int):
     # if os.path.exists(output_dir):
     #     shutil.rmtree(output_dir)
 
-    # os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     #datasets: Dict[str, List[np.ndarray]] = {}
     hdf5_file = h5py.File(hdf5_file_path, "r")
@@ -138,7 +138,7 @@ def unpack_multiple_systems(hdf5_file_path, output_dir, indices: List[int]):
     # if os.path.exists(output_dir):
     #     shutil.rmtree(output_dir)
 
-    # os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     hdf5_file = h5py.File(hdf5_file_path, "r")
     # Iterate through all groups in the HDF5 file
