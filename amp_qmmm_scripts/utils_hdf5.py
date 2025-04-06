@@ -30,6 +30,13 @@ XTB_CONVERSION_DICTIONARY = {
     'xtb_pcgrad': 'mm_gradients',
 }
 
+REDUNDANT_KEYS = {
+    'orca_species': 'xtb_species',
+    'orca_coordinates': 'xtb_coordinates',
+    'orca_pc_charges': 'xtb_pc_charges',
+    'orca_pc_coordinates': 'xtb_pc_coordinates',
+}
+
 DELTA_KEYS = {
     'delta_qm_energies': ['orca_energies', 'xtb_energies'],
     'delta_qm_gradients': ['orca_engrad', 'xtb_engrad'],
@@ -77,11 +84,11 @@ def unpack_single_system(hdf5_file_path, output_dir, index: int):
     """Unpack datasets from an HDF5 file and save them as .npy files."""
     print(f"Unpacking {hdf5_file_path} to {output_dir}")
 
-    # Remove the directory and its contents if it already exists
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
+    # # Remove the directory and its contents if it already exists
+    # if os.path.exists(output_dir):
+    #     shutil.rmtree(output_dir)
 
-    os.makedirs(output_dir, exist_ok=True)
+    # os.makedirs(output_dir, exist_ok=True)
 
     #datasets: Dict[str, List[np.ndarray]] = {}
     hdf5_file = h5py.File(hdf5_file_path, "r")
@@ -110,6 +117,11 @@ def unpack_single_system(hdf5_file_path, output_dir, index: int):
             
     hdf5_file.close()
     
+    # Create redundant files
+    for key, value in REDUNDANT_KEYS.items():
+        if os.path.exists(os.path.join(output_dir, f"{value}.npy")):
+            shutil.copy(os.path.join(output_dir, f"{value}.npy"), os.path.join(output_dir, f"{key}.npy"))
+
     #INFO: Doesn't work, because the amount MM particles differs 
     # datasets = {dataset_name: np.concatenate(dataset) for dataset_name, dataset in datasets.items()}
     # # Save each dataset as a .npy file
@@ -122,11 +134,11 @@ def unpack_multiple_systems(hdf5_file_path, output_dir, indices: List[int]):
     """Unpack datasets from an HDF5 file for multiple systems and save them as .npy files."""
     print(f"Unpacking {hdf5_file_path} to {output_dir}")
 
-    # Remove the directory and its contents if it already exists
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
+    # # Remove the directory and its contents if it already exists
+    # if os.path.exists(output_dir):
+    #     shutil.rmtree(output_dir)
 
-    os.makedirs(output_dir, exist_ok=True)
+    # os.makedirs(output_dir, exist_ok=True)
 
     hdf5_file = h5py.File(hdf5_file_path, "r")
     # Iterate through all groups in the HDF5 file
