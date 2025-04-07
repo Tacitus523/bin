@@ -2,18 +2,23 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32G
-#SBATCH --time=72:00:00
-#SBATCH --output=train.out
-#SBATCH --error=train.err
-#SBATCH --mail-user=lukas.petersen@kit.edu
-#SBATCH --mail-type=END,FAIL
+#SBATCH --time=2:00:00
+#SBATCH --output=test.out
+#SBATCH --error=test.err
+#SBATCH --gres=gpu:1
+
+# Self submission
+if [ -z "$SLURM_JOB_ID" ]; then
+    sbatch "$0" "$@"
+    exit 0
+fi
 
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-VALID_FILE="$DATA_FOLDER/geoms.extxyz"
+#VALID_FILE="$DATA_FOLDER/geoms.extxyz"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-fr0/training_data/DFTB_OB2-1-1_DMSO"
-#VALID_FILE="$DATA_FOLDER/train.extxyz"
+VALID_FILE="$DATA_FOLDER/geoms.extxyz"
 TEST_FILE="qm_mlmm.extxyz"
 TRAIN_FILE="$TEST_FILE" # Dummy entry, not used, because this gets shuffled anyway
 
