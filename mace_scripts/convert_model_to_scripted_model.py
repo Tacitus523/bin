@@ -44,7 +44,7 @@ def main():
             target_model_path = swa_model_paths[-1]
             print(f'Using the last SWA model: {target_model_path}')
 
-    model = torch.load(target_model_path)
+    model = torch.load(target_model_path, map_location='cpu')
     model_compiled = jit.compile(deepcopy(model))
     torch.jit.save(model_compiled, target_model_path.replace('.model', '.pt'))
 
