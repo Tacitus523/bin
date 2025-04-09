@@ -22,6 +22,14 @@ fi
 
 submission_script=$(realpath "$(dirname "$(readlink -f "$0")")/../submit_python_file_justus.sh")
 amp_script=$(which test_amp.py)
+if [ -z "$submission_script" ]; then
+    echo "Error: Could not find the submission script."
+    exit 1
+fi
+if [ -z "$amp_script" ]; then
+    echo "Error: Could not find the amp script test_amp.py."
+    exit 1
+fi
 
 
 $submission_script -p $amp_script -c $results_dir 
