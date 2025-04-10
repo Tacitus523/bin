@@ -43,18 +43,30 @@ DELTA_KEYS = {
     'delta_mm_gradients': ['orca_pcgrad', 'xtb_pcgrad'],
 } # orca_property - xtb_property
 
+# Expected like this in train_amp.py
+TRAINING_DIRECTORY = "training"
+VALIDATION_DIRECTORY = "validation"
+TEST_DIRECTORY = "test"
+
+SYSTEM_NAME = "dalanine"
+
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Unpack datasets from an HDF5 file and save them as .npy files.")
     parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
     parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for .npy files.")
-    parser.add_argument("-v", "--view", action="store_true", help="View the structure of the HDF5 file.")
+    parser.add_argument("-n", "--name", type=str, default=SYSTEM_NAME, help="Name of the system. Default is %s." % SYSTEM_NAME)
     parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack.")
     parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
+    parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
+    parser.add_argument("-v", "--view", action="store_true", help="View the structure of the HDF5 file.")
     args = parser.parse_args()
 
     if not os.path.exists(args.hdf5_file_path):
         parser.error(f"The file {args.hdf5_file_path} does not exist.")
+
+    if args.output_dir is not None:
+        args.output_dir = os.path.abspath(args.output_dir)
     
     if not args.view and not args.output_dir:
         args.view = True
@@ -68,6 +80,18 @@ def parse_arguments():
     if not args.single_system and args.indices is None and args.output_dir is not None:
         parser.error("When --single_system is not specified, indices must be provided.")
 
+    if args.splits is not None:
+        if len(args.splits) != 3:
+            parser.error("When --split is specified, exactly three ratios must be provided.")
+        if sum(args.splits) > 1.0:
+            parser.error("The sum of the split ratios must be smaller than or equal to 1.0.")
+        if args.single_system:
+            parser.warning("The --split option is ignored when --single_system is specified.")
+
+    # Print the parsed arguments
+    print("Parsed arguments:")
+    for arg, value in vars(args).items():
+        print(f"  {arg}: {value}")
     return args
 
 def view_hdf5_file(hdf5_file_path):
@@ -80,15 +104,16 @@ def view_hdf5_file(hdf5_file_path):
     with h5py.File(hdf5_file_path, "r") as hdf5_file:
         hdf5_file.visititems(print_hdf5_structure)
 
-def unpack_single_system(hdf5_file_path, output_dir, index: int):
+def unpack_single_system(args):
     """Unpack datasets from an HDF5 file and save them as .npy files."""
+    hdf5_file_path = args.hdf5_file_path
+    output_dir = os.path.join(args.output_dir, args.name)
+    index: int = args.indices[0]
+    
     print(f"Unpacking {hdf5_file_path} to {output_dir}")
 
-    # # Remove the directory and its contents if it already exists
-    # if os.path.exists(output_dir):
-    #     shutil.rmtree(output_dir)
-
-    os.makedirs(output_dir, exist_ok=True)
+    # Prepare the output directory
+    prepare_output_directory(output_dir, None)
 
     #datasets: Dict[str, List[np.ndarray]] = {}
     hdf5_file = h5py.File(hdf5_file_path, "r")
@@ -130,19 +155,24 @@ def unpack_single_system(hdf5_file_path, output_dir, index: int):
     #     np.save(output_file_path, dataset)
     #     print(f"Saved {dataset_name} to {output_file_path}")
 
-def unpack_multiple_systems(hdf5_file_path, output_dir, indices: List[int]):
+def unpack_multiple_systems(args):
     """Unpack datasets from an HDF5 file for multiple systems and save them as .npy files."""
+    hdf5_file_path = args.hdf5_file_path
+    output_dir = os.path.join(args.output_dir, args.name)
+    indices: List[int] = args.indices
+    splits: None | List[float] = args.splits
+
     print(f"Unpacking {hdf5_file_path} to {output_dir}")
 
-    # # Remove the directory and its contents if it already exists
-    # if os.path.exists(output_dir):
-    #     shutil.rmtree(output_dir)
-
-    os.makedirs(output_dir, exist_ok=True)
+    prepare_output_directory(output_dir, splits)
 
     hdf5_file = h5py.File(hdf5_file_path, "r")
     # Iterate through all groups in the HDF5 file
     for group_idx, group_name in enumerate(hdf5_file.keys()):
+        if group_idx > max(indices):
+            print(f"Reached the last index {max(indices)}. Stopping unpacking.")
+            break
+
         if group_idx not in indices:
             continue
 
@@ -158,9 +188,53 @@ def unpack_multiple_systems(hdf5_file_path, output_dir, indices: List[int]):
         for key, value in DELTA_KEYS.items():
             group_dict[key] = group_dict[value[0]] - group_dict[value[1]]
         group_dict = {ORCA_CONVERSION_DICTIONARY.get(key, key): value for key, value in group_dict.items()}
-        np.save(os.path.join(output_dir, f"{group_name}_batch_{group_idx}.npy"), group_dict, allow_pickle=True)
+
+        if splits is None:
+            # Save the group data as a .npy file
+            np.save(os.path.join(output_dir, f"{group_name}_batch_{group_idx}.npy"), group_dict, allow_pickle=True)
+            continue
+
+        # Save the group data as a .npy file according to the split ratios
+        first_group_value = list(group_dict.values())[0]
+        n_group_entries = len(first_group_value)
+        n_split_entries = [int(n_group_entries * split) for split in splits]
+        random_indices_list = np.random.permutation(n_group_entries)
+        split_starts = [0] + np.cumsum(n_split_entries).tolist()
+        split_indices_list = [random_indices_list[split_starts[i]:split_starts[i + 1]] for i in range(len(split_starts) - 1)]
+        
+        for split_name, split_indices in zip([TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY], split_indices_list):
+            split_group_dict = {key: value[split_indices] for key, value in group_dict.items()}
+            split_group_dir = os.path.join(output_dir, split_name)
+
+            # Save the split group data as a .npy file
+            np.save(os.path.join(split_group_dir, f"{group_name}_batch_{group_idx}.npy"), split_group_dict, allow_pickle=True)
+            np.save(os.path.join(split_group_dir, f"{group_name}_indices_{group_idx}.npy"), split_indices)
             
     hdf5_file.close()
+
+    if max(indices) > group_idx:
+        print(f"Warning: The indices {indices} are larger than the number of groups in the HDF5 file. Only unpacked up to index {group_idx}.")
+
+    return
+
+
+def prepare_output_directory(output_dir: str, splits: None | List[float]):
+    """Prepare the output directory by cleaning up and creating necessary subdirectories."""
+    # Remove the directory and its contents if it already exists
+    if os.path.exists(output_dir) and os.path.isdir(output_dir) and not os.getcwd() == output_dir:
+        shutil.rmtree(output_dir)
+    elif os.getcwd() == output_dir:
+        print(f"Output directory is the current working directory. Won't do cleanup.")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if splits is not None:
+        for split_group in [TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY]:
+            split_group_dir = os.path.join(output_dir, split_group)
+            # Remove the directory and its contents if it already exists
+            if os.path.exists(split_group_dir) and os.path.isdir(split_group_dir):
+                shutil.rmtree(split_group_dir)
+            os.makedirs(split_group_dir, exist_ok=True)
 
 def main():
     """Main function to parse arguments and unpack HDF5 file."""
@@ -171,10 +245,10 @@ def main():
 
     # Unpack datasets from the HDF5 file and save them as .npy files
     if args.output_dir and args.single_system:
-        unpack_single_system(args.hdf5_file_path, args.output_dir, args.indices[0])
+        unpack_single_system(args)
 
     if args.output_dir and not args.single_system:
-        unpack_multiple_systems(args.hdf5_file_path, args.output_dir, args.indices)
+        unpack_multiple_systems(args)
 
 if __name__ == "__main__":
     main()
