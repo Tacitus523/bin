@@ -1,8 +1,9 @@
 #!/usr/bin/env python
+import argparse
+import ase
 import h5py
 import numpy as np
 import os
-import argparse
 import shutil
 from typing import Dict, List
 
@@ -52,17 +53,32 @@ SYSTEM_NAME = "dalanine"
 
 def parse_arguments():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Unpack datasets from an HDF5 file and save them as .npy files.")
-    parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
-    parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for .npy files.")
-    parser.add_argument("-n", "--name", type=str, default=SYSTEM_NAME, help="Name of the system. Default is %s." % SYSTEM_NAME)
-    parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack.")
-    parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
-    parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
-    parser.add_argument("-v", "--view", action="store_true", help="View the structure of the HDF5 file.")
+    parser = argparse.ArgumentParser(description="Utility script for handling HDF5 files and conversions.")
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Sub-command to execute.")
+
+    # Subparser for unpacking datasets from an HDF5 file
+    unpack_parser = subparsers.add_parser("unpack", help="Unpack datasets from an HDF5 file and save them as .npy files.")
+    unpack_parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
+    unpack_parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for .npy files.")
+    unpack_parser.add_argument("-n", "--name", type=str, default=SYSTEM_NAME, help="Name of the system. Default is %s." % SYSTEM_NAME)
+    unpack_parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack.")
+    unpack_parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
+    unpack_parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
+    unpack_parser.add_argument("-v", "--view", action="store_true", help="View the structure of the HDF5 file.")
+    unpack_parser.add_argument("-c", "--conversion", choices=["orca", "xtb"], default="orca", help="Conversion type: 'orca' or 'xtb'. Default is 'orca'.")
+
+    # Subparser for creating an HDF5 file from extxyz and other files
+    pack_parser = subparsers.add_parser("pack", help="Create an HDF5 file from extxyz and other files.")
+    pack_parser.add_argument("hdf5_file_path", type=str, help="Path to the output HDF5 file.")
+    pack_parser.add_argument("-e", "--extxyz", type=str, required=True, help="Path to the extxyz file for conversion to .hdf5.")
+    pack_parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for the HDF5 file.")
+    pack_parser.add_argument("-n", "--name", type=str, default=SYSTEM_NAME, help="Name of the system. Default is %s." % SYSTEM_NAME)
+    pack_parser.add_argument("--pc", type=str, default=None, help="Path to the concatenated pointcharges files.")
+    pack_parser.add_argument("--pcgrad", type=str, default=None, help="Path to the concatenated pointcharges gradient files.")
+
     args = parser.parse_args()
 
-    if not os.path.exists(args.hdf5_file_path):
+    if not os.path.exists(args.hdf5_file_path) and args.extxyz is None:
         parser.error(f"The file {args.hdf5_file_path} does not exist.")
 
     if args.output_dir is not None:
@@ -87,6 +103,30 @@ def parse_arguments():
             parser.error("The sum of the split ratios must be smaller than or equal to 1.0.")
         if args.single_system:
             parser.warning("The --split option is ignored when --single_system is specified.")
+
+    if args.extxyz is not None:
+        if not os.path.exists(args.extxyz):
+            parser.error(f"The file {args.extxyz} does not exist.")
+        args.extxyz = os.path.abspath(args.extxyz)
+        
+        if args.output_dir is not None:
+            args.hdf5_file_path = os.path.join(args.output_dir, args.name + ".hdf5")
+            args.output_dir = None
+
+        if args.splits is not None:
+            print("Warning: The --split option is ignored when --extxyz is specified.")
+            args.splits = None
+        
+        if args.indices is not None:
+            print("Warning: The --indices option is ignored when --extxyz is specified.")
+            args.indices = None
+
+        if args.single_system:
+            print("Warning: The --single_system option is ignored when --extxyz is specified.")
+            args.single_system = False
+
+    if args.conversion != "orca":
+        raise NotImplementedError(f"Conversion type {args.conversion} is not implemented. Only 'orca' is supported.") 
 
     # Print the parsed arguments
     print("Parsed arguments:")
@@ -217,6 +257,17 @@ def unpack_multiple_systems(args):
 
     return
 
+def pack_single_system(args):
+    """Pack a single system from extxyz to HDF5."""
+    extxyz_file_path = args.extxyz
+    hdf5_file_path = args.hdf5_file_path
+
+    print(f"Packing {extxyz_file_path} to {hdf5_file_path}")
+
+    # Collect the data from the extxyz file
+    molecules = ase.io.read(extxyz_file_path, index=":")
+
+    # Assert validity of the data
 
 def prepare_output_directory(output_dir: str, splits: None | List[float]):
     """Prepare the output directory by cleaning up and creating necessary subdirectories."""
@@ -239,6 +290,11 @@ def prepare_output_directory(output_dir: str, splits: None | List[float]):
 def main():
     """Main function to parse arguments and unpack HDF5 file."""
     args = parse_arguments()
+
+    # Create an .hdf5 file from an extxyz file
+    if args.extxyz is not None:
+        pack_single_system(args)
+
     # View the structure of the HDF5 file
     if args.view:
         view_hdf5_file(args.hdf5_file_path)
