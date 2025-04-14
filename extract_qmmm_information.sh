@@ -1,5 +1,14 @@
 #Give folder-prefix as $1, file-prefix as $2
+# Units
+# ESP: eV/e
+# ESP_gradient: eV/e/A
+# MM_coordinate: A
+# MM_charge: e
+# MM_gradient: H/B (no confirmation)
+
 ESPS_FILE=esps_by_qmmm.txt
+PC_FILE=mm_data.pc
+PCGRAD_FILE=mm_data.pcgrad
 
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
@@ -28,13 +37,25 @@ extract_qm_information.sh $1 $2
 if [ -f $ESPS_FILE ]
 then rm $ESPS_FILE
 fi
+if [ -f $PC_FILE ]
+then rm $PC_FILE
+fi
+if [ -f $PCGRAD_FILE ]
+then rm $PCGRAD_FILE
+fi
 
 # # Concatenates esps from gromacs_dftb, if these are calculated with PME electrostatics, these include esps from QM zone
-# for folder in $1*
+# for folder in $folders
 # do
 # 	tail -n 1 $folder/qm_dftb_esp.xvg | awk '{for (i=2; i<=NF; i++) print $i}' | tr '\n' ' ' >> $ESPS_FILE
 # 	echo '' >> $ESPS_FILE # basicially makes a \n 
 # done
+
+for folder in $folders
+do
+	sed '/^$/d' $folder/$2.pc >> $PC_FILE # concatenate all pc files, remove empty lines
+	sed '/^$/d' $folder/$2.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
+done
 
 # run_esp_calc.sh $1 $2
 if [ -f "esp_calc.out" ]
