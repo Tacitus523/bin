@@ -18,6 +18,7 @@ CHARGE_FILE: str = "charges.txt" # e to e
 ESP_FILE: str = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
 ESP_GRAD_FILE: str = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
 DIPOLE_FILE: str = "dipoles.txt" # au to au, optional, gets filled with zeros if not present
+QUADRUPOLE_FILE: str = "quadrupoles.txt" # au to au, optional, gets filled with zeros if not present
 OUTFILE: str = "geoms.extxyz"
 
 BOXSIZE: float = 22.0 # nm to Angstrom, assuming cubic box, not individual per geometry so far, TODO: read from input file
@@ -29,7 +30,8 @@ charge_key: str = "ref_charge"
 esp_key: str = "esp"
 esp_gradient_key: str = "esp_gradient"
 total_charge_key: str = "total_charge"
-dipole_key: str = "dipole"
+dipole_key: str = "ref_dipole"
+quadrupole_key: str = "ref_quadrupole"
 
 # Conversion factors
 H_to_eV = 27.211386245988
@@ -64,6 +66,7 @@ def read_config(args: argparse.Namespace) -> dict:
     config_data.setdefault("ESP_FILE", ESP_FILE)
     config_data.setdefault("ESP_GRAD_FILE", ESP_GRAD_FILE)
     config_data.setdefault("DIPOLE_FILE", DIPOLE_FILE)
+    config_data.setdefault("QUADRUPOLE_FILE", QUADRUPOLE_FILE)
     config_data.setdefault("OUTFILE", OUTFILE)
     config_data.setdefault("BOXSIZE", BOXSIZE)
 
@@ -130,6 +133,10 @@ def load_dipole_data(dipole_file: str) -> np.ndarray:
     dipoles = np.loadtxt(dipole_file)
     return dipoles
 
+def load_quadrupole_data(quadrupole_file: str) -> np.ndarray:
+    quadrupoles = np.loadtxt(quadrupole_file)
+    return quadrupoles
+
 def write_extxyz(
         config_data: Dict[str, str|int|float],
         molecules: Sequence[Tuple[int, str, Atoms]],
@@ -139,7 +146,8 @@ def write_extxyz(
         total_charges: np.ndarray,
         esps: Sequence[np.ndarray],
         electric_fields: Sequence[np.ndarray],
-        dipoles: np.ndarray
+        dipoles: np.ndarray,
+        quadrupoles: np.ndarray,
     ) -> None:
     outfile = config_data["OUTFILE"]
     boxsize = config_data["BOXSIZE"]*nm_to_A 
@@ -148,7 +156,16 @@ def write_extxyz(
     for mol_idx in range(len(molecules)):
         n_atoms, comment, atoms = molecules[mol_idx]
         file.write(f"{n_atoms}\n")
-        info_line = f'Lattice="{lattice_vector}" Properties=species:S:1:pos:R:3:{force_key}:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 {energy_key}={energies[mol_idx]} {total_charge_key}={total_charges[mol_idx]:1.1f} {dipole_key}="{dipoles[mol_idx,0]:1.5f} {dipoles[mol_idx,1]:1.5f} {dipoles[mol_idx,2]:1.5f}" pbc="F F F" comment="{comment}"\n'
+        info_line = (
+            f'Lattice="{lattice_vector}" '
+            f'Properties=species:S:1:pos:R:3:{force_key}:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 '
+            f'{energy_key}={energies[mol_idx]} '
+            f'{total_charge_key}={total_charges[mol_idx]:1.1f} '
+            f'{dipole_key}="{dipoles[mol_idx,0]:1.5f} {dipoles[mol_idx,1]:1.5f} {dipoles[mol_idx,2]:1.5f}" '
+            f'{quadrupole_key}="{quadrupoles[mol_idx,0]:1.5f} {quadrupoles[mol_idx,1]:1.5f} {quadrupoles[mol_idx,2]:1.5f} '
+            f'{quadrupoles[mol_idx,3]:1.5f} {quadrupoles[mol_idx,4]:1.5f} {quadrupoles[mol_idx,5]:1.5f}" '
+            f'pbc="F F F" comment="{comment}"\n'
+        )
         file.write(info_line)
         for at_idx, atom in enumerate(atoms):
             atom_line = " ".join(atom[:4])  # Assuming atom format is [element, x, y, z]
@@ -171,6 +188,7 @@ def main() -> None:
     esp_file                = os.path.join(data_folder, config_data["ESP_FILE"])
     esp_gradient_file       = os.path.join(data_folder, config_data["ESP_GRAD_FILE"])
     dipole_file             = os.path.join(data_folder, config_data["DIPOLE_FILE"])
+    quadrupole_file         = os.path.join(data_folder, config_data["QUADRUPOLE_FILE"])
 
     # Read data
     molecules: Sequence[Tuple[int, str, Atoms]] = list(read_xyz(geom_file)) # List of tuples (n_atoms, comment, Atoms)
@@ -194,6 +212,12 @@ def main() -> None:
     else:
         print("Dipole file not found, filling with zeros")
         dipoles = np.zeros((len(molecules), 3))
+    if os.path.exists(quadrupole_file):
+        print("Quadrupole file found")
+        quadrupoles: np.ndarray = load_dipole_data(quadrupole_file)
+    else:
+        print("Quadrupole file not found, filling with zeros")
+        quadrupoles = np.zeros((len(molecules), 6))
 
     # Check and assert data
     assert len(molecules) == len(energies), f"Number of geometries ({len(molecules)}) does not match number of energies ({len(energies)})"
@@ -203,6 +227,7 @@ def main() -> None:
     assert len(molecules) == len(esps), f"Number of geometries ({len(molecules)}) does not match number of ESP arrays ({len(esps)})"
     assert len(molecules) == len(gradients), f"Number of geometries ({len(molecules)}) does not match number of ESP gradient arrays ({len(gradients)})"
     assert len(molecules) == len(dipoles), f"Number of geometries ({len(molecules)}) does not match number of dipoles ({len(dipoles)})"
+    assert len(molecules) == len(quadrupoles), f"Number of geometries ({len(molecules)}) does not match number of quadrupoles ({len(quadrupoles)})"
 
     # Convert units
     energies *= H_to_eV
@@ -210,7 +235,7 @@ def main() -> None:
     esps = [esp_array for esp_array in esps]
     esp_gradients = [gradient_matrix for gradient_matrix in gradients]
 
-    write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients, dipoles)
+    write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients, dipoles, quadrupoles)
 
 if __name__ == "__main__":
     main()
