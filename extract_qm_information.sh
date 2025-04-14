@@ -1,4 +1,12 @@
 #Give folder-prefix as $1, file-prefix as $2
+# Units
+# Geometries: Angstrom
+# Energies: Hartree
+# Forces: Hartree/Bohr
+# Charges: e
+# Dipoles: au
+# Quadrupoles: au
+
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
 if [[ -z $1 || -z $2 ]]
@@ -35,6 +43,7 @@ ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
 FORCES_FILE=forces.xyz
 DIPOLE_FILE=dipoles.txt
+QUADRUPOLE_FILE=quadrupoles.txt
 
 remove_if_exists $FOLDER_FILE
 remove_if_exists $CHARGES_MULL_FILE
@@ -45,6 +54,7 @@ remove_if_exists $ENERGIES_FILE
 remove_if_exists $GEOMS_FILE
 remove_if_exists $FORCES_FILE
 remove_if_exists $DIPOLE_FILE
+remove_if_exists $QUADRUPOLE_FILE
 
 for folder in $folders
 do
@@ -72,4 +82,10 @@ do
 	tac $folder/$2*.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%s %+4.9f %+4.9f %+4.9f\n", $2, $4, $5, $6}' >> $FORCES_FILE
 
 	tac $folder/$2*.out | grep -m 1 'Total Dipole Moment' | tac | awk '{print $5, $6, $7}' >> $DIPOLE_FILE
+
+	if  grep -q -m 1 'QUADRUPOLE MOMENT (A.U.)' $folder/$2*.out 2>/dev/null ; then
+		tac $folder/$2*.out | grep -m 1 -B7 'QUADRUPOLE MOMENT (A.U.)' | grep 'TOT' | tac | awk '{print $2, $3, $4, $5, $6, $7}' >> $QUADRUPOLE_FILE
+	else
+		echo "nan nan nan nan nan nan" >> $QUADRUPOLE_FILE  # placeholder if missing
+	fi
 done
