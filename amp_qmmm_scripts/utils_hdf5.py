@@ -1,14 +1,42 @@
 #!/usr/bin/env python
 import argparse
-import ase
 from ase.io import read
 import h5py
 import json
 import numpy as np
 import os
 import shutil
-from typing import Dict, List, Tuple, Generator
-from io import StringIO
+from typing import List, Tuple
+
+# Unit conversions when constructing the HDF5 file:
+#   - Coordinates: [A] -> [A]
+#   - Energies: [H] -> [H]
+#   - Forces: [H/a0] -> [H/a0]
+#   - Gradients: [H/a0] -> [H/a0]
+#   - Charges: [e] -> [e]
+#   - Dipoles: [e*a0] -> [eA]
+#   - Quadrupoles: [e*a0**2] -> [eA**2]
+
+# Literature units:
+# https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/707814/README.md
+#   |- Identifier
+#     |- orca_coordinates, Shape: (M, N, 3), [A]. Type: float64
+#     |- orca_dipoles, Shape: (M, 3), [eA]. Type: float64
+#     |- orca_energies, Shape: (M,), [H]. Type: float64
+#     |- orca_engrad, Shape: (M, N, 3), [H/a0]. Type: float64
+#     |- orca_pc_charges, Shape: (M, Z), [e]. Type: float64
+#     |- orca_pc_coordinates, Shape: (M, Z, 3), [A]. Type: float64
+#     |- orca_pcgrad, Shape: (M, Z, 3), [H/a0]. Type: float64
+#     |- orca_quadrupoles, Shape: (M, 6), [eA**2]. Type: float64
+#     |- orca_species, Shape: (M, N), Type: int64
+#     |- xtb_coordinates, Shape: (M, N, 3), [a0]. Type: float64
+#     |- xtb_energies, Shape: (M,), [H]. Type: float64
+#     |- xtb_engrad, Shape: (M, N, 3), [H/a0]. Type: float64
+#     |- xtb_pc_charges, Shape: (M, Z), [e]. Type: float64
+#     |- xtb_pc_coordinates, Shape: (M, Z, 3), [a0]. Type: float64
+#     |- xtb_pcgrad, Shape: (M, Z, 3), [H/a0]. Type: float64
+#     |- xtb_species, Shape: (M, N), Type: int64
+# ==> differences in xtb and orce coordinates: [A] vs [a0]
 
 ORCA_CONVERSION_DICTIONARY = {
     'xtb_species': 'qm_charges', # Same for both
@@ -61,7 +89,9 @@ TEST_DIRECTORY = "test"
 
 SYSTEM_NAME = "dalanine"
 
-def parse_arguments():
+bohr_to_angstrom = 0.52917721067
+
+def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Utility script for handling HDF5 files and conversions.")
     subparsers = parser.add_subparsers(dest="command", required=True, help="Sub-command to execute.")
@@ -171,7 +201,7 @@ def parse_arguments():
         print(f"  {arg}: {value}")
     return args
 
-def view_hdf5_file(hdf5_file_path):
+def view_hdf5_file(hdf5_file_path: str) -> None:
     def print_hdf5_structure(name, obj):
         if isinstance(obj, h5py.Group):
             print(f"Group: {name}")
@@ -181,7 +211,7 @@ def view_hdf5_file(hdf5_file_path):
     with h5py.File(hdf5_file_path, "r") as hdf5_file:
         hdf5_file.visititems(print_hdf5_structure)
 
-def unpack_single_system(args):
+def unpack_single_system(args: argparse.Namespace) -> None:
     """Unpack datasets from an HDF5 file and save them as .npy files."""
     hdf5_file_path = args.hdf5_file_path
     output_dir = os.path.join(args.output_dir, args.name)
@@ -232,7 +262,7 @@ def unpack_single_system(args):
     #     np.save(output_file_path, dataset)
     #     print(f"Saved {dataset_name} to {output_file_path}")
 
-def unpack_multiple_systems(args):
+def unpack_multiple_systems(args: argparse.Namespace) -> None:
     """Unpack datasets from an HDF5 file for multiple systems and save them as .npy files."""
     hdf5_file_path = args.hdf5_file_path
     output_dir = os.path.join(args.output_dir, args.name)
@@ -294,7 +324,7 @@ def unpack_multiple_systems(args):
 
     return
 
-def pack_single_system(args):
+def pack_single_system(args: argparse.Namespace) -> None:
     """Pack a single system from extxyz to HDF5."""
     extxyz_file_path: str = args.extxyz
     point_charges_file_path: str|None = args.pc
@@ -363,13 +393,18 @@ def pack_single_system(args):
     assert mm_coordinates.shape[0] == len(molecules), f"MM coordinates shape {mm_coordinates.shape[0]} does not match number of molecules {len(molecules)}"
     assert mm_gradients.shape[0] == len(molecules), f"MM gradients shape {mm_gradients.shape[0]} does not match number of molecules {len(molecules)}"
 
-    # Convert the molecules to a dictionary
+    # unit conversion
+    qm_gradients = qm_forces*-1
+    qm_dipoles = qm_dipoles*bohr_to_angstrom
+    qm_quadrupoles = qm_quadrupoles*bohr_to_angstrom**2
+
+    # Convert the molecules to a dictionary and 
     molecules_dict = {
         'qm_charges': qm_charges,
         'qm_coordinates': qm_coordinates,
         'qm_energies': qm_energies,
         'qm_forces': qm_forces,
-        'qm_gradients': qm_forces*-1,
+        'qm_gradients': qm_gradients,
         'qm_dipoles': qm_dipoles,
         'qm_quadrupoles': qm_quadrupoles,
         'mm_charges': mm_charges,
