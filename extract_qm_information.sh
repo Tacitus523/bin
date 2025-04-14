@@ -4,8 +4,8 @@
 # Energies: Hartree
 # Forces: Hartree/Bohr
 # Charges: e
-# Dipoles: au
-# Quadrupoles: au
+# Dipoles: e*Bohr (atomic units)
+# Quadrupoles: e*Bohr^2 (atomic units)
 
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
