@@ -61,3 +61,4 @@ run_schnarc.py train fieldschnet \
     #--order \ # Order states by energy
     #--finish \ # dynamics will only occur between S1 and S0
     #--verbose \ # verbose will print stats for each epoch
+    #--init 00_foundation/best_model \
