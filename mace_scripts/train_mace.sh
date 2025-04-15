@@ -71,6 +71,7 @@ echo "Number of epochs: $EPOCHS"
 
 python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/lukas_train.py  \
     --name=$MODEL_NAME \
+    --seed=$RANDOM \
     --train_file=$train_file \
     --valid_file=$valid_file \
     --test_file=$test_file \
