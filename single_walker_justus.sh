@@ -8,6 +8,8 @@
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
 #SBATCH --gres=gpu:1
 
+#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
+GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
 print_usage() {
     echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
     exit 1
@@ -54,9 +56,6 @@ additional_files=("$@")
 for file in "${additional_files[@]}"; do
     echo "Additional file: $file"
 done
-
-#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
-GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda-debug/bin/GMXRC"
 
 echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
 
