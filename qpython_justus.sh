@@ -8,7 +8,8 @@
 #SBATCH --open-mode=append
 #SBATCH --gres=gpu:1
 
-PYTHON_ENV=kgcnn_new
+PYTHON_ENV=amp_qmmm
+#PYTHON_ENV=kgcnn_new
 
 pythonfile=$1
 config_path="$2" # optional
