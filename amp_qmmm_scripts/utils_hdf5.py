@@ -289,11 +289,14 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             continue
         
         group_dict = {key: np.array(value) for key, value in group.items() if isinstance(value, h5py.Dataset)}
-        for key in ORCA_CONVERSION_DICTIONARY.keys():
-            if not key in group_dict.keys():
-                raise ValueError(f"Expected {key} in group {group_name}, but got {group_dict.keys()}")
+        for key in group_dict.keys():
+            if key in ORCA_CONVERSION_DICTIONARY.keys() and not key in ORCA_CONVERSION_DICTIONARY.values():
+                raise ValueError(f"Unexpected key {key} in group {group_name}, expected one of {ORCA_CONVERSION_DICTIONARY.keys()} or {ORCA_CONVERSION_DICTIONARY.values()}")
         for key, value in DELTA_KEYS.items():
-            group_dict[key] = group_dict[value[0]] - group_dict[value[1]]
+            high_order_key = value[0]
+            low_order_key = value[1]
+            if high_order_key in group_dict and low_order_key in group_dict:
+                group_dict[key] = group_dict[high_order_key] - group_dict[low_order_key]
         group_dict = {ORCA_CONVERSION_DICTIONARY.get(key, key): value for key, value in group_dict.items()}
 
         if splits is None:
