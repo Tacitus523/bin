@@ -55,7 +55,7 @@ name=`basename $PWD`
 name_flag="--job-name $name"
 job_id=$(sbatch $name_flag $email_flag $queue_script $python_script $config_path| awk '{print $4}')
 echo "Submitted job $job_id to queue as $name"
-
+echo $job_id
 echo `date`" $PWD" >> $HOME/checklist.txt
 
 # # for wandb sync
