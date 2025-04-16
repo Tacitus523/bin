@@ -460,7 +460,6 @@ def concatenate_hdf5_files(new_hdf5_file_path: str, hdf5_file_paths: List[str]) 
                     source_group = source_file[group_name]
                     for dataset_name, dataset in source_group.items():
                         if isinstance(dataset, h5py.Dataset):
-                            print(f"    Copying dataset: {dataset_name}, Shape: {dataset.shape}")
                             new_group.create_dataset(dataset_name, data=dataset[:])
                     
                     group_counter += 1
