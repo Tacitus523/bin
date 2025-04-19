@@ -29,7 +29,7 @@ echo "Using test file: $TEST_FILE"
 if [ -z "$SLURM_JOB_ID" ]; then
     eval_output=$(sbatch --parsable $0)
     echo "Submitted evaluation job with ID: $eval_output"
-    plot_output=$(sbatch --dependency=afterok:$eval_output --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
+    plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
     echo "Submitted plot job with ID: $plot_output"
     exit
 fi
