@@ -14,47 +14,23 @@ warnings.filterwarnings("ignore")
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import seaborn as sns
-
-sys.path.append("/home/ka/ka_ipc/ka_he8978/kgcnn_fork")
-#sys.path.append("/home/lpetersen/kgcnn_fork")
-
-from kgcnn.data.base import MemoryGraphDataset  # type: ignore
-from kgcnn.utils import constants  # type: ignore
+from ase.data import atomic_numbers
 
 # DEFAULT VALUES
-# DATA READ
-# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATASET_NAME: str = "ThiolDisulfidExchange" # Used in naming plots and looking for data
-# DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water" # Folder containing DATASET_NAME.kgcnn.pickle
-DATA_DIRECTORY: str = "/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum" # Folder containing DATASET_NAME.kgcnn.pickle
-# DATA_DIRECTORY: str = "/data/lpetersen/training_data/alanindipeptid/B3LYP_aug-cc-pVTZ_vacuum"
-# DATA_DIRECTORY: str = "/data/lpetersen/alanindipeptide/B3LYP_aug-cc-pVTZ_vacuum/03_halved_H_bond_harmonics"
-DATASET_NAME: str = "Alanindipeptide" # Used in naming plots and looking for data
-
-#TRAJECTORY_FILE: str = "run.xtc" # Path to the trajectory file
-TRAJECTORY_FILE: str = "traj_comp.xtc" # Path to the trajectory file
-#TRAJECTORY_FILE: str = "dipeptid.xtc" # Path to the trajectory file
-TOPOLOGY_FILE: str = "../geom.gro" # Path to the topology file (e.g., .gro or .pdb)
-# TOPOLOGY_FILE: str = "geom_box.gro" # Path to the topology file (e.g., .gro or .pdb)
+TRAJECTORY_FILE: str = "qm.xtc" # Trajectory file at folder location, should only contain qm-atoms
+TOPOLOGY_FILE: str = "qm_topol.top" # Path to the topology file (e.g., .gro or .pdb), should be the same for each trajectory
+#Note: Gromacs intern itp library may need to be made accessible by something like
+# ln -s /usr/local/run/gromacs-dftbplus-machine-learning/share/gromacs/top/amber99sb-ildn.ff/
 
 N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
 N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
 DPI: int = 100 # DPI for saving plots
-
-# Backwards compatibility for missing TOPOLOGY_FILE, find and copy the starting structure
-starting_idxs_file = "starting_structure_idxs.txt" # File containing the indices of the starting structure
-starting_structures_dir = "start_geometries" # Directory containing the starting structures, expected to be inside DATA_DIRECTORY, only used when TOPOLOGY_FILE not present 
-starting_structure_gro = "geom.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
-#starting_structure_gro = "sp_big_box.gro" # Name of the starting structure file inside starting_structures_dir, only used when TOPOLOGY_FILE not present 
 
 default_collection_folder_name: str = "bond_distance_analysis"
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
     ap.add_argument("-p", "--prefix", default=None, type=str, dest="prefix", action="store", required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
-    ap.add_argument("-d", "--data_directory", default=DATA_DIRECTORY, type=str, dest="data_directory", action="store", required=False, help="Folder containing DATASET_NAME.kgcnn.pickle", metavar="data_directory")
-    ap.add_argument("-n", "--dataset_name", default=DATASET_NAME, type=str, dest="dataset_name", action="store", required=False, help="Name of the dataset", metavar="dataset_name")
     ap.add_argument("-t", "--trajectory_file", default=TRAJECTORY_FILE, type=str, dest="trajectory_file", action="store", required=False, help="Relative path to the trajectory file", metavar="trajectory_file")
     ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, dest="topology_file", action="store", required=False, help="Relative path to the topology file, not a .top, but a .gro or similar", metavar="topology_file")
     args = ap.parse_args()
@@ -71,40 +47,28 @@ def main() -> None:
         collection_folder_name = os.path.abspath(default_collection_folder_name)
         if not os.path.exists(collection_folder_name):
             os.makedirs(collection_folder_name)
-    args.data_directory = os.path.normpath(args.data_directory)
+    args.topology_file = os.path.abspath(args.topology_file)
 
     valid_dirs = []
     for dir in present_dirs:
         if not os.path.exists(os.path.join(dir, args.trajectory_file)):
             continue
-        # Backwards compatibility for missing topology, find and copy the starting structure
-        if not os.path.exists(os.path.join(dir, args.topology_file)):
-            if not os.path.exists(os.path.join(dir, starting_idxs_file)):
-                continue
-            starting_idxs = np.loadtxt(os.path.join(dir,starting_idxs_file), dtype=int)
-            if starting_idxs.ndim == 0:
-                final_starting_idx = int(starting_idxs)
-            else:
-                final_starting_idx = int(starting_idxs[-1])
-            starting_structure_dirs = next(os.walk(os.path.join(args.data_directory, starting_structures_dir)))[1]
-            gro_to_copy = [os.path.join(args.data_directory, starting_structures_dir, dirname, starting_structure_gro) for dirname in starting_structure_dirs if f"{final_starting_idx}" in dirname][0]
-            shutil.copy(gro_to_copy, os.path.join(dir, args.topology_file))
         valid_dirs.append(dir)
     valid_dirs = sorted(valid_dirs)
     print(f"Valid directories: {valid_dirs}")
     assert len(valid_dirs) > 0, "No valid directories found"
-
-    dataset = MemoryGraphDataset(data_directory=args.data_directory, dataset_name=args.dataset_name)
-    dataset.load()
 
     root_dir = os.getcwd()
     bond_distances_all_walkers = []
     for dir in valid_dirs:
         print(f"Analyzing {dir}")
         os.chdir(dir)
-        bond_distances, edge_indices, atomic_numbers_bonds, elements_bonds = analyze_local_bond_distances(args, dataset, collection_folder_name=collection_folder_name)
+        local_bond_distances_result = analyze_local_bond_distances(args, collection_folder_name=collection_folder_name)
         os.chdir(root_dir)
-        bond_distances_all_walkers.append(bond_distances)
+        
+        if local_bond_distances_result is not None:
+            bond_distances, edge_indices, atomic_numbers_bonds, elements_bonds = local_bond_distances_result
+            bond_distances_all_walkers.append(bond_distances)
     
     bond_distances_all_walkers = np.concatenate(bond_distances_all_walkers, axis=0) # shape: (n_timesteps_all_walkers, n_atoms, n_atoms)
     # edge_indices, atomic_numbers_bonds, elements_bonds are expected to be the same for all walkers
@@ -115,30 +79,20 @@ def main() -> None:
     analyze_global_bond_distances(bond_distances_all_walkers, edge_indices, atomic_numbers_bonds, elements_bonds) 
 
 
-def analyze_local_bond_distances(args: argparse.Namespace, dataset: MemoryGraphDataset, collection_folder_name: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    try:
-        starting_idxs = np.loadtxt(starting_idxs_file, dtype=int)
-        if starting_idxs.ndim == 0:
-            final_starting_idx = int(starting_idxs)
-        else:
-            final_starting_idx = int(starting_idxs[-1])
-    except FileNotFoundError:
-        print(f"{os.getcwd()}: No starting_idxs file found for bond connectivity, defaulting to 0")
-        final_starting_idx = 0
-
-    n_atoms, atomic_numbers, unique_edge_indices, atomic_numbers_bonds, elements_bonds = get_atomic_numbers_and_elements(dataset, final_starting_idx)
+def analyze_local_bond_distances(args: argparse.Namespace, collection_folder_name: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
     try:
-        u = mda.Universe(args.topology_file, args.trajectory_file)
+        universe = mda.Universe(args.topology_file, args.trajectory_file, topology_format="itp")
     except Exception as e:
         print(f"{os.getcwd()}: Problem with Topology, skipping analysis", file=sys.stderr)
         print(e, file=sys.stderr)
-        return
+        return None
 
-    qm_atoms = u.atoms[:n_atoms]
+    qm_atoms = universe.atoms
+    unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(qm_atoms)
 
     distance_matrices = []
-    for timestep in u.trajectory:
+    for timestep in universe.trajectory:
         # Calculate the distance matrix
         distance_matrix = mda.lib.distances.distance_array(qm_atoms.positions, qm_atoms.positions)
         distance_matrices.append(distance_matrix)
@@ -169,7 +123,7 @@ def analyze_local_bond_distances(args: argparse.Namespace, dataset: MemoryGraphD
 
             labels = [f"({target_element_bonds[i, 0]}{target_edge_indices[i, 0]}, {target_element_bonds[i, 1]}{target_edge_indices[i, 1]})" for i in range(len(target_edge_indices))]
             bond_distances_df = pd.DataFrame(extreme_bond_data, columns=labels)
-            bond_distances_df["Time Step"] = np.arange(len(u.trajectory))
+            bond_distances_df["Time Step"] = np.arange(len(universe.trajectory))
             bond_distances_df = bond_distances_df.set_index("Time Step")
             title = f"{data_label}_{size_label}_vs_time_steps.png"
             plot_bond_distances(bond_distances_df, title=title)
@@ -207,40 +161,37 @@ def analyze_global_bond_distances(bond_distances: np.ndarray, edge_indices: np.n
     plot_h_bond_length_distribution(h_bond_df)
 
 
-def get_atomic_numbers_and_elements(dataset: MemoryGraphDataset, final_starting_idx: int) -> Tuple[int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Get the atomic numbers and elements of the atoms in the bonds.
 
     Args:
-        dataset (MemoryGraphDataset): The dataset containing the graph data.
-        final_starting_idx (int): The index of the final starting point.
+        atoms (mda.AtomGroup): The atoms in the system.
 
     Returns:
-        Tuple[int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]: A tuple containing the following:
-            - n_atoms (int): The number of atoms.
-            - atomic_numbers (np.ndarray): An array of atomic numbers.
+        Tuple[inp.ndarray, np.ndarray, np.ndarray, np.ndarray]: A tuple containing the following:
             - unique_edge_indices (np.ndarray): An array of unique edge indices.
-            - atomic_numbers_bonds (np.ndarray): An array of atomic numbers of the atoms in the bonds.
-            - elements_bonds (np.ndarray): An array of elements of the atoms in the bonds.
+            - elements_bonds (np.ndarray): An array of elements of the atoms in the bonds. Guesses the element symbol from the atom name.
+            - atomic_numbers_bonds (np.ndarray): An array of atomic numbers of the atoms in the bonds. Depends on the element symbol guess.
     """
-    # Get the atomic numbers and elements of the atoms in the bonds
-    atomic_number_element_dict = constants.atomic_number_to_element
-    atomic_numbers = np.array(dataset[final_starting_idx].get("node_number")).flatten()
-    n_atoms = len(atomic_numbers)
-
-    target_edge_indices = dataset[final_starting_idx]["edge_indices"]
     unique_edge_indices = []
-    for edge in target_edge_indices:
-        if [edge[0], edge[1]] not in unique_edge_indices and [edge[1], edge[0]] not in unique_edge_indices:
-            unique_edge_indices.append([edge[0], edge[1]])
-    unique_edge_indices = np.array(unique_edge_indices) # Get the unique edge indices, shape: (n_bonds, 2)
+    elements_bonds = []
+    atomic_numbers_bonds = []
+    for atom_a in atoms:
+        for atom_b in atom_a.bonded_atoms:
+            if atom_a.index < atom_b.index:
+                unique_index = [atom_a.index, atom_b.index]
+                elements_bond = [atom_a.name[0], atom_b.name[0]] # Get the first letter of the atom names, hopefully the element symbol
+                atomic_numbers_bond = [atomic_numbers.get(element, 0) for element in elements_bond]
+                unique_edge_indices.append(unique_index)
+                elements_bonds.append(elements_bond)
+                atomic_numbers_bonds.append(atomic_numbers_bond)
 
-    atomic_numbers_bonds = atomic_numbers[unique_edge_indices] # Get the respective atomic numbers of the atoms in the bonds, shape: (n_bonds, 2)
-    elements_bonds = np.array(
-        [[atomic_number_element_dict[atomic_number] for atomic_number in atomic_numbers_bond] for atomic_numbers_bond in atomic_numbers_bonds]
-    ) # Get the respective elements of the atoms in the bonds, shape: (n_bonds, 2)
+    unique_edge_indices = np.array(unique_edge_indices) # shape: (n_bonds, 2)
+    elements_bonds = np.array(elements_bonds) # shape: (n_bonds, 2)
+    atomic_numbers_bonds = np.array(atomic_numbers_bonds) # shape: (n_bonds, 2)
 
-    return n_atoms, atomic_numbers, unique_edge_indices, atomic_numbers_bonds, elements_bonds
+    return unique_edge_indices, elements_bonds, atomic_numbers_bonds
 
 def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_distances_vs_time_steps.png"):
     # Plot the bond distances over time
