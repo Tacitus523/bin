@@ -8,11 +8,11 @@ import os
 import shutil
 from typing import List, Tuple
 
-# Unit conversions when constructing the HDF5 file:
+# Unit conversions when constructing the HDF5 file from .extxyz files:
 #   - Coordinates: [A] -> [A]
-#   - Energies: [H] -> [H]
-#   - Forces: [H/a0] -> [H/a0]
-#   - Gradients: [H/a0] -> [H/a0]
+#   - Energies: [eV] -> [H]
+#   - Forces: [eV/A] -> [H/a0]
+#   - Gradients: [eV/A] -> [H/a0]
 #   - Charges: [e] -> [e]
 #   - Dipoles: [e*a0] -> [eA]
 #   - Quadrupoles: [e*a0**2] -> [eA**2]
@@ -89,7 +89,9 @@ TEST_DIRECTORY = "test"
 
 SYSTEM_NAME = "dalanine"
 
+eV_to_H = 27.211386245988
 bohr_to_angstrom = 0.52917721067
+angstrom_to_bohr = 1.0 / bohr_to_angstrom
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -397,9 +399,11 @@ def pack_single_system(args: argparse.Namespace) -> None:
     assert mm_gradients.shape[0] == len(molecules), f"MM gradients shape {mm_gradients.shape[0]} does not match number of molecules {len(molecules)}"
 
     # unit conversion
+    qm_energies = qm_energies*eV_to_H                           # ev -> H
+    qm_forces = qm_forces*eV_to_H/angstrom_to_bohr              # eV/A -> H/a0
     qm_gradients = qm_forces*-1
-    qm_dipoles = qm_dipoles*bohr_to_angstrom
-    qm_quadrupoles = qm_quadrupoles*bohr_to_angstrom**2
+    qm_dipoles = qm_dipoles*bohr_to_angstrom                    # e*a0 -> eA
+    qm_quadrupoles = qm_quadrupoles*bohr_to_angstrom**2         # e*a0**2 -> eA**2
 
     # Convert the molecules to a dictionary and 
     molecules_dict = {
