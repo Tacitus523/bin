@@ -29,7 +29,7 @@ from typing import List, Tuple
 #     |- orca_pcgrad, Shape: (M, Z, 3), [H/a0]. Type: float64
 #     |- orca_quadrupoles, Shape: (M, 6), [eA**2]. Type: float64
 #     |- orca_species, Shape: (M, N), Type: int64
-#     |- xtb_coordinates, Shape: (M, N, 3), [a0]. Type: float64
+#     |- xtb_coordinates, Shape: (M, N, 3), [a0]. Type: float64          <---------- Careful: Coordinates in [a0]
 #     |- xtb_energies, Shape: (M,), [H]. Type: float64
 #     |- xtb_engrad, Shape: (M, N, 3), [H/a0]. Type: float64
 #     |- xtb_pc_charges, Shape: (M, Z), [e]. Type: float64
@@ -40,7 +40,7 @@ from typing import List, Tuple
 
 ORCA_CONVERSION_DICTIONARY = {
     'xtb_species': 'qm_charges', # Same for both
-    'xtb_coordinates': 'qm_coordinates', # Same for both
+    'xtb_coordinates': 'qm_coordinates', # Not the same, units in [A] vs [a0]
     'orca_energies': 'qm_energies',
     'orca_engrad': 'qm_gradients',
     'orca_dipoles': 'qm_dipoles',
@@ -50,9 +50,10 @@ ORCA_CONVERSION_DICTIONARY = {
     'orca_pcgrad': 'mm_gradients',
 }
 
+# Do not simplay replace the CONVERSION_DICTIONARY with the ORCA one, because the unit conversion of the coordinates is different.
 XTB_CONVERSION_DICTIONARY = {
     'xtb_species': 'qm_charges', # Same for both
-    'xtb_coordinates': 'qm_coordinates', # Same for both
+    'xtb_coordinates': 'qm_coordinates', # Not the same, units in [A] vs [a0]
     'xtb_energies': 'qm_energies',
     'xtb_engrad': 'qm_gradients',
     'xtb_dipoles': 'qm_dipoles',
@@ -64,9 +65,12 @@ XTB_CONVERSION_DICTIONARY = {
 
 REDUNDANT_KEYS = {
     'orca_species': 'xtb_species',
-    'orca_coordinates': 'xtb_coordinates',
     'orca_pc_charges': 'xtb_pc_charges',
     'orca_pc_coordinates': 'xtb_pc_coordinates',
+}
+
+DANGEROUS_REDUNDANT_KEYS = {
+    'orca_coordinates': 'xtb_coordinates', # Not the same, units in [A] vs [a0]
 }
 
 DELTA_KEYS = {
@@ -255,6 +259,12 @@ def unpack_single_system(args: argparse.Namespace) -> None:
     for key, value in REDUNDANT_KEYS.items():
         if os.path.exists(os.path.join(output_dir, f"{value}.npy")):
             shutil.copy(os.path.join(output_dir, f"{value}.npy"), os.path.join(output_dir, f"{key}.npy"))
+    
+    for key, value in DANGEROUS_REDUNDANT_KEYS.items():
+        if os.path.exists(os.path.join(output_dir, f"{value}.npy")):
+            redundant_data = np.load(os.path.join(output_dir, f"{value}.npy"), allow_pickle=False)
+            redundant_data = redundant_data*bohr_to_angstrom
+            np.save(os.path.join(output_dir, f"{key}.npy"), redundant_data)
 
     #INFO: Doesn't work, because the amount MM particles differs 
     # datasets = {dataset_name: np.concatenate(dataset) for dataset_name, dataset in datasets.items()}
@@ -299,15 +309,20 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             low_order_key = value[1]
             if high_order_key in group_dict and low_order_key in group_dict:
                 group_dict[key] = group_dict[high_order_key] - group_dict[low_order_key]
-        group_dict = {ORCA_CONVERSION_DICTIONARY.get(key, key): value for key, value in group_dict.items()}
+
+        converted_group_dict = {ORCA_CONVERSION_DICTIONARY.get(key, key): value for key, value in group_dict.items()} # Rename keys according to the conversion dictionary
+        if "xtb_coordinates" in group_dict:
+            converted_group_dict["qm_coordinates"] = group_dict["xtb_coordinates"] * bohr_to_angstrom
+            print(f"CAREFUL: Converted xtb_coordinates to qm_coordinates in {group_name} from [a0] to [A]")
+            print("This might not be intended!")
 
         if splits is None:
             # Save the group data as a .npy file
-            np.save(os.path.join(output_dir, f"{group_name}_batch_{group_idx}.npy"), group_dict, allow_pickle=True)
+            np.save(os.path.join(output_dir, f"{group_name}_batch_{group_idx}.npy"), converted_group_dict, allow_pickle=True)
             continue
 
         # Save the group data as a .npy file according to the split ratios
-        first_group_value = list(group_dict.values())[0]
+        first_group_value = list(converted_group_dict.values())[0]
         n_group_entries = len(first_group_value)
         n_split_entries = [int(n_group_entries * split) for split in splits]
         random_indices_list = np.random.permutation(n_group_entries)
@@ -315,7 +330,7 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
         split_indices_list = [random_indices_list[split_starts[i]:split_starts[i + 1]] for i in range(len(split_starts) - 1)]
         
         for split_name, split_indices in zip([TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY], split_indices_list):
-            split_group_dict = {key: value[split_indices] for key, value in group_dict.items()}
+            split_group_dict = {key: value[split_indices] for key, value in converted_group_dict.items()}
             split_group_dir = os.path.join(output_dir, split_name)
 
             # Save the split group data as a .npy file
