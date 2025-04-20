@@ -153,7 +153,7 @@ def parse_arguments() -> argparse.Namespace:
     
     if args.command == "unpack":
         if not args.view and not args.output_dir:
-            args.view = True
+            parser.error("Either --view or --output_dir must be specified.")
 
         if args.single_system and args.indices is None and args.output_dir is not None:
             args.indices = [0]
@@ -170,7 +170,7 @@ def parse_arguments() -> argparse.Namespace:
             if sum(args.splits) > 1.0:
                 parser.error("The sum of the split ratios must be smaller than or equal to 1.0.")
             if args.single_system:
-                parser.warning("The --split option is ignored when --single_system is specified.")
+                print("The --split option is ignored when --single_system is specified.")
 
     elif args.command == "pack":
         if args.extxyz is None:
@@ -261,7 +261,7 @@ def unpack_single_system(args: argparse.Namespace) -> None:
             shutil.copy(os.path.join(output_dir, f"{value}.npy"), os.path.join(output_dir, f"{key}.npy"))
     
     for key, value in DANGEROUS_REDUNDANT_KEYS.items():
-        if os.path.exists(os.path.join(output_dir, f"{value}.npy")):
+        if os.path.exists(os.path.join(output_dir, f"{value}.npy")) and not os.path.exists(os.path.join(output_dir, f"{key}.npy")):
             redundant_data = np.load(os.path.join(output_dir, f"{value}.npy"), allow_pickle=False)
             redundant_data = redundant_data*bohr_to_angstrom
             np.save(os.path.join(output_dir, f"{key}.npy"), redundant_data)
@@ -301,9 +301,6 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             continue
         
         group_dict = {key: np.array(value) for key, value in group.items() if isinstance(value, h5py.Dataset)}
-        for key in group_dict.keys():
-            if key in ORCA_CONVERSION_DICTIONARY.keys() and not key in ORCA_CONVERSION_DICTIONARY.values():
-                raise ValueError(f"Unexpected key {key} in group {group_name}, expected one of {ORCA_CONVERSION_DICTIONARY.keys()} or {ORCA_CONVERSION_DICTIONARY.values()}")
         for key, value in DELTA_KEYS.items():
             high_order_key = value[0]
             low_order_key = value[1]
@@ -315,6 +312,9 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             converted_group_dict["qm_coordinates"] = group_dict["xtb_coordinates"] * bohr_to_angstrom
             print(f"CAREFUL: Converted xtb_coordinates to qm_coordinates in {group_name} from [a0] to [A]")
             print("This might not be intended!")
+
+        for key in ORCA_CONVERSION_DICTIONARY.values():
+            assert key in converted_group_dict.keys(), f"Key {key} not found in converted group dictionary for {group_name}. Available keys: {converted_group_dict.keys()}"
 
         if splits is None:
             # Save the group data as a .npy file
