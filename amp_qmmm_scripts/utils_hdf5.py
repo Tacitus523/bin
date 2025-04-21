@@ -93,9 +93,12 @@ TEST_DIRECTORY = "test"
 
 SYSTEM_NAME = "dalanine"
 
-eV_to_H = 27.211386245988
+H_to_eV = 27.211386245988
+eV_to_H = 1.0 / H_to_eV
 bohr_to_angstrom = 0.52917721067
 angstrom_to_bohr = 1.0 / bohr_to_angstrom
+H_B_to_ev_A = H_to_eV / bohr_to_angstrom
+ev_A_to_H_B = 1.0 / H_B_to_ev_A
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -415,7 +418,7 @@ def pack_single_system(args: argparse.Namespace) -> None:
 
     # unit conversion
     qm_energies = qm_energies*eV_to_H                           # ev -> H
-    qm_forces = qm_forces*eV_to_H/angstrom_to_bohr              # eV/A -> H/a0
+    qm_forces = qm_forces*ev_A_to_H_B                           # eV/A -> H/a0
     qm_gradients = qm_forces*-1
     qm_dipoles = qm_dipoles*bohr_to_angstrom                    # e*a0 -> eA
     qm_quadrupoles = qm_quadrupoles*bohr_to_angstrom**2         # e*a0**2 -> eA**2
