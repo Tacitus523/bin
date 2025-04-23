@@ -55,7 +55,7 @@ do
     esac
 done
 
-data_folder=$(realpath $DATA_FOLDER)
+data_folder=$(realpath -f $DATA_FOLDER)
 train_file="$data_folder/$TRAIN_FILE"
 valid_file="$data_folder/$VALID_FILE"
 test_file="$data_folder/$TEST_FILE"

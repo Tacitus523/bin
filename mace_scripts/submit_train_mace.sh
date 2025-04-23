@@ -45,7 +45,7 @@ then
 fi
 
 # Submit jobs
-data_folder=$(realpath $DATA_FOLDER)
+data_folder=$(readlink -f $DATA_FOLDER)
 echo "Data folder: $data_folder"
 echo "Number of epochs: $EPOCHS"
 echo "Number of submissions: $NUM_SUBMISSIONS"
