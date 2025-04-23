@@ -6,43 +6,54 @@ N_WALKER=32 # Also has to be adjusted in plumed.dat
 WALKER_SCRIPT="multiple_walkers_justus.sh"
 
 print_usage() {
-  echo "Usage: 'submit_multiple_walkers_justus.sh [-e] tpr_file plumed_file other_files'"
+    echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [-e] [additional_files...]"
+    exit 1
 }
 
-email_flag=""
-while getopts "e" flag
-do
-    case $flag in
-        e) email_flag="--mail-user=$EMAIL --mail-type=END,FAIL";;
-        *) print_usage; exit 1;;
+while getopts ":t:p:e" opt; do
+    case ${opt} in
+        t )
+            tpr_file=$OPTARG
+            ;;
+        p )
+            plumed_file=$OPTARG
+            ;;
+        e )
+            email_flag="--mail-user=$EMAIL --mail-type=END,FAIL"
+            ;;
+        \? )
+            echo "Invalid option: -$OPTARG" 1>&2
+            print_usage
+            ;;
+        : )
+            echo "Invalid option: -$OPTARG requires an argument" 1>&2
+            print_usage
+            ;;
     esac
 done
 shift $((OPTIND - 1))
 
-tpr_file=$1
-shift
-plumed_file=$1
-shift
-other_files=$@
-
-if [ ! -f $tpr_file ]
-then
-    echo "tpr file not found. Got $tpr_file"
-    print_usage
-    exit 1
-fi
+# Check if mandatory argument is set
 if [[ ! $tpr_file == *.tpr ]]; then
     echo "tpr file must end with .tpr. Got $tpr_file"
     print_usage
     exit 1
 fi
+echo "tpr_file: $tpr_file"
 if [ ! -f $plumed_file ]
 then
     echo "plumed file not found. Got $plumed_file"
     print_usage
     exit 1
 fi
+echo "plumed_file: $plumed_file"
+
+# Remaining arguments are additional files
+additional_files=("$@")
+for file in "${additional_files[@]}"; do
+    echo "Additional file: $file"
+done
 
 job_name=$(basename $tpr_file .tpr)_metaD
 
-sbatch $email_flag --ntasks-per-node=$N_WALKER --job-name=$job_name $WALKER_SCRIPT $tpr_file $plumed_file $other_files
+sbatch $email_flag --ntasks-per-node=$N_WALKER --job-name=$job_name $WALKER_SCRIPT -t $tpr_file -p $plumed_file "${additional_files[@]}"

@@ -30,16 +30,18 @@ while getopts ":t:p:e" opt; do
             ;;
     esac
 done
-shift $((OPTIND -1))
+shift $((OPTIND - 1))
 
 # Check if mandatory argument is set
-if [ -z "${tpr_file}" ]; then
-    echo "Missing .tpr file" 1>&2
+if [[ ! $tpr_file == *.tpr ]]; then
+    echo "tpr file must end with .tpr. Got $tpr_file"
     print_usage
+    exit 1
 fi
 echo "tpr_file: $tpr_file"
 
-if [ -z "${plumed_file}" ]; then
+if [ -z "$plumed_file" ]
+then
     echo "Missing plumed file"
     plumed_command=""
 else

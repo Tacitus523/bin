@@ -8,13 +8,56 @@
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
 #SBATCH --gres=gpu:1
 
-# Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
-
 N_WALKER=$SLURM_NTASKS_PER_NODE
 #GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+print_usage() {
+    echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
+    exit 1
+}
 
-echo "Starting multiple walkers on $SLURM_JOB_NODELIST: $(date)"
+while getopts ":t:p:" opt; do
+    case ${opt} in
+        t )
+            tpr_file=$OPTARG
+            ;;
+        p )
+            plumed_file=$OPTARG
+            ;;
+        \? )
+            echo "Invalid option: -$OPTARG" 1>&2
+            print_usage
+            ;;
+        : )
+            echo "Invalid option: -$OPTARG requires an argument" 1>&2
+            print_usage
+            ;;
+    esac
+done
+shift $((OPTIND -1))
+
+# Check if mandatory argument is set
+if [ -z "${tpr_file}" ]; then
+    echo "Missing .tpr file" 1>&2
+    print_usage
+    exit 1
+fi
+echo "tpr_file: $tpr_file"
+
+if [ -z "${plumed_file}" ]; then
+    echo "Missing plumed file"
+    print_usage
+    exit 1
+fi
+echo "plumed_file: $plumed_file"
+
+# Remaining arguments are additional files
+additional_files=("$@")
+for file in "${additional_files[@]}"; do
+    echo "Additional file: $file"
+done
+
+echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
 
 source $GROMACS_PATH
 
@@ -22,9 +65,9 @@ module load system/parallel
 module load lib/cudnn/9.0.0_cuda-12.3
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
-set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
-set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
-set -o nounset   # (or set -u) causes the script to treat unset variables as an error and exit immediately
+# set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
+# set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
+# set -o nounset   # (or set -u) causes the script to treat unset variables as an error and exit immediately
 
 # Define the signal handler function when job times out
 # Note: This is not executed here, but rather when the associated 
@@ -87,10 +130,10 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_MM_COORD_FULL=100
 export GMX_N_MODELS=3 # Number of neural network models
 export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.05  # Threshold for the energy standard deviation between models for a structure to be considered relevant
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.1  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
-export GMX_NN_EVAL_FREQ=10 # Frequency of evaluation of the neural network, 1 means every step
-export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or maceqeq for pytorch
+export GMX_NN_EVAL_FREQ=1000 # Frequency of evaluation of the neural network, 1 means every step
+export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or mace, maceqeq, amp for pytorch
 export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
 export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
@@ -98,29 +141,8 @@ export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 m
 sourcedir=$PWD
 workdir=$SCRATCH
 
-tpr_file=$1
-shift
-plumed_file=$1
-shift
-other_files=$@
-
-if [ ! -f $tpr_file ]
-then
-    echo "tpr file not found. Got $tpr_file"
-    exit 1
-fi
-if [[ ! $tpr_file == *.tpr ]]; then
-    echo "tpr file must end with .tpr. Got $tpr_file"
-    exit 1
-fi
-if [ ! -f $plumed_file ]
-then
-    echo "plumed file not found. Got $plumed_file"
-    exit 1
-fi
-
 mkdir -vp $workdir
-cp -r -v $tpr_file $plumed_file $other_files $workdir
+cp -r -v $tpr_file $plumed_file "${additional_files[@]}" $workdir
 cd $workdir
 
 export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
@@ -131,7 +153,7 @@ do
     mkdir -p WALKER_$i
     cp $plumed_file WALKER_$i
     cp $tpr_file WALKER_$i
-    for file in $other_files
+    for file in $additional_files
     do
         if [ ! -d $file ] && [[ ! $file == HILLS* ]] && [[ ! $file == *.pt ]] # Exclude folders, HILLS files and pytorch model files
         then
@@ -144,7 +166,7 @@ do
     cd ..
 done
 
-rerun_command=$(generate_rerun_command "$other_files")
+rerun_command=$(generate_rerun_command "$additional_files")
 
 # Run each walker in parallel using GNU parallel
 run_mdrun() {

@@ -10,6 +10,7 @@
 
 #GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/gromacs-machine-learning/release/bin/GMXRC"
 print_usage() {
     echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
     exit 1
@@ -38,7 +39,7 @@ shift $((OPTIND -1))
 # Check if mandatory argument is set
 if [ -z "${tpr_file}" ]; then
     echo "Missing .tpr file" 1>&2
-    usage
+    print_usage
     exit 1
 fi
 echo "tpr_file: $tpr_file"
@@ -107,6 +108,7 @@ if [ -n "$plumed_command" ]; then
 fi
 cd $workdir
 
+export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
 basename_tpr=$(basename $tpr_file .tpr)
 
 gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -s "$tpr_file" $plumed_command &
