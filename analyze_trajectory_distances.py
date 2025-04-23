@@ -1,4 +1,11 @@
 #!/usr/bin/env python
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem=48G
+#SBATCH --time=10:00:00
+#SBATCH --output=dist_analysis.out
+#SBATCH --error=dist_analysis.out
+
 import argparse
 import numpy as np
 import os
