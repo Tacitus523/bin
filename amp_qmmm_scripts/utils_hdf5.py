@@ -33,44 +33,42 @@ from typing import List, Tuple
 #     |- xtb_energies, Shape: (M,), [H]. Type: float64
 #     |- xtb_engrad, Shape: (M, N, 3), [H/a0]. Type: float64
 #     |- xtb_pc_charges, Shape: (M, Z), [e]. Type: float64
-#     |- xtb_pc_coordinates, Shape: (M, Z, 3), [a0]. Type: float64
+#     |- xtb_pc_coordinates, Shape: (M, Z, 3), [a0]. Type: float64       <---------- Careful: Coordinates in [a0]
 #     |- xtb_pcgrad, Shape: (M, Z, 3), [H/a0]. Type: float64
 #     |- xtb_species, Shape: (M, N), Type: int64
 # ==> differences in xtb and orce coordinates: [A] vs [a0]
 
 ORCA_CONVERSION_DICTIONARY = {
     'xtb_species': 'qm_charges', # Same for both
-    'xtb_coordinates': 'qm_coordinates', # Not the same, units in [A] vs [a0]
+    'orca_coordinates': 'qm_coordinates', # Not the same, units in [A] vs [a0]
     'orca_energies': 'qm_energies',
     'orca_engrad': 'qm_gradients',
     'orca_dipoles': 'qm_dipoles',
     'orca_quadrupoles': 'qm_quadrupoles',
     'xtb_pc_charges': 'mm_charges', # Same for both
-    'xtb_pc_coordinates': 'mm_coordinates', # Same for both
+    'orca_pc_coordinates': 'mm_coordinates', # Not the same, units in [A] vs [a0]
     'orca_pcgrad': 'mm_gradients',
 }
 
 # Do not simplay replace the CONVERSION_DICTIONARY with the ORCA one, because the unit conversion of the coordinates is different.
 XTB_CONVERSION_DICTIONARY = {
     'xtb_species': 'qm_charges', # Same for both
-    'xtb_coordinates': 'qm_coordinates', # Not the same, units in [A] vs [a0]
     'xtb_energies': 'qm_energies',
     'xtb_engrad': 'qm_gradients',
     'xtb_dipoles': 'qm_dipoles',
     'xtb_quadrupoles': 'qm_quadrupoles',
     'xtb_pc_charges': 'mm_charges', # Same for both
-    'xtb_pc_coordinates': 'mm_coordinates', # Same for both
     'xtb_pcgrad': 'mm_gradients',
 }
 
 REDUNDANT_KEYS = {
     'orca_species': 'xtb_species',
     'orca_pc_charges': 'xtb_pc_charges',
-    'orca_pc_coordinates': 'xtb_pc_coordinates',
 }
 
 DANGEROUS_REDUNDANT_KEYS = {
     'orca_coordinates': 'xtb_coordinates', # Not the same, units in [A] vs [a0]
+    'orca_pc_coordinates': 'xtb_pc_coordinates', # Not the same, units in [A] vs [a0]
 }
 
 DELTA_KEYS = {
@@ -310,11 +308,12 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             if high_order_key in group_dict and low_order_key in group_dict:
                 group_dict[key] = group_dict[high_order_key] - group_dict[low_order_key]
 
+        # Convert units for the redundant xtb keys
+        for key, value in DANGEROUS_REDUNDANT_KEYS.items():
+            if value in group_dict and key not in group_dict:
+                group_dict[key] = group_dict[value] * bohr_to_angstrom
+                
         converted_group_dict = {ORCA_CONVERSION_DICTIONARY.get(key, key): value for key, value in group_dict.items()} # Rename keys according to the conversion dictionary
-        if "xtb_coordinates" in group_dict:
-            converted_group_dict["qm_coordinates"] = group_dict["xtb_coordinates"] * bohr_to_angstrom
-            print(f"CAREFUL: Converted xtb_coordinates to qm_coordinates in {group_name} from [a0] to [A]")
-            print("This might not be intended!")
 
         for key in ORCA_CONVERSION_DICTIONARY.values():
             assert key in converted_group_dict.keys(), f"Key {key} not found in converted group dictionary for {group_name}. Available keys: {converted_group_dict.keys()}"
