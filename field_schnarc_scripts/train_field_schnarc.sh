@@ -30,11 +30,11 @@ run_schnarc.py train fieldschnet \
     --environment_provider simple \
     --seed 42 \
     --overwrite \
-    --split 1000 10 \
+    --split 20000 2000 \
     --max_epochs $EPOCHS \
     --lr 1e-4 \
     --lr_patience 10 \
-    --lr_decay 0.5 \
+    --lr_decay 0.02 \
     --lr_min 1e-6 \
     --logger tensorboard \
     --log_every_n_epochs 1 \
@@ -43,7 +43,7 @@ run_schnarc.py train fieldschnet \
     --min_loss \
     --Huber \
     --features 256 \
-    --interactions 6 \
+    --interactions 3 \
     --cutoff 10.0 \
     --num_gaussians 50 \
     --n_layers 3 \
