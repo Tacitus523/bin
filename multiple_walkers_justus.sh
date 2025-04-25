@@ -182,6 +182,7 @@ run_mdrun() {
     else
         gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $rerun_command &>> mdrun.out
     fi
+    echo "Finished walker $walker_id at $(date)"
 }
 
 export -f run_mdrun
