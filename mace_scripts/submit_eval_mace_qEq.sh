@@ -7,13 +7,21 @@
 #SBATCH --error=eval.err
 #SBATCH --gres=gpu:1
 
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_water"
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-fr0/training_data/DFTB_OB2-1-1_DMSO"
+DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 TEST_FILE="$DATA_FOLDER/test.extxyz"
 OUTPUT_FILE="geoms_mace.extxyz"
+
+print_usage() {
+    echo "Usage: $0 [-d data_folder]" >&2
+}
+
+while getopts d: flag
+do
+    case "${flag}" in
+        d) DATA_FOLDER=${OPTARG};;
+        *) print_usage; exit 1;;
+    esac
+done
 
 PLOT_SCRIPT=$(which MacePlot.py)
 if [ -z "$PLOT_SCRIPT" ]; then
