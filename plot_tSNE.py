@@ -32,9 +32,11 @@ def main():
     ap = argparse.ArgumentParser(description="t-SNE analysis for .xyz-trajectories")
     ap.add_argument("-f", type=str, dest="file", action="store", required=True, help="File with geometry data to plot", metavar="file")
     ap.add_argument("-s", type=str, dest="data_source_file", action="store", required=False, default=None, help="File with data sources for coloring", metavar="data source file")
+    ap.add_argument("-p", "--perplexity", type=int, dest="perplexity", action="store", required=False, default=40, help="Perplexity for t-SNE", metavar="perplexity")
     args = ap.parse_args()
     file = args.file
     data_source_file = args.data_source_file
+    perplexity = args.perplexity
 
     u = mda.Universe(file)
     atoms = u.select_atoms('all')
@@ -72,7 +74,7 @@ def main():
     df["data_source_codes"] = pd.Categorical(df["data_source"]).codes
 
     pca_result = PCA_plot(df, all_self_distances)
-    tSNE_plot(df, all_self_distances, original_labels)
+    tSNE_plot(df, all_self_distances, original_labels, perplexity)
     UMAP_plot(df, all_self_distances, original_labels)
     
 def PCA_plot(df: pd.DataFrame, features: np.ndarray):
@@ -94,7 +96,7 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
     sns.scatterplot(
     x="PC 1", y="PC 2",
     hue="data_source",
-    palette=sns.color_palette("hls", 10),
+    palette=None,
     data=df,
     legend="full",
     alpha=ALPHA,
@@ -138,12 +140,12 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
 
     return pca_result
 
-def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
+def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list, perplexity: int=40):
     n_original_labels = len(original_labels)
     has_adaptive_sampling: bool = adaptive_sampling_label in df["original_data"].unique()
 
     time_start = time.time()
-    tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
+    tsne = TSNE(n_components=2, verbose=1, perplexity=perplexity, n_iter=300)
     tsne_results = tsne.fit_transform(features)
     print('t-SNE done! Time elapsed: {} seconds'.format(time.time()-time_start))
 
