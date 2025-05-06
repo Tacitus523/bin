@@ -2,7 +2,7 @@
 
 EMAIL="lukas.petersen@kit.edu"
 
-N_WALKER=32 # Also has to be adjusted in plumed.dat
+N_WALKER=16 # Also has to be adjusted in plumed.dat
 WALKER_SCRIPT="multiple_walkers_justus.sh"
 
 print_usage() {
