@@ -76,7 +76,7 @@ else:
 
 
 
-fig = plt.figure(figsize=[7,8], dpi=400)
+fig = plt.figure(figsize=[7,6], dpi=200)
 
 label_fs = 18
 ticks_fs = 16
@@ -124,7 +124,14 @@ for CV_idx, periodicity_bool in enumerate(periodicity_list):
 fig1 = ax.contourf(xx, yy, zz, cmap="viridis", levels=linesf)
 fig2 = ax.contour(xx, yy, zz, levels=lines, colors="black", linewidths=0.3)
 
-cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02)
+# Get the position of the main plot to match colorbar height
+plt.draw()  # Draw the plot to update positions
+pos = ax.get_position()
+height_fraction = pos.height/pos.width  # Calculate the height ratio
+
+# Modified colorbar to match actual plot height
+cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02, 
+                 fraction=0.053, aspect=20)  # Adjust aspect to control height
 cb.set_label(r"$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
 cb.ax.tick_params(labelsize=ticks_fs)
 
