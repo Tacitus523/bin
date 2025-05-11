@@ -18,9 +18,9 @@ DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 #VALID_FILE="$DATA_FOLDER/geoms.extxyz"
 #DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-fr0/training_data/DFTB_OB2-1-1_DMSO"
-VALID_FILE="$DATA_FOLDER/geoms.extxyz"
+VALID_FILE="qm_mlmm.extxyz" # Dummy entry, not used, because this gets shuffled anyway
 TEST_FILE="qm_mlmm.extxyz"
-TRAIN_FILE="$TEST_FILE" # Dummy entry, not used, because this gets shuffled anyway
+TRAIN_FILE="qm_mlmm.extxyz" # Dummy entry, not used, because this gets shuffled anyway
 
 export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools
 export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/graph_longrange
