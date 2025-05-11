@@ -2,10 +2,10 @@
 
 TRAIN_SCRIPT="train_mace.sh"
 
+CONFIG_FILE="config.yaml"
+
 # Default data folder
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-#DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-thiol_disulfide/training_data/B3LYP_aug-cc-pVTZ_water"
 
 # Default number of epochs
 EPOCHS=100
@@ -46,13 +46,15 @@ fi
 
 # Submit jobs
 data_folder=$(readlink -f $DATA_FOLDER)
+config_file=$(readlink -f $CONFIG_FILE)
 echo "Data folder: $data_folder"
+echo "Config file: $config_file"
 echo "Number of epochs: $EPOCHS"
 echo "Number of submissions: $NUM_SUBMISSIONS"
 
 if [ $NUM_SUBMISSIONS -eq 1 ]
 then
-    sbatch --job-name=$job_name $TRAIN_SCRIPT -e $EPOCHS -d $data_folder
+    sbatch --job-name=$job_name $TRAIN_SCRIPT -e $EPOCHS -d $data_folder -c $config_file
     exit 0
 fi
 
@@ -62,6 +64,6 @@ do
     split_data_folder="$data_folder/split_$i"
     mkdir -p $submission_dir
     cd $submission_dir
-    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $data_folder
+    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $data_folder -c $config_file
     cd ..
 done
