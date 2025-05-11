@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --job-name=eval_mace_qEq
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32G
@@ -8,7 +9,7 @@
 #SBATCH --gres=gpu:1
 
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-TEST_FILE="$DATA_FOLDER/test.extxyz"
+TEST_FILE="test.extxyz"
 OUTPUT_FILE="geoms_mace.extxyz"
 
 print_usage() {
@@ -23,19 +24,28 @@ do
     esac
 done
 
+test_file=$(readlink -f $DATA_FOLDER/$TEST_FILE)
+if [ ! -f "$test_file" ]
+then
+    echo "Test file not found: $test_file"
+    exit 1
+fi
+
 PLOT_SCRIPT=$(which MacePlot.py)
-if [ -z "$PLOT_SCRIPT" ]; then
+if [ -z "$PLOT_SCRIPT" ]
+then
     echo "MacePlot.py not found in PATH. Please check your environment."
     exit 1
 fi
 
-echo "Using test file: $TEST_FILE"
+echo "Using test file: $test_file"
 
 # Check if the script is being run in a SLURM job
 # If not, submit it as a job
 # and set up the job dependency for the plot script
-if [ -z "$SLURM_JOB_ID" ]; then
-    eval_output=$(sbatch --parsable $0)
+if [ -z "$SLURM_JOB_ID" ]
+then
+    eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER)
     echo "Submitted evaluation job with ID: $eval_output"
     plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
     echo "Submitted plot job with ID: $plot_output"
@@ -48,7 +58,7 @@ export PYTHONPATH=${PYTHONPATH}:/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_develo
 echo "Starting evaluation on $SLURM_JOB_NODELIST: $(date)"
 
 python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/eval_qeq.py \
-        --configs="$TEST_FILE" \
+        --configs="$test_file" \
         --model="QEq_swa.model" \
         --output="$OUTPUT_FILE" \
         --device="cuda" 
