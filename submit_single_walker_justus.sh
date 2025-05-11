@@ -57,4 +57,4 @@ done
 
 job_name=$(basename $tpr_file .tpr)_sim
 
-sbatch $email_flag --ntasks-per-node=1 --job-name=$job_name $WALKER_SCRIPT -t $tpr_file $plumed_command $additional_files
+sbatch $email_flag --ntasks-per-node=1 --job-name=$job_name $WALKER_SCRIPT -t $tpr_file $plumed_command "${additional_files[@]}"

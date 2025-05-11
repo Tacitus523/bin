@@ -88,7 +88,7 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_QM_COORD=100
 #export GMX_DFTB_MM_COORD=100
 #export GMX_DFTB_MM_COORD_FULL=100
-export GMX_N_MODELS=1 # Number of neural network models
+export GMX_N_MODELS=3 # Number of neural network models
 export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
 export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.05  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
@@ -102,7 +102,7 @@ sourcedir=$PWD
 workdir=$SCRATCH
 
 mkdir -vp $workdir
-cp -r -v $tpr_file $additional_files $workdir
+cp -r -v $tpr_file "${additional_files[@]}" $workdir
 if [ -n "$plumed_command" ]; then
     cp -v $plumed_file $workdir
 fi
