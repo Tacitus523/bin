@@ -1,0 +1,80 @@
+batch_size: 10
+valid_batch_size: 10
+eval_interval: 1
+config_type_weights:
+  Default: 1.0
+E0s: 
+  1: -13.575035506869515
+  6: -1029.6173622986487
+  7: -1485.1410643783852
+  8: -2042.617308911902
+  16: -10832.265333248919
+model: maceQEqESP
+hidden_irreps: "64x0e+64x1o"
+r_max: 8.0
+radial_type: "bessel"
+num_radial_basis: 8
+num_cutoff_basis: 5
+gate: "silu"
+device: cuda
+loss: "charges_energy_forces"
+energy_key: "ref_energy"
+forces_key: "ref_force"
+charges_key: "ref_charge"
+esp_key: "esp"
+esp_gradient_key: "esp_gradient"
+formal_charges_from_data: true 
+scale_atsize: 1.0 
+error_table: "EFQRMSE"
+compute_forces: true
+energy_weight: 1
+forces_weight: 100
+charges_weight: 50
+swa: true
+swa_energy_weight: 1000
+swa_forces_weight: 100
+ema: true
+ema_decay: 0.99
+results_dir: "results"
+save_cpu: true
+optimizer: "adam"
+lr: 1e-2
+swa_lr: 1e-3
+scheduler: "ReduceLROnPlateau"
+lr_factor: 0.8
+lr_scheduler_gamma: 0.9993
+scheduler_patience: 3
+clip_grad: 10.0
+wandb: true
+wandb_project: "Dipeptid"
+wandb_entity: "ml4elstner"
+wandb_log_hypers:
+  - loss
+  - lr
+  - lr_factor
+  - batch_size
+  - max_num_epochs
+  - energy_weight
+  - forces_weight
+  - charges_weight
+  - r_max
+  - hidden_irreps
+  - MLP_irreps
+  - num_radial_basis
+  - num_cutoff_basis
+  - num_interactions
+  - gate
+num_workers: 4
+# restart_latest: true
+#"--weight_decay", help="weight decay (L2 penalty)", type=float, default=5e-7
+# kspace_cutoff_factor: 1.5 # Polarizable model only
+# atomic_multipoles_max_l: 0 # Polarizable model only
+# atomic_multipoles_smearing_width: 1.0 # Polarizable model only
+# field_feature_widths: 1.0 # Polarizable model only
+# include_electrostatic_self_interaction: true # Polarizable model only
+# include_local_electron_energy: true # Polarizable model only
+# field_dependence_type: "local_linear" # Polarizable model only
+# final_field_readout_type: "StrictQuadraticFieldEnergyReadout" # Polarizable model only
+# quadrupole_feature_corrections: true # Polarizable model only
+# valid_fraction: 0.05 # Retired with the introduction of the valid.extxyz file
+# start_swa: 450 # Default is last 20% of epochs, which seems simpler to use
