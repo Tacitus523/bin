@@ -29,21 +29,21 @@ done
 test_file=$(readlink -f $DATA_FOLDER/$TEST_FILE)
 if [ ! -f "$test_file" ]
 then
-    echo "Test file not found: $test_file"
+    echo "Test file not found: $test_file" >&2
     exit 1
 fi
 
 model_file=$MODEL_FILE
 if [ ! -f "$model_file" ]
 then
-    echo "Model file not found: $model_file"
+    echo "Model file not found: $model_file" >&2
     exit 1
 fi
 
 PLOT_SCRIPT=$(which MacePlot.py)
 if [ -z "$PLOT_SCRIPT" ]
 then
-    echo "MacePlot.py not found in PATH. Please check your environment."
+    echo "MacePlot.py not found in PATH. Please check your environment." >&2
     exit 1
 fi
 
@@ -55,7 +55,7 @@ echo "Using model file: $model_file"
 # and set up the job dependency for the plot script
 if [ -z "$SLURM_JOB_ID" ]
 then
-    eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER)
+    eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER -m $model_file)
     echo "Submitted evaluation job with ID: $eval_output"
     plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
     echo "Submitted plot job with ID: $plot_output"
