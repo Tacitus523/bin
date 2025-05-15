@@ -6,6 +6,7 @@ import numpy as np
 from typing import Tuple, Generator, Sequence, Dict, List
 
 from ase import Atoms
+from ase.io import read, write
 
 # Default config values
 DATA_FOLDER: str = os.getcwd()
@@ -15,14 +16,14 @@ FORCE_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, a
 CHARGE_FILE: str = "charges.txt" # e to e
 ESP_FILE: str = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
 ESP_GRAD_FILE: str = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
-DIPOLE_FILE: str = "dipoles.txt" # au to au(au to Debye in case of fieldmace), optional, gets filled with zeros if not present
+DIPOLE_FILE: str = "dipoles.txt" # au to Debye, optional, gets filled with zeros if not present
 QUADRUPOLE_FILE: str = "quadrupoles.txt" # au to au, optional, gets filled with zeros if not present
 PC_FILE: str = "mm_data.pc" # Angstrom units to Angstrom units, optional
 OUTFILE: str = "geoms.extxyz"
 
 BOXSIZE: float = 22.0 # nm to Angstrom, assuming cubic box, not individual per geometry so far, TODO: read from input file
 
-FORMAT = "mace" # or "fieldmace", slight differences in the output format and output units
+FORMAT = "mace" # or "fieldmace", slight differences in the output format
 
 # Property keys in .extxyz file, are expected like this in mace scripts
 energy_key: str = "ref_energy"
@@ -51,7 +52,6 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("-c", "--conf", default=None, type=str, dest="config_path", action="store", required=False, help="Path to config file, default: None", metavar="config")
     ap.add_argument("-f", "--format", default=FORMAT, type=str, choices=["mace", "fieldmace"], required=False, help="Format of the output file, default: %s" % FORMAT, metavar="format")
     ap.add_argument("-m", "--max_mm", default=None, type=int, required=False, help="Max number of MM atoms per molecule, default: None", metavar="max_mm")
-    ap.add_argument("-g", "--gpuid", default=None, type=int, required=False) # Just here as a dummy, nothing actually uses a GPU, other scripts got submitted with --gpuid
     args = ap.parse_args()
     return args
 
@@ -88,16 +88,13 @@ def read_config(args: argparse.Namespace) -> Dict[str, str|int|float]:
 
     return config_data
 
-def read_xyz(filename: str) -> Generator[int, str, Atoms]:
-    with open(filename, 'r') as file:
-        while True:
-            try:
-                n_atoms = int(file.readline())
-                comment = file.readline().strip()
-                atoms = [file.readline().strip().split() for _ in range(n_atoms)]
-                yield n_atoms, comment, atoms
-            except ValueError:  # End of file
-                break
+def read_xyz(filename: str) -> List[Atoms]:
+    molecules = read(filename, index=":")
+    if isinstance(molecules, Atoms):
+        molecules = [molecules]
+    elif not isinstance(molecules, list):
+        raise ValueError(f"Unexpected type for molecules: {type(molecules)}")
+    return molecules
 
 def load_energy_data(energy_file: str) -> np.ndarray:
     energies = np.loadtxt(energy_file)
@@ -109,7 +106,7 @@ def load_charge_data(charge_file: str) -> Tuple[Sequence[np.ndarray], np.ndarray
         for row in file:
             charges.append(np.array(row.strip().split(), dtype=float))
     
-    total_charges = np.array([np.sum(charge_array) for charge_array in charges])
+    total_charges = np.round([np.sum(charge_array) for charge_array in charges], 1)
     return charges, total_charges
 
 def load_force_data(force_file: str) -> Sequence[np.ndarray]:
@@ -161,6 +158,9 @@ def find_max_chunk_size(filename: str) -> int:
     """
     max_size = 0
     
+    if not os.path.exists(filename):
+        return max_size
+
     with open(filename, 'r') as file:
         while True:
             # Try to read the chunk size
@@ -298,102 +298,87 @@ def pad_arrays(arrays: List[np.ndarray], target_length: int) -> np.ndarray:
 
 def write_extxyz(
         config_data: Dict[str, str|int|float],
-        molecules: Sequence[Tuple[int, str, Atoms]],
+        molecules: List[Atoms],
         energies: np.ndarray,
         forces: Sequence[np.ndarray],
         charges: Sequence[np.ndarray],
         total_charges: np.ndarray,
         esps: Sequence[np.ndarray],
-        electric_fields: Sequence[np.ndarray],
+        esp_gradients: Sequence[np.ndarray],
         dipoles: np.ndarray,
         quadrupoles: np.ndarray,
     ) -> None:
     outfile = config_data["OUTFILE"]
     boxsize = config_data["BOXSIZE"]
-    lattice_vector = f'{boxsize:0.1f} 0.0 0.0 0.0 {boxsize:0.1f} 0.0 0.0 0.0 {boxsize:0.1f}'
-    file = open(outfile, 'w')
+    
+    edited_molecules: List[Atoms] = []
     for mol_idx in range(len(molecules)):
-        n_atoms, comment, atoms = molecules[mol_idx]
-        file.write(f"{n_atoms}\n")
-        info_line = (
-            f'Lattice="{lattice_vector}" '
-            f'Properties=species:S:1:pos:R:3:{force_key}:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 '
-            f'{energy_key}={energies[mol_idx]} '
-            f'{total_charge_key}={total_charges[mol_idx]:1.1f} '
-            f'{dipole_key}="{dipoles[mol_idx,0]:1.5f} {dipoles[mol_idx,1]:1.5f} {dipoles[mol_idx,2]:1.5f}" '
-            f'{quadrupole_key}="{quadrupoles[mol_idx,0]:1.5f} {quadrupoles[mol_idx,1]:1.5f} {quadrupoles[mol_idx,2]:1.5f} '
-            f'{quadrupoles[mol_idx,3]:1.5f} {quadrupoles[mol_idx,4]:1.5f} {quadrupoles[mol_idx,5]:1.5f}" '
-            f'pbc="F F F" comment="{comment}"\n'
-        )
-        file.write(info_line)
-        for at_idx, atom in enumerate(atoms):
-            atom_line = " ".join(atom[:4])  # Assuming atom format is [element, x, y, z]
-            force_line = " ".join(map(lambda x: f"{x: .8f}", forces[mol_idx][at_idx]))
-            charge = f"{charges[mol_idx][at_idx]: .6f}"
-            esp = f"{esps[mol_idx][at_idx]: .6f}"
-            gradient = " ".join(map(lambda x: f"{x: .6f}", electric_fields[mol_idx][at_idx]))
-            file.write(f"{atom_line} {force_line} {charge} {esp} {gradient}\n")
-    file.close()
+        molecule: Atoms = molecules[mol_idx]
+        molecule.set_cell([boxsize, boxsize, boxsize], scale_atoms=False)
+        molecule.set_pbc((False, False, False))
+
+        molecule.info[energy_key] = energies[mol_idx]
+        molecule.info[total_charge_key] = total_charges[mol_idx]
+        molecule.info[dipole_key] = dipoles[mol_idx]
+        molecule.info[quadrupole_key] = quadrupoles[mol_idx]
+
+        molecule.set_array(force_key, forces[mol_idx])
+        molecule.set_array(charge_key, charges[mol_idx])
+        molecule.set_array(esp_key, esps[mol_idx])
+        molecule.set_array(esp_gradient_key, esp_gradients[mol_idx])
+
+        edited_molecules.append(molecule)
+    write(outfile, edited_molecules, format="extxyz", append=False)
 
 def write_fieldmace_extxyz(
         config_data: Dict[str, str|int|float],
-        molecules: Sequence[Tuple[int, str, Atoms]],
+        molecules: List[Atoms],
         energies: np.ndarray,
         forces: Sequence[np.ndarray],
         charges: Sequence[np.ndarray],
         total_charges: np.ndarray,
         esps: Sequence[np.ndarray],
-        electric_fields: Sequence[np.ndarray],
+        esp_gradients: Sequence[np.ndarray],
         dipoles: np.ndarray,
         mm_charges: np.ndarray,
         mm_positions: np.ndarray,
     ) -> None:
     outfile = config_data["OUTFILE"]
     boxsize = config_data["BOXSIZE"]
-    lattice_vector = f'{boxsize:0.1f} 0.0 0.0 0.0 {boxsize:0.1f} 0.0 0.0 0.0 {boxsize:0.1f}'
-    file = open(outfile, 'w')
+    
     if energies.ndim == 1:
         n_states = 1
     else:
         n_states = energies.shape[1]
 
+    edited_molecules: List[Atoms] = []
     for mol_idx in range(len(molecules)):
-        n_atoms, comment, atoms = molecules[mol_idx]
-        file.write(f"{n_atoms}\n")
+        molecule: Atoms = molecules[mol_idx]
 
-        # Format energies as a JSON string
-        energies_json = json.dumps([[energy] for energy in energies[mol_idx]])
-
-        # Format forces as a JSON string
-        forces_json = json.dumps([[force_coordinates.tolist()] for force_coordinates in forces[mol_idx]])
+        energy = energies[mol_idx].reshape(1, n_states)
+        force = forces[mol_idx].reshape(-1, n_states, 3)
+        dipole = dipoles[mol_idx].reshape(n_states, 3)
 
         # Format MM charges as a space-separated string
         mm_charges_str = " ".join([f"{charge:.4f}" for charge in mm_charges[mol_idx]])
         
-        # Format MM positions as a JSON string
-        mm_positions_json = json.dumps(mm_positions[mol_idx].tolist())
+        molecule.set_cell([boxsize, boxsize, boxsize], scale_atoms=False)
+        molecule.set_pbc((False, False, False))
+        molecule.info["n_states"] = n_states
+        molecule.info[energy_key] = energy
+        molecule.info[force_key] = force
+        molecule.info[total_charge_key] = total_charges[mol_idx]
+        molecule.info[dipole_key] = dipole
+        molecule.info[mm_positions_key] = mm_positions[mol_idx]
+        molecule.info[mm_charges_key] = mm_charges_str
+
+        molecule.set_array(charge_key, charges[mol_idx])
+        molecule.set_array(esp_key, esps[mol_idx])
+        molecule.set_array(esp_gradient_key, esp_gradients[mol_idx])
         
-        info_line = (
-            f'Lattice="{lattice_vector}" '
-            f'Properties=species:S:1:pos:R:3:{charge_key}:R:1:{esp_key}:R:1:{esp_gradient_key}:R:3 '
-            f'n_states={n_states} '
-            f'{energy_key}="_JSON {energies_json}" '
-            f'{force_key}="_JSON {forces_json}" '
-            f'{total_charge_key}={total_charges[mol_idx]:1.1f} '
-            f'{dipole_key}="{dipoles[mol_idx,0]:1.5f} {dipoles[mol_idx,1]:1.5f} {dipoles[mol_idx,2]:1.5f}" '
-            f'{mm_positions_key}="_JSON {mm_positions_json}" '
-            f'{mm_charges_key}="{mm_charges_str}" '
-            f'pbc="F F F" comment="{comment}"\n'
-        )
-        
-        file.write(info_line)
-        for at_idx, atom in enumerate(atoms):
-            atom_line = " ".join(atom[:4])  # Assuming atom format is [element, x, y, z]
-            charge = f"{charges[mol_idx][at_idx]: .6f}"
-            esp = f"{esps[mol_idx][at_idx]: .6f}"
-            gradient = " ".join(map(lambda x: f"{x: .6f}", electric_fields[mol_idx][at_idx]))
-            file.write(f"{atom_line} {charge} {esp} {gradient}\n")
-    file.close()
+        edited_molecules.append(molecule)
+
+    write(outfile, edited_molecules, format="extxyz", append=False)
 
 def main() -> None:
     args: argparse.Namespace = parse_args()
@@ -413,23 +398,21 @@ def main() -> None:
     print(f"Using format: {extxyz_format}")
 
     # Read data
-    molecules: Sequence[Tuple[int, str, Atoms]] = list(read_xyz(geom_file)) # List of tuples (n_atoms, comment, Atoms)
+    molecules: List[Atoms] = read_xyz(geom_file)
     energies: np.ndarray = load_energy_data(energy_file) 
-    if energies.ndim == 1:
-        energies = np.expand_dims(energies, axis=1)
     charges: Sequence[np.ndarray] # Possibly ragged list
     total_charges: Sequence[np.ndarray]
     charges, total_charges = load_charge_data(charge_file) 
     forces: Sequence[np.ndarray] = load_force_data(force_file) # Possibly ragged list
     esps: Sequence[np.ndarray] # Possibly ragged list
-    gradients: Sequence[np.ndarray] # Possibly ragged list
+    esp_gradients: Sequence[np.ndarray] # Possibly ragged list
     if os.path.exists(esp_file) and os.path.exists(esp_gradient_file):
         print("ESP files found")
-        esps, gradients = load_esp_data(esp_file, esp_gradient_file)
+        esps, esp_gradients = load_esp_data(esp_file, esp_gradient_file)
     else:
         print("ESP files not found, filling with zeros")
-        esps = [np.zeros(len(molecule[2])) for molecule in molecules]
-        gradients = [np.zeros((len(molecule[2]), 3)) for molecule in molecules]
+        esps = [np.zeros(len(molecule)) for molecule in molecules]
+        esp_gradients = [np.zeros((len(molecule), 3)) for molecule in molecules]
     dipoles: np.ndarray
     quadrupoles: np.ndarray
     if os.path.exists(dipole_file):
@@ -447,7 +430,7 @@ def main() -> None:
     if extxyz_format == "fieldmace":
         mm_charges: np.ndarray
         mm_positions: np.ndarray
-        if point_charges_file_path is not None:
+        if os.path.exists(point_charges_file_path):
             print(f"Point charges file found")
             # Collect the data from the point charges files
             max_mm_molecules: int = find_max_chunk_size(point_charges_file_path)
@@ -477,7 +460,7 @@ def main() -> None:
     assert len(molecules) == len(total_charges), f"Number of geometries ({len(molecules)}) does not match number of total charges ({len(total_charges)})"
     assert len(molecules) == len(forces), f"Number of geometries ({len(molecules)}) does not match number of force arrays ({len(forces)})"
     assert len(molecules) == len(esps), f"Number of geometries ({len(molecules)}) does not match number of ESP arrays ({len(esps)})"
-    assert len(molecules) == len(gradients), f"Number of geometries ({len(molecules)}) does not match number of ESP gradient arrays ({len(gradients)})"
+    assert len(molecules) == len(esp_gradients), f"Number of geometries ({len(molecules)}) does not match number of ESP gradient arrays ({len(esp_gradients)})"
     assert len(molecules) == len(dipoles), f"Number of geometries ({len(molecules)}) does not match number of dipoles ({len(dipoles)})"
     assert len(molecules) == len(quadrupoles), f"Number of geometries ({len(molecules)}) does not match number of quadrupoles ({len(quadrupoles)})"
     if extxyz_format == "fieldmace":
@@ -489,9 +472,8 @@ def main() -> None:
     energies *= H_to_eV
     forces = [force_matrix * H_B_to_eV_A * -1 for force_matrix in forces]
     esps = [esp_array for esp_array in esps]
-    esp_gradients = [gradient_matrix for gradient_matrix in gradients]
-    if extxyz_format == "fieldmace":
-        dipoles *= ea0_to_debye
+    esp_gradients = [gradient_matrix for gradient_matrix in esp_gradients]
+    dipoles *= ea0_to_debye
 
     if extxyz_format == "mace":
         write_extxyz(config_data, molecules, energies, forces, charges, total_charges, esps, esp_gradients, dipoles, quadrupoles)
