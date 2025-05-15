@@ -15,19 +15,19 @@ from typing import List, Tuple
 #   - Gradients: [eV/A] -> [H/a0]
 #   - Charges: [e] -> [e]
 #   - Dipoles: [e*a0] -> [eA]
-#   - Quadrupoles: [e*a0**2] -> [eA**2]
+#   - Quadrupoles: [e*a0**2] -> [e*a0**2]
 
 # Literature units:
 # https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/707814/README.md
 #   |- Identifier
 #     |- orca_coordinates, Shape: (M, N, 3), [A]. Type: float64
-#     |- orca_dipoles, Shape: (M, 3), [eA]. Type: float64
+#     |- orca_dipoles, Shape: (M, 3), [eA]. Type: float64                <---------- Careful: Unit is wrong, it's [e*a0]
 #     |- orca_energies, Shape: (M,), [H]. Type: float64
 #     |- orca_engrad, Shape: (M, N, 3), [H/a0]. Type: float64
 #     |- orca_pc_charges, Shape: (M, Z), [e]. Type: float64
 #     |- orca_pc_coordinates, Shape: (M, Z, 3), [A]. Type: float64
 #     |- orca_pcgrad, Shape: (M, Z, 3), [H/a0]. Type: float64
-#     |- orca_quadrupoles, Shape: (M, 6), [eA**2]. Type: float64
+#     |- orca_quadrupoles, Shape: (M, 6), [eA**2]. Type: float64         <---------- Careful: Unit is wrong, it's [e*a0**2]
 #     |- orca_species, Shape: (M, N), Type: int64
 #     |- xtb_coordinates, Shape: (M, N, 3), [a0]. Type: float64          <---------- Careful: Coordinates in [a0]
 #     |- xtb_energies, Shape: (M,), [H]. Type: float64
@@ -89,6 +89,7 @@ TRAINING_DIRECTORY = "training"
 VALIDATION_DIRECTORY = "validation"
 TEST_DIRECTORY = "test"
 
+OUTPUTDIR = os.getcwd()
 SYSTEM_NAME = "dalanine"
 
 H_to_eV = 27.211386245988
@@ -106,7 +107,7 @@ def parse_arguments() -> argparse.Namespace:
     # Subparser for unpacking datasets from an HDF5 file
     unpack_parser = subparsers.add_parser("unpack", help="Unpack datasets from an HDF5 file and save them as .npy files.")
     unpack_parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
-    unpack_parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for .npy files.")
+    unpack_parser.add_argument("-o", "--output_dir", required=False, default=OUTPUTDIR, type=str, help="Output directory for .npy files. Default is the current directory.")
     unpack_parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack.")
     unpack_parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
     unpack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
@@ -118,7 +119,7 @@ def parse_arguments() -> argparse.Namespace:
     pack_parser = subparsers.add_parser("pack", help="Create an HDF5 file from extxyz and other files.")
     pack_parser.add_argument("hdf5_file_path", type=str, help="Path to the output HDF5 file.")
     pack_parser.add_argument("-e", "--extxyz", type=str, required=False, help="Path to the extxyz file for conversion to .hdf5.")
-    pack_parser.add_argument("-o", "--output_dir", required=False, default=None, type=str, help="Output directory for the HDF5 file.")
+    pack_parser.add_argument("-o", "--output_dir", required=False, default=OUTPUTDIR, type=str, help="Output directory for the HDF5 file. Default is the current directory.")
     pack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
     pack_parser.add_argument("--pc", type=str, default=None, help="Path to the concatenated pointcharges files. Optional")
     pack_parser.add_argument("--pcgrad", type=str, default=None, help="Path to the concatenated pointcharges gradient files. Optional")
@@ -126,7 +127,7 @@ def parse_arguments() -> argparse.Namespace:
 
     concatenate_parser = subparsers.add_parser("concatenate", help="Concatenate multiple HDF5 files into one.")
     concatenate_parser.add_argument("hdf5_file_path", type=str, help="Path to the new HDF5 file.")
-    concatenate_parser.add_argument("hdf5_file_paths", nargs="+", type=str, help="Paths to the HDF5 files to concatenate.") 
+    concatenate_parser.add_argument("hdf5_file_paths", nargs="+", type=str, help="Paths to the HDF5 files to concatenate.")
     args = parser.parse_args()
 
     # Check if the config file is provided
@@ -153,16 +154,13 @@ def parse_arguments() -> argparse.Namespace:
         args.output_dir = os.path.abspath(args.output_dir)
     
     if args.command == "unpack":
-        if not args.view and not args.output_dir:
-            parser.error("Either --view or --output_dir must be specified.")
-
-        if args.single_system and args.indices is None and args.output_dir is not None:
+        if args.single_system and args.indices is None:
             args.indices = [0]
 
-        if args.single_system and len(args.indices) != 1 and args.output_dir is not None:
+        if args.single_system and len(args.indices) != 1:
             parser.error("When --single_system is specified, exactly one index must be provided.")
         
-        if not args.single_system and args.indices is None and args.output_dir is not None:
+        if not args.single_system and args.indices is None:
             parser.error("When --single_system is not specified, indices must be provided.")
 
         if args.splits is not None:
@@ -419,8 +417,8 @@ def pack_single_system(args: argparse.Namespace) -> None:
     qm_energies = qm_energies*eV_to_H                           # ev -> H
     qm_forces = qm_forces*ev_A_to_H_B                           # eV/A -> H/a0
     qm_gradients = qm_forces*-1
-    qm_dipoles = qm_dipoles*bohr_to_angstrom                    # e*a0 -> eA
-    qm_quadrupoles = qm_quadrupoles*bohr_to_angstrom**2         # e*a0**2 -> eA**2
+    qm_dipoles = qm_dipoles*1                                   # e*a0 -> e*a0
+    qm_quadrupoles = qm_quadrupoles*1**2                        # e*a0**2 -> e*a0**2
 
     # Convert the molecules to a dictionary and 
     molecules_dict = {
