@@ -113,7 +113,6 @@ def parse_arguments() -> argparse.Namespace:
     unpack_parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
     unpack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
     unpack_parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
-    unpack_parser.add_argument("-v", "--view", action="store_true", help="View the structure of the HDF5 file.")
     unpack_parser.add_argument("-c", "--conversion", choices=["orca", "xtb"], default="orca", help="Conversion type: 'orca' or 'xtb'. Default is 'orca'.")
 
     # Subparser for creating an HDF5 file from extxyz and other files
@@ -126,9 +125,14 @@ def parse_arguments() -> argparse.Namespace:
     pack_parser.add_argument("--pcgrad", type=str, default=None, help="Path to the concatenated pointcharges gradient files. Optional")
     pack_parser.add_argument("-c", "--config", type=str, default=None, help="Path to the configuration file. Terminal commands have priority over this file.")
 
+    # Subparser for concatenating multiple HDF5 files into one
     concatenate_parser = subparsers.add_parser("concatenate", help="Concatenate multiple HDF5 files into one.")
     concatenate_parser.add_argument("hdf5_file_path", type=str, help="Path to the new HDF5 file.")
     concatenate_parser.add_argument("hdf5_file_paths", nargs="+", type=str, help="Paths to the HDF5 files to concatenate.")
+
+    # Subparser for viewing the structure of an HDF5 file
+    view_parser = subparsers.add_parser("view", help="View the structure of an HDF5 file.")
+    view_parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
     args = parser.parse_args()
 
     # Check if the config file is provided
@@ -181,7 +185,7 @@ def parse_arguments() -> argparse.Namespace:
         args.extxyz = os.path.abspath(args.extxyz)
         
         if args.output_dir is not None:
-            args.hdf5_file_path = os.path.join(args.output_dir, args.name + ".hdf5")
+            args.hdf5_file_path = os.path.join(args.output_dir, args.hdf5_file_path)
             args.output_dir = None
         
         if args.pc is not None and args.pcgrad is None:
@@ -619,7 +623,7 @@ def pad_arrays(arrays: List[np.ndarray], target_length: int) -> np.ndarray:
     Pad numpy arrays to a target length with zeros along their current axis 0. Expected shape is (n_mm_atoms, m).
     
     Args:
-        array (numpy.ndarray): Array to pad
+        arrays (List[numpy.ndarray]): List of arrays to pad
         target_length (int): Target length for padding
         
     Returns:
@@ -660,10 +664,7 @@ def main():
         pack_single_system(args)
 
     elif args.command == "unpack":
-        if args.view:
-            # View the structure of the HDF5 file
-            view_hdf5_file(args.hdf5_file_path)
-        elif args.output_dir and args.single_system:
+        if args.output_dir and args.single_system:
             # Unpack a single system from the HDF5 file
             unpack_single_system(args)
         elif args.output_dir and not args.single_system:
@@ -673,6 +674,13 @@ def main():
     elif args.command == "concatenate":
         # Concatenate multiple HDF5 files into one
         concatenate_hdf5_files(args.hdf5_file_path, args.hdf5_file_paths)
+
+    elif args.command == "view":
+        # View the structure of an HDF5 file
+        view_hdf5_file(args.hdf5_file_path)
+
+    else:
+        print("Invalid command. Use 'unpack', 'pack', 'concatenate', or 'view'.")
 
 if __name__ == "__main__":
     main()
