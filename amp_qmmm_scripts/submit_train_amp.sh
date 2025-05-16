@@ -11,6 +11,11 @@ config_file=$1
 if [ -z "$config_file" ]; then
     echo "Error: No config file provided."
     print_usage
+elif [ $config_file = "-h" ] || [ $config_file = "--help" ]; then
+    print_usage
+elif [ ! -f "$config_file" ]; then
+    echo "Error: Config file '$config_file' not found."
+    print_usage
 fi
 
 # check if the train_amp.py command is available
