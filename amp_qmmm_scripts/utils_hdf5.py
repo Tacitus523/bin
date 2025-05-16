@@ -14,7 +14,7 @@ from typing import List, Tuple
 #   - Forces: [eV/A] -> [H/a0]
 #   - Gradients: [eV/A] -> [H/a0]
 #   - Charges: [e] -> [e]
-#   - Dipoles: [e*a0] -> [eA]
+#   - Dipoles: [Debye] -> [eA]
 #   - Quadrupoles: [e*a0**2] -> [e*a0**2]
 
 # Literature units:
@@ -98,6 +98,7 @@ bohr_to_angstrom = 0.52917721067
 angstrom_to_bohr = 1.0 / bohr_to_angstrom
 H_B_to_ev_A = H_to_eV / bohr_to_angstrom
 ev_A_to_H_B = 1.0 / H_B_to_ev_A
+debye_to_ea0 = 0.3934303
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -417,7 +418,7 @@ def pack_single_system(args: argparse.Namespace) -> None:
     qm_energies = qm_energies*eV_to_H                           # ev -> H
     qm_forces = qm_forces*ev_A_to_H_B                           # eV/A -> H/a0
     qm_gradients = qm_forces*-1
-    qm_dipoles = qm_dipoles*1                                   # e*a0 -> e*a0
+    qm_dipoles = qm_dipoles*debye_to_ea0                        # Debye -> e*a0
     qm_quadrupoles = qm_quadrupoles*1**2                        # e*a0**2 -> e*a0**2
 
     # Convert the molecules to a dictionary and 
