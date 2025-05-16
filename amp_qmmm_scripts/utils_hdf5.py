@@ -407,7 +407,7 @@ def pack_single_system(args: argparse.Namespace) -> None:
     else:
         # Create dummy data for MM charges and coordinates
         mm_charges = np.zeros((len(molecules), 1))
-        mm_coordinates = np.zeros((len(molecules), 1, 3))
+        mm_coordinates = np.zeros((len(molecules), 1, 3)) + 0.01 # Avoid zero coordinates, which are otherwise used for padding and removed
         mm_gradients = np.zeros((len(molecules), 1, 3))
 
     assert mm_charges.shape[0] == len(molecules), f"MM charges shape {mm_charges.shape[0]} does not match number of molecules {len(molecules)}"
