@@ -2,6 +2,7 @@
 import argparse
 import os
 import json
+from typing import List, Optional, Tuple
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -18,7 +19,24 @@ atomic_units_to_volt_per_angstrom = 51.4220675112 # 27.21... * 1.88...(H/e to V 
 # for testing
 testing = False
 
-def calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges):
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Calculates the ESP from MM-atoms on QM-atoms from Orca-input and -pointcharge files")
+    ap.add_argument("-d", "--dir", default=None, type=str, dest="folder_prefix", action="store", required=False, help="Prefix of the directionaries with the orca-calculations, default: None", metavar="folder_prefix")
+    ap.add_argument("-i", "--input", type=str, dest="input_prefix", action="store", required=True, help="Prefix of the Input-file for the orca-calculation", metavar="file_prefix")
+    ap.add_argument("-u", "--unit", choices=["V", "au"], default="au", type=str, dest="unit", action="store", required=False, help="Unit of the ESP, default: atomic units(au)", metavar="unit")
+    ap.add_argument("-n", "--n_atoms", type=int, default=None, required=False, help="Deprecated: Now read from the input-file")
+    args = ap.parse_args()
+
+    if args.n_atoms is not None:
+        print("WARNING: The argument --n_atoms is deprecated and will be ignored. The number of atoms is now read from the input-file.")
+        
+    return args
+
+def calculate_esp_and_esp_gradient(
+    qm_coords: np.ndarray,
+    mm_coords: np.ndarray,
+    mm_charges: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
     qmmm_distances = cdist(qm_coords, mm_coords) # shape: (n_qm_atoms, n_mm_atoms)
     esps = np.matmul(1/qmmm_distances, mm_charges) # shape: (n_qm_atoms, 1)
     esps = esps.reshape((1,-1)) # shape: (1, n_qm_atoms)
@@ -28,7 +46,13 @@ def calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges):
     gradients = -1*np.sum(directions * gradient_magnitudes[:, :, np.newaxis], axis=1) # shape: (n_qm_atoms, 3)
     return esps, gradients
     
-def write_files(folders, qm_atomic_numbers_list, n_qm_atoms_list, esps_list, gradients_list):
+def write_files(
+    folders: List[str],
+    qm_atomic_numbers_list: List[np.ndarray],
+    n_qm_atoms_list: List[int],
+    esps_list: List[np.ndarray],
+    gradients_list: List[np.ndarray]
+) -> None:
     esp_file = open(ESP_FILE_NAME, "w")
     for esp in esps_list:
         esp_string = np.array2string(esp, separator=" ", suppress_small=True,
@@ -52,18 +76,10 @@ def write_files(folders, qm_atomic_numbers_list, n_qm_atoms_list, esps_list, gra
     esp_grad_file.close()
 
 def main():
-    ap = argparse.ArgumentParser(description="Calculates the ESP from MM-atoms on QM-atoms from Orca-input and -pointcharge files")
-    ap.add_argument("-d", "--dir", default=None, type=str, dest="folder_prefix", action="store", required=False, help="Prefix of the directionaries with the orca-calculations, default: None", metavar="folder_prefix")
-    ap.add_argument("-i", "--input", type=str, dest="input_prefix", action="store", required=True, help="Prefix of the Input-file for the orca-calculation", metavar="file_prefix")
-    ap.add_argument("-u", "--unit", choices=["V", "au"], default="au", type=str, dest="unit", action="store", required=False, help="Unit of the ESP, default: atomic units(au)", metavar="unit")
-    ap.add_argument("-n", "--n_atoms", type=int, default=None, required=False, help="Deprecated: Now read from the input-file")
-    args = ap.parse_args()
+    args = parse_args()
     folder_prefix = args.folder_prefix
     input_prefix = args.input_prefix
     unit= args.unit
-    old_n_atoms = args.n_atoms
-    if old_n_atoms is not None:
-        print("WARNING: The argument --n_atoms is deprecated and will be ignored. The number of atoms is now read from the input-file.")
 
     input_file = input_prefix + ".inp"
     point_charge_file = input_prefix + ".pc"
@@ -125,7 +141,7 @@ def main():
 
     write_files(folders, qm_atomic_numbers_list, n_qm_atoms_list, esps_list, gradients_list)
 
-def test_function():
+def test_function() -> None:
     qm_coords = np.array([
         [109.3700000,  109.9500000,  111.0900000],
         [110.4900000,  110.1700000,  109.6400000],
