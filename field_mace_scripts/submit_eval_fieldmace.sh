@@ -8,6 +8,7 @@
 #SBATCH --gres=gpu:1
 
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+MODEL_FILE="FieldMace_stagetwo.model"
 TEST_FILE="test.xyz"
 OUTPUT_FILE="geoms_fieldmace.xyz"
 
@@ -15,15 +16,17 @@ print_usage() {
     echo "Usage: $0 [-d data_folder]" >&2
 }
 
-while getopts d: flag
+while getopts ":d:m:" flag 
 do
     case "${flag}" in
         d) DATA_FOLDER=${OPTARG};;
+        m) MODEL_FILE=${OPTARG};;
         *) print_usage; exit 1;;
     esac
 done
 
 test_file=$(realpath $DATA_FOLDER/$TEST_FILE)
+model_file=$MODEL_FILE
 
 # Check if the data folder is set and test file exists
 if [ -z "$DATA_FOLDER" ]; then
@@ -54,7 +57,7 @@ echo "Using output file: $OUTPUT_FILE"
 # If not, submit it as a job
 # and set up the job dependency for the plot script
 if [ -z "$SLURM_JOB_ID" ]; then
-    eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER)
+    eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER -m $model_file)
     echo "Submitted evaluation job with ID: $eval_output"
     plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
     echo "Submitted plot job with ID: $plot_output"
@@ -65,7 +68,7 @@ echo "Starting evaluation on $SLURM_JOB_NODELIST: $(date)"
 
 $EVAL_SCRIPT \
     --configs="$test_file" \
-    --model="FieldMace_stagetwo.model" \
+    --model=$model_file \
     --output="$OUTPUT_FILE" \
     --device="cuda" \
     --info_prefix="MACE_"
