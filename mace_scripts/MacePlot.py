@@ -155,6 +155,9 @@ def plot_data(
     rmse: float = np.sqrt(np.mean((df[x_label] - df[y_label]) ** 2))
     r2: float = df[x_label].corr(df[y_label], method="pearson") ** 2
 
+    print(f"RMSE for {key}: {rmse:.2f} {unit}")
+    print(f"R² for {key}: {r2:.4f}")
+
     sns.set_context("talk")
     fig, ax = plt.subplots(figsize=(8, 6))
     sns.scatterplot(
@@ -180,7 +183,7 @@ def plot_data(
     )
     plt.legend(title=None, loc="upper left", fontsize="small")
     for legend_handle in ax.get_legend().legend_handles:
-        legend_handle.set_alpha(1)
+        legend_handle.set_alpha(1.0)
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
