@@ -14,8 +14,13 @@ from typing import List, Tuple
 #   - Forces: [eV/A] -> [H/a0]
 #   - Gradients: [eV/A] -> [H/a0]
 #   - Charges: [e] -> [e]
-#   - Dipoles: [Debye] -> [eA]
+#   - Dipoles: [Debye] -> [e*a0]
 #   - Quadrupoles: [e*a0**2] -> [e*a0**2]
+
+# Unit conversions when constructing the HDF5 file from .pc and .pcgrad files:
+#   - Coordinates: [A] -> [A]
+#   - Charges: [e] -> [e]
+#   - Gradients: [H/a0] -> [H/a0]
 
 # Literature units:
 # https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/707814/README.md
