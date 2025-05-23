@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 import numpy as np
-from typing import Tuple, Generator, Sequence, Dict, List
+from typing import Tuple, Generator, Sequence, Dict, List, Optional
 
 from ase import Atoms
 from ase.io import read, write
@@ -12,18 +12,20 @@ from ase.io import read, write
 DATA_FOLDER: str = os.getcwd()
 GEOMETRY_FILE: str = "ThiolDisulfidExchange.xyz" # Angstrom units to Angstrom units
 ENERGY_FILE: str = "energies.txt" # Hartree to eV
-FORCE_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, assumed to be not actually forces but gradients, transformed to forces by multiplying by -1
-CHARGE_FILE: str = "charges.txt" # e to e
-ESP_FILE: str = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
-ESP_GRAD_FILE: str = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
-DIPOLE_FILE: str = "dipoles.txt" # au to Debye, optional, gets filled with zeros if not present
-QUADRUPOLE_FILE: str = "quadrupoles.txt" # au to au, optional, gets filled with zeros if not present
-PC_FILE: str = "mm_data.pc" # Angstrom units to Angstrom units, optional
-OUTFILE: str = "geoms.extxyz"
+GRADIENT_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, energy gradients not forces, transformed to forces by multiplying by -1
+CHARGE_FILE: Optional[str] = "charges.txt" # e to e, optional, gets filled with zeros if not present
+ESP_FILE: Optional[str] = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
+ESP_GRAD_FILE: Optional[str] = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
+DIPOLE_FILE: Optional[str] = "dipoles.txt" # au to Debye, optional, gets filled with zeros if not present
+QUADRUPOLE_FILE: Optional[str] = "quadrupoles.txt" # au to au, optional, gets filled with zeros if not present
+PC_FILE: Optional[str] = "mm_data.pc" # Angstrom units to Angstrom units, optional
+OUTFILE: Optional[str] = "geoms.extxyz"
 
-BOXSIZE: float = 22.0 # nm to Angstrom, assuming cubic box, not individual per geometry so far, TODO: read from input file
+TOTAL_CHARGE: Optional[float] = 0.0 # Mostly deprecated, charge_file used instead, used if charge_file is not present
 
-FORMAT = "mace" # or "fieldmace", slight differences in the output format
+BOXSIZE: Optional[float] = 22.0 # nm to Angstrom, assuming cubic box, not individual per geometry so far, TODO: read from input file
+
+FORMAT: Optional[str] = "mace" # or "fieldmace", slight differences in the output format
 
 # Property keys in .extxyz file, are expected like this in mace scripts
 energy_key: str = "ref_energy"
@@ -38,19 +40,19 @@ mm_positions_key: str = "mm_positions"
 mm_charges_key: str = "mm_charges"
 
 # Conversion factors
-H_to_eV = 27.211386245988
-H_B_to_eV_A = 51.422086190832
-e_to_e = 1.0
-nm_to_A = 10.0
-debye_to_eA = 0.2081943
-eA_to_debye = 1.0 / debye_to_eA
-debye_to_ea0 = 0.3934303
-ea0_to_debye = 1.0 / debye_to_ea0
+H_to_eV: float = 27.211386245988
+H_B_to_eV_A: float = 51.422086190832
+e_to_e: float = 1.0
+nm_to_A: float = 10.0
+debye_to_eA: float = 0.2081943
+eA_to_debye: float = 1.0 / debye_to_eA
+debye_to_ea0: float = 0.3934303
+ea0_to_debye: float = 1.0 / debye_to_ea0
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Give config file")
     ap.add_argument("-c", "--conf", default=None, type=str, dest="config_path", action="store", required=False, help="Path to config file, default: None", metavar="config")
-    ap.add_argument("-f", "--format", default=FORMAT, type=str, choices=["mace", "fieldmace"], required=False, help="Format of the output file, default: %s" % FORMAT, metavar="format")
+    ap.add_argument("-f", "--format", default=None, type=str, choices=["mace", "fieldmace", None], required=False, help="Format of the output file, default: %s" % FORMAT, metavar="format")
     ap.add_argument("-m", "--max_mm", default=None, type=int, required=False, help="Max number of MM atoms per molecule, default: None", metavar="max_mm")
     args = ap.parse_args()
     return args
@@ -66,11 +68,11 @@ def read_config(args: argparse.Namespace) -> Dict[str, str|int|float]:
             print(f"Config file {config_path} not found.")
             exit(1)
 
-    # Set defaults to global defaults, otherwise use config file values
+    # Set default values
     config_data.setdefault("DATA_FOLDER", DATA_FOLDER)
     config_data.setdefault("GEOMETRY_FILE", GEOMETRY_FILE)
     config_data.setdefault("ENERGY_FILE", ENERGY_FILE)
-    config_data.setdefault("FORCE_FILE", FORCE_FILE)
+    config_data.setdefault("GRADIENT_FILE", GRADIENT_FILE)
     config_data.setdefault("CHARGE_FILE", CHARGE_FILE)
     config_data.setdefault("ESP_FILE", ESP_FILE)
     config_data.setdefault("ESP_GRAD_FILE", ESP_GRAD_FILE)
@@ -78,13 +80,22 @@ def read_config(args: argparse.Namespace) -> Dict[str, str|int|float]:
     config_data.setdefault("QUADRUPOLE_FILE", QUADRUPOLE_FILE)
     config_data.setdefault("PC_FILE", PC_FILE)
     config_data.setdefault("OUTFILE", OUTFILE)
+    config_data.setdefault("TOTAL_CHARGE", TOTAL_CHARGE)
     config_data.setdefault("BOXSIZE", BOXSIZE)
-    config_data.setdefault("FORMAT", args.format)
-    config_data.setdefault("MAX_MM", args.max_mm)
 
-    TOTAL_CHARGE = config_data.get("TOTAL_CHARGE", None)
-    if TOTAL_CHARGE is not None:
-        print("INFO: Giving total charge as directly as input is deprecated. Using charge-file instead.")
+    # Set config values from command line arguments, otherwise use config file values
+    if args.format is not None:
+        config_data["FORMAT"] = args.format
+    else:
+        config_data.setdefault("FORMAT", args.format)
+    if args.max_mm is not None:
+        config_data["MAX_MM"] = args.max_mm
+    else:
+        config_data.setdefault("MAX_MM", args.max_mm)
+    
+    if "FORCE_FILE" in config_data:
+        print("WARNING: FORCE_FILE is deprecated, use GRADIENT_FILE instead")
+        config_data["GRADIENT_FILE"] = config_data["FORCE_FILE"]
 
     return config_data
 
@@ -109,17 +120,17 @@ def load_charge_data(charge_file: str) -> Tuple[Sequence[np.ndarray], np.ndarray
     total_charges = np.round([np.sum(charge_array) for charge_array in charges], 1)
     return charges, total_charges
 
-def load_force_data(force_file: str) -> Sequence[np.ndarray]:
-    forces = []
-    with open(force_file, 'r') as file:
+def load_gradient_data(gradient_file: str) -> Sequence[np.ndarray]:
+    gradients = []
+    with open(gradient_file, 'r') as file:
         while True:
             try:
                 n_atoms = int(file.readline())
                 file.readline()  # Skip comment
-                forces.append(np.array([file.readline().strip().split()[-3:] for _ in range(n_atoms)], dtype=float))
+                gradients.append(np.array([file.readline().strip().split()[-3:] for _ in range(n_atoms)], dtype=float))
             except ValueError:  # End of file
                 break
-    return forces
+    return gradients
 
 def load_esp_data(esp_file: str, esp_gradient_file: str) -> Tuple[Sequence[np.ndarray], Sequence[np.ndarray]]:
     esps = []
@@ -387,7 +398,7 @@ def main() -> None:
     data_folder             = config_data["DATA_FOLDER"]
     geom_file               = os.path.join(data_folder, config_data["GEOMETRY_FILE"])
     energy_file             = os.path.join(data_folder, config_data["ENERGY_FILE"])
-    force_file              = os.path.join(data_folder, config_data["FORCE_FILE"])
+    gradient_file           = os.path.join(data_folder, config_data["GRADIENT_FILE"])
     charge_file             = os.path.join(data_folder, config_data["CHARGE_FILE"])
     esp_file                = os.path.join(data_folder, config_data["ESP_FILE"])
     esp_gradient_file       = os.path.join(data_folder, config_data["ESP_GRAD_FILE"])
@@ -400,10 +411,20 @@ def main() -> None:
     # Read data
     molecules: List[Atoms] = read_xyz(geom_file)
     energies: np.ndarray = load_energy_data(energy_file) 
+
     charges: Sequence[np.ndarray] # Possibly ragged list
     total_charges: Sequence[np.ndarray]
-    charges, total_charges = load_charge_data(charge_file) 
-    forces: Sequence[np.ndarray] = load_force_data(force_file) # Possibly ragged list
+    if os.path.exists(charge_file):
+        print("Charge file found")
+        charges, total_charges = load_charge_data(charge_file)
+    else:
+        print("Charge file not found, filling with zeros, using total charge: %s" % config_data["TOTAL_CHARGE"])
+        print("Warning: Unable to differentiate between different total charges")
+        charges = [np.zeros(len(molecule)) for molecule in molecules]
+        total_charges = np.zeros(len(molecules)) + config_data["TOTAL_CHARGE"]
+
+    gradients: Sequence[np.ndarray] = load_gradient_data(gradient_file) # Possibly ragged list
+
     esps: Sequence[np.ndarray] # Possibly ragged list
     esp_gradients: Sequence[np.ndarray] # Possibly ragged list
     if os.path.exists(esp_file) and os.path.exists(esp_gradient_file):
@@ -413,20 +434,23 @@ def main() -> None:
         print("ESP files not found, filling with zeros")
         esps = [np.zeros(len(molecule)) for molecule in molecules]
         esp_gradients = [np.zeros((len(molecule), 3)) for molecule in molecules]
+
     dipoles: np.ndarray
-    quadrupoles: np.ndarray
     if os.path.exists(dipole_file):
         print("Dipole file found")
         dipoles = load_dipole_data(dipole_file)
     else:
         print("Dipole file not found, filling with zeros")
         dipoles = np.zeros((len(molecules), 3))
+
+    quadrupoles: np.ndarray
     if os.path.exists(quadrupole_file):
         print("Quadrupole file found")
         quadrupoles = load_dipole_data(quadrupole_file)
     else:
         print("Quadrupole file not found, filling with zeros")
         quadrupoles = np.zeros((len(molecules), 6))
+
     if extxyz_format == "fieldmace":
         mm_charges: np.ndarray
         mm_positions: np.ndarray
@@ -458,7 +482,7 @@ def main() -> None:
     assert len(molecules) == len(energies), f"Number of geometries ({len(molecules)}) does not match number of energies ({len(energies)})"
     assert len(molecules) == len(charges), f"Number of geometries ({len(molecules)}) does not match number of charge arrays ({len(charges)})"
     assert len(molecules) == len(total_charges), f"Number of geometries ({len(molecules)}) does not match number of total charges ({len(total_charges)})"
-    assert len(molecules) == len(forces), f"Number of geometries ({len(molecules)}) does not match number of force arrays ({len(forces)})"
+    assert len(molecules) == len(gradients), f"Number of geometries ({len(molecules)}) does not match number of force arrays ({len(forces)})"
     assert len(molecules) == len(esps), f"Number of geometries ({len(molecules)}) does not match number of ESP arrays ({len(esps)})"
     assert len(molecules) == len(esp_gradients), f"Number of geometries ({len(molecules)}) does not match number of ESP gradient arrays ({len(esp_gradients)})"
     assert len(molecules) == len(dipoles), f"Number of geometries ({len(molecules)}) does not match number of dipoles ({len(dipoles)})"
@@ -470,7 +494,7 @@ def main() -> None:
     # Convert units
     config_data["BOXSIZE"] = config_data["BOXSIZE"]*nm_to_A 
     energies *= H_to_eV
-    forces = [force_matrix * H_B_to_eV_A * -1 for force_matrix in forces]
+    forces = [gradient_matrix * H_B_to_eV_A * -1 for gradient_matrix in gradients]
     esps = [esp_array for esp_array in esps]
     esp_gradients = [gradient_matrix for gradient_matrix in esp_gradients]
     dipoles *= ea0_to_debye
