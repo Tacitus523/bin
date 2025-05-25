@@ -3,6 +3,7 @@
 # Example: bash cut_traj.sh traj_comp.xtc dipeptid_sol.tpr 1 idx.ndx cut_traj.xtc
 
 module load system/parallel
+module load lib/cudnn/9.0.0_cuda-12.3
 
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
@@ -69,9 +70,9 @@ cut_traj() {
 
     if $debug_cut_traj
     then
-        redirection = ""
+        redirection=""
     else
-        redirection = " > /dev/null 2>&1"
+        redirection=" > /dev/null 2>&1"
     fi
 
     cd $walker_folder
