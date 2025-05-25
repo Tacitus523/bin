@@ -78,8 +78,8 @@ training_exit_status=$?
 
 echo "Finished training: $(date)"
 
-# Convert the model to a scripted model
-if [ $training_exit_status -eq 0 ]
-then
-    convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
-fi
+# # Convert the model to a scripted model
+# if [ $training_exit_status -eq 0 ]
+# then
+#     convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
+# fi
