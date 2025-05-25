@@ -21,6 +21,7 @@ loss: "charges_energy_forces"
 energy_key: "ref_energy"
 forces_key: "ref_force"
 charges_key: "ref_charge"
+total_charge_key: "total_charge"
 esp_key: "esp"
 esp_gradient_key: "esp_gradient"
 formal_charges_from_data: true 
