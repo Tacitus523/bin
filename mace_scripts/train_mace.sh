@@ -8,6 +8,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mail-user=lukas.petersen@kit.edu
 #SBATCH --mail-type=END,FAIL
+#SBATCH --oversubscribe # Allow sharing of resources
 
 module load compiler/gnu/10.2
 module load devel/cuda/12.3
