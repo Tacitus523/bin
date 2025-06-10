@@ -41,7 +41,7 @@ CHARGES_LOEW_FILE=charges_loew.txt
 #CHARGES_ESP_FILE=charges_esp.txt
 ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
-FORCES_FILE=forces.xyz
+GRADIENTS_FILE=gradients.xyz
 DIPOLE_FILE=dipoles.txt
 QUADRUPOLE_FILE=quadrupoles.txt
 
@@ -52,7 +52,7 @@ remove_if_exists $CHARGES_LOEW_FILE
 #remove_if_exists $CHARGES_ESP_FILE
 remove_if_exists $ENERGIES_FILE
 remove_if_exists $GEOMS_FILE
-remove_if_exists $FORCES_FILE
+remove_if_exists $GRADIENTS_FILE
 remove_if_exists $DIPOLE_FILE
 remove_if_exists $QUADRUPOLE_FILE
 
@@ -77,9 +77,9 @@ do
 	echo $folder >> $GEOMS_FILE
 	tac $folder/$2*.out | grep -B $(($num_atoms+1)) -m 1 'CARTESIAN COORDINATES (ANGSTROEM)' | tac | awk 'FNR>2{print}' >> $GEOMS_FILE
 
-	echo $num_atoms >> $FORCES_FILE
-	echo $folder >> $FORCES_FILE
-	tac $folder/$2*.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%s %+4.9f %+4.9f %+4.9f\n", $2, $4, $5, $6}' >> $FORCES_FILE
+	echo $num_atoms >> $GRADIENTS_FILE
+	echo $folder >> $GRADIENTS_FILE
+	tac $folder/$2*.out | grep -B $(($num_atoms+2)) -m 1 "CARTESIAN GRADIENT" | tac | awk 'FNR>3{printf "%s %+4.9f %+4.9f %+4.9f\n", $2, $4, $5, $6}' >> $GRADIENTS_FILE
 
 	tac $folder/$2*.out | grep -m 1 'Total Dipole Moment' | tac | awk '{print $5, $6, $7}' >> $DIPOLE_FILE
 
