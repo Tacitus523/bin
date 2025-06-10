@@ -16,7 +16,12 @@ angstrom_to_bohr = 1.8897259886
 atomic_units_to_volt = 27.211386245988
 atomic_units_to_volt_per_angstrom = 51.4220675112 # 27.21... * 1.88...(H/e to V * Bohr to Angstrom), Wikipedia says 5.1422 and is wrong
 
+# field_constant = 8.854e-12 # F/m, vacuum permittivity
+# elemental_charge = 1.602176634e-19 # C, elementary charge
+# angstrom_to_meter = 1e-10 # 1 Angstrom = 1e-10 m
+
 # for testing
+WRITE_IN_FOLDER: bool = False
 testing = False
 
 def parse_args() -> argparse.Namespace:
@@ -83,7 +88,6 @@ def main():
 
     input_file = input_prefix + ".inp"
     point_charge_file = input_prefix + ".pc"
-    orcainfo_file = input_prefix + ".ORCAINFO"
 
     if folder_prefix is not None:
         sp_calculation_location = os.path.dirname(folder_prefix)
@@ -91,24 +95,39 @@ def main():
         if not sp_calculation_location:
             sp_calculation_location = "."
         folders = [os.path.join(sp_calculation_location, f.name) for f in os.scandir(sp_calculation_location) if f.is_dir() and f.name.startswith(sp_calculation_prefix)]
-        folders.sort(key=lambda x: int(x.split(sp_calculation_prefix)[-1])) # Sorts numerically depending on the numer after the prefix, WARNING: Not at all tested on all edge cases
+        # Sorts numerically depending on the number after the prefix, WARNING: Not at all tested on all edge cases
+        try:
+            folders.sort(key=lambda x: int(x.split(sp_calculation_prefix)[-1]))
+        except ValueError:
+            print("WARNING: Could not sort folders numerically. Using default order.")
+            folders.sort()
+        except Exception as e:
+            print("ERROR: Could not sort folders. Error:", e)
+            exit(1)
+            
         with open("folder_order_esp.json", "w") as f:
             json.dump(folders, f, indent=2)
     else:
         folders = [os.getcwd()]
     original_folder = os.path.abspath(os.getcwd())
 
-    with open(orcainfo_file, "r") as f:
-        num_header_lines = sum(1 for line in f) + 3
+    write_in_folder: bool = WRITE_IN_FOLDER
     
     qm_atomic_numbers_list = []
     esps_list = []
     gradients_list = []
     n_qm_atoms_list = []
-    write_in_folder = True
     for folder in folders:
         os.chdir(folder)
-        
+
+        # Find the start of the QM coordinates in the input file
+        num_header_lines = 0
+        with open(input_file, "r") as f:
+            for line in f.readlines():
+                num_header_lines += 1
+                if "*xyz" in line: # The header ends with the line containing "*xyz". Sometimes line also seems to contain last line of .ORCAINFO
+                    break
+
         atomic_numbers = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(0,), dtype=int)
         qm_coords = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(1,2,3))
         mm_coords = np.genfromtxt(point_charge_file, skip_header=1, usecols=(1,2,3))
@@ -116,7 +135,6 @@ def main():
         n_qm_atoms = qm_coords.shape[0]
 
         esps, gradients = calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges)
-
         # Unit conversion
         if unit=="au":
             esps = esps/angstrom_to_bohr # from e/Angstrom to e/Bohr(atomic unit)
@@ -132,9 +150,12 @@ def main():
 
         if write_in_folder is True:
             try:
-                write_files([folder], [n_qm_atoms], [esps], [gradients])
-            except:
-                print("WARNING: Was not able to write into", folder)
+                write_files([folder], [n_qm_atoms], [esps], [gradients], [gradients])
+            except PermissionError:
+                print("WARNING: Was not able to write into", folder, ". No write permissions.")
+                write_in_folder = False
+            except Exception as e:
+                print("ERROR: Was not able to write into", folder, ". Error:", e)
                 write_in_folder = False
         
         os.chdir(original_folder)
@@ -178,4 +199,4 @@ if testing:
     exit()
 
 if __name__ == "__main__":    
-    main()  
+    main()
