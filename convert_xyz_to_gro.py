@@ -29,10 +29,17 @@ REPLACED_RESID_NAMES = [
     "3NME"
 ]
 
+
+#REPLACED_RESID_NAMES = ["1ADE"]*15
+#REPLACED_RESID_NAMES = ["1CYT"]*13
+#REPLACED_RESID_NAMES = ["1GUA"]*16
+#REPLACED_RESID_NAMES = ["1THY"]*15
+#REPLACED_RESID_NAMES = ["1URA"]*12
+
 parser = argparse.ArgumentParser(
     description = 'Transforming .xyz-file to .gro-file'
 )
-parser.add_argument('-f', '--file', help='Input file (.xyz) for transformation.')
+parser.add_argument('file', help='Input file (.xyz) for transformation.')
 args = parser.parse_args()
 input_file = args.file
 
