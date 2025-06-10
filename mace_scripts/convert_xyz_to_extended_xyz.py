@@ -12,7 +12,7 @@ from ase.io import read, write
 DATA_FOLDER: str = os.getcwd()
 GEOMETRY_FILE: str = "ThiolDisulfidExchange.xyz" # Angstrom units to Angstrom units
 ENERGY_FILE: str = "energies.txt" # Hartree to eV
-GRADIENT_FILE: str = "forces_conv.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, energy gradients not forces, transformed to forces by multiplying by -1
+GRADIENT_FILE: str = "gradients.xyz" # Hartree/Bohr to eV/Angstrom, xyz format, energy gradients not forces, transformed to forces by multiplying by -1
 CHARGE_FILE: Optional[str] = "charges.txt" # e to e, optional, gets filled with zeros if not present
 ESP_FILE: Optional[str] = "esps_by_mm.txt" # eV/e to eV/e, optional, gets filled with zeros if not present
 ESP_GRAD_FILE: Optional[str] = "esp_gradients_conv.xyz" # eV/e/B to eV/e/A, xyz format, optional, gets filled with zeros if not present (could be transformed to electric field by multiplying by -1)
@@ -82,6 +82,7 @@ def read_config(args: argparse.Namespace) -> Dict[str, str|int|float]:
     config_data.setdefault("OUTFILE", OUTFILE)
     config_data.setdefault("TOTAL_CHARGE", TOTAL_CHARGE)
     config_data.setdefault("BOXSIZE", BOXSIZE)
+    config_data.setdefault("FORMAT", FORMAT)
 
     # Set config values from command line arguments, otherwise use config file values
     if args.format is not None:
