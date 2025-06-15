@@ -6,7 +6,7 @@ import json
 import numpy as np
 import os
 import shutil
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 # Unit conversions when constructing the HDF5 file from .extxyz files:
 #   - Coordinates: [A] -> [A]
@@ -114,7 +114,7 @@ def parse_arguments() -> argparse.Namespace:
     unpack_parser = subparsers.add_parser("unpack", help="Unpack datasets from an HDF5 file and save them as .npy files.")
     unpack_parser.add_argument("hdf5_file_path", type=str, help="Path to the HDF5 file.")
     unpack_parser.add_argument("-o", "--output_dir", required=False, default=OUTPUTDIR, type=str, help="Output directory for .npy files. Default is the current directory.")
-    unpack_parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack.")
+    unpack_parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack(space-separated integers). Default is all datasets/first dataset if --single_system is specified.")
     unpack_parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
     unpack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
     unpack_parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
@@ -170,9 +170,6 @@ def parse_arguments() -> argparse.Namespace:
         if args.single_system and len(args.indices) != 1:
             parser.error("When --single_system is specified, exactly one index must be provided.")
         
-        if not args.single_system and args.indices is None:
-            parser.error("When --single_system is not specified, indices must be provided.")
-
         if args.splits is not None:
             if len(args.splits) != 3:
                 parser.error("When --split is specified, exactly three ratios must be provided.")
@@ -287,7 +284,7 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
     """Unpack datasets from an HDF5 file for multiple systems and save them as .npy files."""
     hdf5_file_path = args.hdf5_file_path
     output_dir = os.path.join(args.output_dir, args.name)
-    indices: List[int] = args.indices
+    indices: None | List[int] = args.indices
     splits: None | List[float] = args.splits
 
     print(f"Unpacking {hdf5_file_path} to {output_dir}")
@@ -295,6 +292,12 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
     prepare_output_directory(output_dir, splits)
 
     hdf5_file = h5py.File(hdf5_file_path, "r")
+
+    if indices is None:
+        # If no indices are provided, unpack all groups
+        indices = list(range(len(hdf5_file.keys())))
+        print(f"No indices provided. Unpacking all {len(indices)} groups.")
+
     # Iterate through all groups in the HDF5 file
     for group_idx, group_name in enumerate(hdf5_file.keys()):
         if group_idx > max(indices):
@@ -402,22 +405,14 @@ def pack_single_system(args: argparse.Namespace) -> None:
 
     if point_charges_file_path is not None and point_charges_grad_file_path is not None:
         # Collect the data from the point charges files
-        max_mm_molecules = find_max_chunk_size(point_charges_file_path)
-        print(f"Max chunk size in {point_charges_file_path}: {max_mm_molecules}")
-        assert max_mm_molecules == find_max_chunk_size(point_charges_grad_file_path), f"Max chunk size in {point_charges_file_path} and {point_charges_grad_file_path} differ."
-        validate_chunk_sizes(point_charges_file_path, max_mm_molecules, threshold=100)
-
-        point_charges_contents: List[np.ndarray] = read_chunked_file(point_charges_file_path) # Shape (n_mm_molecules, n_mm_atoms, 4), possibly irregular
-        mm_gradients: List[np.ndarray]           = read_chunked_file(point_charges_grad_file_path) # Shape (n_mm_molecules, n_mm_atoms, 3), possibly irregular
-        point_charges_contents = pad_arrays(point_charges_contents, max_mm_molecules)
-        mm_gradients           = pad_arrays(mm_gradients, max_mm_molecules)
-        mm_charges     = point_charges_contents[:, :, 0]
-        mm_coordinates = point_charges_contents[:, :, 1:4]
-    else:
+        mm_charges, mm_coordinates, mm_gradients = extract_mm_data(point_charges_file_path, point_charges_grad_file_path)
+    elif point_charges_file_path is None and point_charges_grad_file_path is None:
         # Create dummy data for MM charges and coordinates
         mm_charges = np.zeros((len(molecules), 1))
         mm_coordinates = np.zeros((len(molecules), 1, 3)) + 0.01 # Avoid zero coordinates, which are otherwise used for padding and removed
         mm_gradients = np.zeros((len(molecules), 1, 3))
+    else:
+        raise ValueError("Both --pc and --pcgrad must be specified or both must be None.")
 
     assert mm_charges.shape[0] == len(molecules), f"MM charges shape {mm_charges.shape[0]} does not match number of molecules {len(molecules)}"
     assert mm_coordinates.shape[0] == len(molecules), f"MM coordinates shape {mm_coordinates.shape[0]} does not match number of molecules {len(molecules)}"
@@ -641,6 +636,35 @@ def pad_arrays(arrays: List[np.ndarray], target_length: int) -> np.ndarray:
         padded_arrays.append(padded_array)
     
     return np.stack(padded_arrays, axis=0)
+
+def extract_mm_data(point_charges_file_path: str, point_charges_grad_file_path: Optional[str]=None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Handle the MM files for point charges and gradients, reading them in chunks and padding them to a consistent size.
+
+    Args:
+        point_charges_file_path (str): path to the point charges file
+        point_charges_grad_file_path (str): path to the point charges gradient file
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: mm_charges, mm_coordinates, mm_gradients
+    """
+    max_mm_molecules = find_max_chunk_size(point_charges_file_path)
+    print(f"Max chunk size in {point_charges_file_path}: {max_mm_molecules}")
+    validate_chunk_sizes(point_charges_file_path, max_mm_molecules, threshold=100)
+
+    point_charges_contents: List[np.ndarray] = read_chunked_file(point_charges_file_path) # Shape (n_mm_molecules, n_mm_atoms, 4), possibly irregular
+    point_charges_contents = pad_arrays(point_charges_contents, max_mm_molecules)
+    mm_charges     = point_charges_contents[:, :, 0]
+    mm_coordinates = point_charges_contents[:, :, 1:4]
+    
+    if point_charges_grad_file_path is None:
+        # If no gradients file is provided, create dummy gradients
+        mm_gradients = np.zeros_like(mm_coordinates)
+    else:
+        assert max_mm_molecules == find_max_chunk_size(point_charges_grad_file_path), f"Max chunk size in {point_charges_file_path} and {point_charges_grad_file_path} differ."
+        mm_gradients: List[np.ndarray] = read_chunked_file(point_charges_grad_file_path) # Shape (n_mm_molecules, n_mm_atoms, 3), possibly irregular
+        mm_gradients = pad_arrays(mm_gradients, max_mm_molecules)
+
+    return mm_charges, mm_coordinates, mm_gradients
 
 def prepare_output_directory(output_dir: str, splits: None | List[float]):
     """Prepare the output directory by cleaning up and creating necessary subdirectories."""
