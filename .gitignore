@@ -2,3 +2,4 @@ Orca5*
 bazel*
 test.ipynb
 doxygen*
+*.pyc
