@@ -41,6 +41,13 @@ if [ -z "$amp_plot" ]; then
     exit 1
 fi
 
+if [ -f "train.out" ]; then
+    rm train.out
+fi
+
+if [ -f "train.err" ]; then
+    rm train.err
+fi
 
 output=$($submission_script -p $amp_test -c $results_dir)
 echo "$output"
