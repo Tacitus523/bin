@@ -38,8 +38,6 @@ def parse_args():
     parser.add_argument("--p_test", type=float, default=0.2, required=False, help="Proportion of the whole dataset used for the test set")
     parser.add_argument("--p_valid", type=float, default=0.2, required=False, help="Proportion of the not-test part of the dataset used for the validation set")
     args = parser.parse_args()
-    for arg in vars(args):
-        print(f"{arg}: {getattr(args, arg)}")
     return args
 
 def validate_args(args):
@@ -137,6 +135,8 @@ def split_split(split_file: str, split_sources_file: str, args):
 
 def main():
     args = parse_args()
+    for arg in vars(args):
+        print(f"{arg}: {getattr(args, arg)}")
     args = validate_args(args)
     do_train_val_test_split(args)
     if args.nsplits > 1:
