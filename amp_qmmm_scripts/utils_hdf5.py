@@ -6,7 +6,8 @@ import json
 import numpy as np
 import os
 import shutil
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
+import io
 
 # Unit conversions when constructing the HDF5 file from .extxyz files:
 #   - Coordinates: [A] -> [A]
@@ -89,6 +90,13 @@ EXTXYZ_KEYS = {
     "quadrupole": "ref_quadrupole"
 }
 
+# EXTXYZ_KEYS = {
+#     "energy": "pred_energy",
+#     "forces": "pred_force",
+#     "dipole": "pred_dipole",
+#     "quadrupole": "pred_quadrupole"
+# }
+
 # Expected like this in train_amp.py
 TRAINING_DIRECTORY = "training"
 VALIDATION_DIRECTORY = "validation"
@@ -96,6 +104,8 @@ TEST_DIRECTORY = "test"
 
 OUTPUTDIR = os.getcwd()
 SYSTEM_NAME = "dalanine"
+
+BATCH_SIZE = 1000  # Default batch size for unpacking
 
 H_to_eV = 27.211386245988
 eV_to_H = 1.0 / H_to_eV
@@ -330,8 +340,7 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             assert key in converted_group_dict.keys(), f"Key {key} not found in converted group dictionary for {group_name}. Available keys: {converted_group_dict.keys()}"
 
         if splits is None:
-            # Save the group data as a .npy file
-            np.save(os.path.join(output_dir, f"{group_name}_batch_{group_idx}.npy"), converted_group_dict, allow_pickle=True)
+            save_numpy_batches(output_dir, group_name, converted_group_dict)
             continue
 
         # Save the group data as a .npy file according to the split ratios
@@ -345,10 +354,7 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
         for split_name, split_indices in zip([TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY], split_indices_list):
             split_group_dict = {key: value[split_indices] for key, value in converted_group_dict.items()}
             split_group_dir = os.path.join(output_dir, split_name)
-
-            # Save the split group data as a .npy file
-            np.save(os.path.join(split_group_dir, f"{group_name}_batch_{group_idx}.npy"), split_group_dict, allow_pickle=True)
-            np.save(os.path.join(split_group_dir, f"{group_name}_indices_{group_idx}.npy"), split_indices)
+            save_numpy_batches(split_group_dir, group_name, split_group_dict, split_indices)
             
     hdf5_file.close()
 
@@ -683,6 +689,38 @@ def prepare_output_directory(output_dir: str, splits: None | List[float]):
             if os.path.exists(split_group_dir) and os.path.isdir(split_group_dir):
                 shutil.rmtree(split_group_dir)
             os.makedirs(split_group_dir, exist_ok=True)
+
+def save_numpy_batches(output_dir: str, group_name: str, data_dict: Dict[str, np.ndarray], split_indices: Optional[np.ndarray] = None) -> None:
+    """Save a batch of numpy arrays to the output directory."""
+    n_entries = len(next(iter(data_dict.values())))
+    n_batches = (n_entries + BATCH_SIZE - 1) // BATCH_SIZE  # Calculate number of batches needed
+
+
+    for batch_idx in range(n_batches):
+        start_idx = batch_idx * BATCH_SIZE
+        end_idx = min((batch_idx + 1) * BATCH_SIZE, n_entries)
+        
+        # Create a new dictionary for the current batch
+        if end_idx > 1:
+            batch_data_dict = {key: value[start_idx:end_idx] for key, value in data_dict.items()}
+        else:
+            batch_data_dict = data_dict  # If only one entry, use the full data_dict
+
+        # Check the byte size of the converted_group_dict before saving, numpy can only save arrays smaller than 4.0 GB
+        if batch_idx == 0:
+            buffer = io.BytesIO()
+            np.save(buffer, batch_data_dict, allow_pickle=True)
+            byte_size = buffer.tell()
+            assert byte_size < 3.9*1024*1024*1024, f"Batch {group_name} exceeds 4.0 GB limit: {byte_size / (1024 * 1024 * 1024):.2f} GB. Adjust BATCH_SIZE."
+        
+        # Save the batch data as a .npy file
+        batch_file_path = os.path.join(output_dir, f"{group_name}_batch_{batch_idx}.npy")
+        np.save(batch_file_path, batch_data_dict, allow_pickle=True)
+        
+        if split_indices is not None:
+            # Save the indices for the current batch
+            indices_file_path = os.path.join(output_dir, f"{group_name}_indices_{batch_idx}.npy")
+            np.save(indices_file_path, split_indices[start_idx:end_idx])
 
 def main():
     """Main function to parse arguments and unpack HDF5 file."""
