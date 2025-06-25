@@ -2,7 +2,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32G
-#SBATCH --time=72:00:00
+#SBATCH --time=120:00:00
 #SBATCH --output=train.out
 #SBATCH --error=train.err
 #SBATCH --gres=gpu:1
@@ -66,7 +66,6 @@ mace_run_train \
     --train_file $train_file \
     --valid_file $valid_file \
     --test_file $test_file \
-    --seed $RANDOM \
     --max_num_epochs $EPOCHS \
     --wandb_name $WANDB_NAME \
     --num_workers 4 \
