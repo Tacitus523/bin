@@ -233,6 +233,8 @@ def plot_histogram(
     units: List[str],
     filename: str,
 ) -> None:
+    for key, value in data.items():
+        print(f"{key}: {value.shape}")
     df: pd.DataFrame = pd.DataFrame()
     for key in keys:
         df[key] = data[key]
@@ -304,6 +306,44 @@ def create_dataframe(
         repetitions = len(ref_data[key]) // len(sources)
         df["source"] = np.repeat(sources, repetitions)
     return df
+
+def plot_boxplot(
+    atoms: List[Atoms],
+    property_keys: List[str],
+    output_path: str = "boxplot.png",
+    title: Optional[str] = None,
+    ylabel: Optional[str] = None,
+):
+    is_info = atoms[0].info.get(property_keys[0]) is not None
+    is_arrays = atoms[0].arrays.get(property_keys[0]) is not None
+    if not (is_info or is_arrays):
+        raise ValueError(f"Neither atoms.info nor atoms.arrays contain the property: {property_keys[0]}")
+    if is_info:
+        for key in property_keys:
+            if key not in atoms[0].info:
+                raise ValueError(f"Property '{key}' not found in atoms.info")
+        # Extract properties from atoms.info
+        data = pd.DataFrame({
+            key: [atoms.info.get(key, np.nan) for atoms in atoms]
+            for key in property_keys
+        })
+    else:
+        for key in property_keys:
+            if key not in atoms[0].arrays:
+                raise ValueError(f"Property '{key}' not found in atoms.arrays")
+        # Extract properties from atoms.arrays
+        data = pd.DataFrame({
+            key: np.concatenate([atoms.arrays.get(key, np.nan).flatten() for atoms in atoms])
+            for key in property_keys
+        })
+
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=data)
+    plt.title(title if title else "Boxplot of Properties")
+    plt.ylabel(ylabel if ylabel else "Value")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(output_path)
 
 def main() -> None:
     args: argparse.Namespace = parse_args()
@@ -436,6 +476,29 @@ def main() -> None:
             present_units,
             "MACE_histogram.png",
         )
+
+    plot_boxplot(
+        mace_mols,
+        property_keys=[
+            "elec_energy",
+            "e_qmmm",
+            "inter_e",
+        ],
+        output_path="boxplot_energies.png",
+        title="Boxplot of Energies",
+        ylabel="Energy (eV)",
+    )
+
+    plot_boxplot(
+        mace_mols,
+        property_keys=[
+            PRED_FORCES_KEY,
+            "forces_qmmm",
+        ],
+        output_path="boxplot_forces.png",
+        title="Boxplot of Forces",
+        ylabel="Force (eV/Å)",
+    )
 
 if __name__ == "__main__":
     main()
