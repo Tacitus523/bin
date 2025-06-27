@@ -29,17 +29,17 @@ PLOT_ESP: bool = True
 PLOT_ENEG_ESP: bool = True
 
 # Keywords for extracting data
-REF_ENERGY_KEY: str = "ref_energy"
-REF_FORCES_KEY: str = "ref_force"
-REF_CHARGES_KEY: str = "ref_charge"
-REF_DMA_KEY: str = "ref_multipoles"
-PRED_ENERGY_KEY: str = "MACE_energy"
-PRED_FORCES_KEY: str = "MACE_forces"
-PRED_CHARGES_KEY: str = "MACE_charges"
-PRED_DMA_KEY: str = "MACE_multipoles"
-PRED_ENEG_KEY: str = "MACE_eneg"
-PRED_ESP_KEY: str = "MACE_esp"
-PRED_ENEG_ESP_KEY: str = "MACE_eneg_esp"
+REF_ENERGY_KEY: Optional[str] = "ref_energy"
+REF_FORCES_KEY: Optional[str] = "ref_force"
+REF_CHARGES_KEY: Optional[str] = "ref_charge"
+REF_DMA_KEY: Optional[str] = "ref_multipoles"
+PRED_ENERGY_KEY: Optional[str] = "MACE_energy"
+PRED_FORCES_KEY: Optional[str] = "MACE_forces"
+PRED_CHARGES_KEY: Optional[str] = "MACE_charges"
+PRED_DMA_KEY: Optional[str] = "MACE_multipoles"
+PRED_ENEG_KEY: Optional[str] = "MACE_eneg"
+PRED_ESP_KEY: Optional[str] = "MACE_esp"
+PRED_ENEG_ESP_KEY: Optional[str] = "MACE_eneg_esp"
 
 # Units for plotting
 ENERGY_UNIT: str = "eV"
@@ -151,6 +151,7 @@ def extract_data(
             AIMS_atom_multipoles = m.arrays[DMA_keyword]
             ref_DMA.extend(AIMS_atom_multipoles[:, 0])
         ref_elements.extend(m.get_chemical_symbols())
+
     result = {}
     result["energy"] = np.array(ref_energy)  # Energy in eV
     result["forces"] = np.array(ref_forces)  # Forces in eV/Å
@@ -184,9 +185,10 @@ def plot_data(
         ref_data: Dictionary containing reference data
         pred_data: Dictionary containing predicted data
         key: Key to extract the specific data from dictionaries
-        sources: Data sources
+        sources: Optional data sources for coloring
         x_label: Label for x-axis
         y_label: Label for y-axis
+        unit: Unit for the data
         filename: Output filename for the plot
     """
     df: pd.DataFrame = create_dataframe(ref_data, pred_data, key, sources, x_label, y_label)
@@ -220,9 +222,12 @@ def plot_data(
         verticalalignment="top",
         bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'),
     )
-    plt.legend(title=None, loc="upper left", fontsize="small")
-    for legend_handle in ax.get_legend().legend_handles:
-        legend_handle.set_alpha(1.0)
+
+    # Improve legend if available
+    if "source" in df.columns:
+        plt.legend(title=None, loc="upper left", fontsize="small")
+        for legend_handle in ax.get_legend().legend_handles:
+            legend_handle.set_alpha(1.0)
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
@@ -405,9 +410,8 @@ def main() -> None:
     for name, data in zip(["Ref", "MACE"], [ref_data, MACE_data]):
         for key, value in data.items():
             # Skip non-numeric data
-            if value.dtype not in (np.float32, np.float64, np.int32, np.int64):
-                continue
-            print(f"{name} {key}: {value.shape} Min Max: {np.min(value): .1f} {np.max(value): .1f}")
+            if isinstance(value, np.ndarray) and value.dtype in (np.float32, np.float64, np.int32, np.int64):
+                print(f"{name} {key}: {value.shape} Min Max: {np.min(value): .1f} {np.max(value): .1f}")
 
     # Use the plot function for each data type
     if args.energy:
@@ -452,7 +456,7 @@ def main() -> None:
             MACE_data,
             "charges",
             sources if sources is not None else ref_data["elements"],
-            "Hirshfeld Charges",
+            "Ref Charges",
             "Mace Charges",
             CHARGES_UNIT,
             "MACEcharges.png",
