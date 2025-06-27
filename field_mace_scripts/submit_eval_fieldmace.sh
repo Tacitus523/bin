@@ -7,13 +7,16 @@
 #SBATCH --error=eval.err
 #SBATCH --gres=gpu:1
 
-DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-fr0/training_data/DFTB_OB2-1-1_all_solvents/field_mace"
 MODEL_FILE="FieldMace_stagetwo.model"
 TEST_FILE="test.xyz"
 OUTPUT_FILE="geoms_fieldmace.xyz"
 
 print_usage() {
-    echo "Usage: $0 [-d data_folder]" >&2
+    echo "Usage: $0 [-d data_folder] [-m model_file]" >&2
+    echo "  -d data_folder   Path to the folder containing the test file (default: $DATA_FOLDER)" >&2
+    echo "  -m model_file     Path to the model file (default: $MODEL_FILE)" >&2
+    echo "Example: $0 -d /path/to/data -m /path/to/model.model" >&2
 }
 
 while getopts ":d:m:" flag 
@@ -68,6 +71,7 @@ echo "Starting evaluation on $SLURM_JOB_NODELIST: $(date)"
 
 $EVAL_SCRIPT \
     --configs="$test_file" \
+    --batch_size=8 \
     --model=$model_file \
     --output="$OUTPUT_FILE" \
     --device="cuda" \
