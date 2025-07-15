@@ -96,6 +96,7 @@ def analyze_local_bond_distances(args: argparse.Namespace, collection_folder_nam
         return None
 
     qm_atoms = universe.atoms
+    qm_atoms.wrap()  # Ensure atoms are wrapped in the box
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(qm_atoms)
 
     distance_matrices = []
@@ -188,7 +189,7 @@ def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, n
         for atom_b in atom_a.bonded_atoms:
             if atom_a.index < atom_b.index:
                 unique_index = [atom_a.index, atom_b.index]
-                elements_bond = [atom_a.name[0], atom_b.name[0]] # Get the first letter of the atom names, hopefully the element symbol
+                elements_bond = [atom_a.element, atom_b.element]
                 atomic_numbers_bond = [atomic_numbers.get(element, 0) for element in elements_bond]
                 unique_edge_indices.append(unique_index)
                 elements_bonds.append(elements_bond)
