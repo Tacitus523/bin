@@ -10,6 +10,9 @@
 
 """
 
+PERIODIC_LIMITS = ((-180, 120), (-100, 240))  # for periodic CVs, in degrees
+NON_PERIODIC_LIMITS = ((1.8, 11), (1.8, 11))  # for non-periodic CVs, in Angstrom
+
 ################
 #import modules#
 ################
@@ -84,20 +87,20 @@ labelpad = -.8
 
 ax = plt.gca()
 if periodicity_list[0] is True:
-	ax.set_xlim(-180, 120)
+	ax.set_xlim(PERIODIC_LIMITS[0][0], PERIODIC_LIMITS[0][1])
 	ax.set_xlabel(r"$\varphi$ [°]", 
 					fontsize=label_fs, labelpad=labelpad)
 else:
-	ax.set_xlim(1.5, 4)
+	ax.set_xlim(NON_PERIODIC_LIMITS[0][0], NON_PERIODIC_LIMITS[0][1])
 	ax.set_xlabel(r"S$^\mathrm{1}$-S$^\mathrm{2}$" + u" [\u212B]", 
 					fontsize=label_fs, labelpad=labelpad)
 
 if periodicity_list[1] is True:
-	ax.set_ylim(-100, 240)
+	ax.set_ylim(PERIODIC_LIMITS[1][0], PERIODIC_LIMITS[1][1])
 	ax.set_ylabel(r"$\psi$ [°]", 
 				fontsize=label_fs, labelpad=labelpad)
 else:
-	ax.set_ylim(1.5, 4)
+	ax.set_ylim(NON_PERIODIC_LIMITS[1][0], NON_PERIODIC_LIMITS[1][1])
 	ax.set_ylabel(r"S$^\mathrm{2}$-S$^\mathrm{3}$" + u" [\u212B]", 
 					fontsize=label_fs, labelpad=labelpad)
 
