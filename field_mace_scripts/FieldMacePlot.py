@@ -62,34 +62,52 @@ def extract_data(
     forces_keyword: Optional[str] = None,
     charges_keyword: Optional[str] = None,
 ) -> Dict[str, np.ndarray]:
-    ref_energy: List[float] = []
+    ref_energies: List[float] = []
     ref_forces: List[float] = []
     ref_charges: List[float] = []
     ref_elements: List[str] = []
-    for m in mols:
+    excited_states_per_mol_list: List[int] = []
+    excited_states_per_atom_list: List[int] = []
+    for mol_idx, mol in enumerate(mols):
+        n_atoms = len(mol)
         if charges_keyword is not None:
             if charges_keyword == "charge":
-                ref_charges.extend(m.get_charges().flatten())
+                ref_charges.extend(mol.get_charges().flatten())
             else:
-                ref_charges.extend(m.arrays[charges_keyword].flatten())
+                ref_charges.extend(mol.arrays[charges_keyword].flatten())
         if energy_keyword is not None:
             if energy_keyword == "energy":
-                ref_energy.append(m.get_potential_energy().flatten())
+                energy = mol.get_potential_energy()
             else:
-                ref_energy.append(m.info[energy_keyword].flatten())
+                energy = mol.info[energy_keyword]
+            ref_energies.append(energy.flatten())
+            n_states = energy.shape[-1] if energy.ndim >= 1 else 1
+            excited_states_per_mol = list(range(0, n_states))
+            excited_states_per_mol_list.extend(excited_states_per_mol)
+
         if forces_keyword is not None:
-            if forces_keyword == "forces":
-                ref_forces.extend(m.get_forces().flatten())
-            else:
-                ref_forces.extend(m.arrays[forces_keyword].flatten())
-        ref_elements.extend(m.get_chemical_symbols())
+            forces = mol.info[forces_keyword] # Forces are in info in this implementation
+            ref_forces.extend(forces.flatten())
+            n_states = forces.shape[1] if forces.ndim > 2 else 1
+            # Create array of state indices, repeat each 3 times (for x,y,z), and tile for all atoms
+            excited_states_per_atom = np.tile(np.repeat(np.arange(n_states), 3), n_atoms).tolist()
+            excited_states_per_atom_list.extend(excited_states_per_atom)
+        ref_elements.extend(mol.get_chemical_symbols())
 
     result = {}
-    result["energy"] = np.array(ref_energy).flatten()  # Energy in eV
+    result["energy"] = np.array(ref_energies).flatten()  # Energy in eV
     result["forces"] = np.array(ref_forces)  # Forces in eV/Å
     if len(ref_charges) > 0:
         result["charges"] = np.array(ref_charges)
     result["elements"] = np.array(ref_elements)
+    if excited_states_per_mol_list:
+        result["excited_states_per_mol"] = np.array(excited_states_per_mol_list)
+        assert len(result["excited_states_per_mol"]) == len(result["energy"]), \
+            f"Mismatch in excited states per molecule and energy length, {result['excited_states_per_mol'].shape} != {result['energy'].shape}"
+    if excited_states_per_atom_list:
+        result["excited_states_per_atom"] = np.array(excited_states_per_atom_list)
+        assert len(result["excited_states_per_atom"]) == len(result["forces"]), \
+            f"Mismatch in excited states per atom and forces length, {result['excited_states_per_atom'].shape} != {result['forces'].shape}"
     return result
 
 def plot_data(
@@ -129,7 +147,7 @@ def plot_data(
         x=x_label,
         y=y_label,
         hue="source" if sources is not None else None,
-        palette="tab10",
+        palette="tab10" if sources is not None else None,
         alpha=0.6,
         edgecolor=None,
         s=20,
@@ -233,7 +251,7 @@ def main():
             ref_data,
             MACE_data,
             "energy",
-            sources,
+            sources if sources is not None else ref_data["excited_states_per_mol"],
             "Ref Energy",
             "FieldMACE Energy",
             ENERGY_UNIT,
@@ -245,7 +263,7 @@ def main():
             ref_data,
             MACE_data,
             "forces",
-            sources if sources is not None else ref_data["elements"],
+            sources if sources is not None else ref_data["excited_states_per_atom"],
             "Ref Forces",
             "FieldMACE Forces",
             FORCES_UNIT,

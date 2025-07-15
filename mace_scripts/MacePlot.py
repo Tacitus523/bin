@@ -205,7 +205,7 @@ def plot_data(
         x=x_label,
         y=y_label,
         hue="source" if sources is not None else None,
-        palette="tab10",
+        palette="tab10" if sources is not None else None,
         alpha=0.6,
         edgecolor=None,
         s=20,
@@ -322,6 +322,9 @@ def plot_boxplot(
     is_info = atoms[0].info.get(property_keys[0]) is not None
     is_arrays = atoms[0].arrays.get(property_keys[0]) is not None
     if not (is_info or is_arrays):
+        print(f"Warning: Neither atoms.info nor atoms.arrays contain the property: {property_keys[0]}")
+        print("Skipping boxplot creation.")
+        return
         raise ValueError(f"Neither atoms.info nor atoms.arrays contain the property: {property_keys[0]}")
     if is_info:
         for key in property_keys:
