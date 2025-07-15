@@ -113,6 +113,8 @@ def do_train_val_test_split(args):
 def split_split(split_file: str, split_sources_file: str, args):
     total_split_data = read(split_file, ":", format="extxyz")
 
+    os.makedirs(f"splits", exist_ok=True)
+
     total_size = len(total_split_data)
     indices = np.arange(total_size)
     np.random.shuffle(indices)
@@ -121,8 +123,9 @@ def split_split(split_file: str, split_sources_file: str, args):
         split_indices = np.sort(split_indices)
         split_data = [total_split_data[j] for j in split_indices]
         
-        os.makedirs(f"split_{split_idx}", exist_ok=True)
-        save_file = os.path.join(f"split_{split_idx}", split_file) # Save the split in a new folder
+        split_folder = os.path.join("splits", f"split_{split_idx}")
+        os.makedirs(split_folder, exist_ok=True)
+        save_file = os.path.join(split_folder, split_file) # Save the split in a new folder
         write(save_file, split_data, format="extxyz")
 
         if args.sources_file is not None:
@@ -130,7 +133,7 @@ def split_split(split_file: str, split_sources_file: str, args):
                 split_sources: np.ndarray = np.array([line.strip() for line in f.readlines()], dtype=str)
             assert len(split_sources) == total_size, f"Number of lines in sources file {split_sources_file} does not match number of configurations in {split_file}: {len(split_sources)} != {total_size}"
             split_sources = split_sources[split_indices]
-            save_sources_file = os.path.join(f"split_{split_idx}", split_sources_file)
+            save_sources_file = os.path.join(split_folder, split_sources_file)
             np.savetxt(save_sources_file, split_sources, fmt="%s")
 
 def main():
@@ -143,9 +146,9 @@ def main():
         split_split(args.train_file, args.train_sources_file, args)
         split_split(args.valid_file, args.valid_sources_file, args)
         for split_idx in range(args.nsplits):
-            shutil.copy(args.test_file, f"split_{split_idx}")
+            shutil.copy(args.test_file, os.path.join("splits", f"split_{split_idx}"))
             if args.sources_file is not None:
-                shutil.copy(args.test_sources_file, f"split_{split_idx}")
+                shutil.copy(args.test_sources_file, os.path.join("splits", f"split_{split_idx}"))
 
 if __name__ == "__main__":
     main()
