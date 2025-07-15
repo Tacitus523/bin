@@ -43,7 +43,7 @@ if [ -z "$4" ]
 then
     ndx_file=$DEFAULT_NDX_FILE
 else
-    ndx_file=$4
+    ndx_file=$(realpath $4)
 fi
 if [ -z "$5" ]
 then
@@ -68,19 +68,20 @@ cut_traj() {
     local output_xtc_file=$5
     local ndx_file=$6 # Possibly empty, messes up the ordering of the arguments
 
-    if $debug_cut_traj
-    then
-        redirection=""
-    else
-        redirection=" > /dev/null 2>&1"
-    fi
-
     cd $walker_folder
-    if [ -z $ndx_file ]
+    if [ -z "$ndx_file" ]
     then
-        echo "$idx_in_ndx_file\n" | gmx trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file $redirection
+        if $debug_cut_traj; then
+            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file
+        else
+            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file > /dev/null 2>&1
+        fi
     else
-        echo "$idx_in_ndx_file\n" | gmx trjconv -f $input_xtc_file -s $tpr_file -i $ndx_file -o $output_xtc_file $redirection
+        if $debug_cut_traj; then
+            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -n $ndx_file -o $output_xtc_file
+        else
+            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -n $ndx_file -o $output_xtc_file > /dev/null 2>&1
+        fi
     fi
 }
 
