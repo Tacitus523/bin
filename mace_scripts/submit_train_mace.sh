@@ -64,6 +64,6 @@ do
     split_data_folder="$data_folder/split_$i"
     mkdir -p $submission_dir
     cd $submission_dir
-    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $data_folder -c $config_file
+    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $split_data_folder -c $config_file
     cd ..
 done
