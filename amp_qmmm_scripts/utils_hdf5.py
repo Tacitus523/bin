@@ -128,6 +128,7 @@ def parse_arguments() -> argparse.Namespace:
     unpack_parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
     unpack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
     unpack_parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
+    unpack_parser.add_argument("--n_splits", type=int, default=1, help="Number of train-valid-test splits. Default is 1.")
     unpack_parser.add_argument("-c", "--conversion", choices=["orca", "xtb"], default="orca", help="Conversion type: 'orca' or 'xtb'. Default is 'orca'.")
 
     # Subparser for creating an HDF5 file from extxyz and other files
@@ -188,6 +189,12 @@ def parse_arguments() -> argparse.Namespace:
             if args.single_system:
                 print("The --split option is ignored when --single_system is specified.")
 
+        if args.n_splits < 1:
+            parser.error("The --n_splits option must be at least 1.")
+
+        if args.n_splits > 1 and args.single_system:
+            parser.error("The --n_splits option cannot be used with --single_system.")
+
     elif args.command == "pack":
         if args.extxyz is None:
             parser.error("The --extxyz option must be specified.")
@@ -242,7 +249,7 @@ def unpack_single_system(args: argparse.Namespace) -> None:
     print(f"Unpacking {hdf5_file_path} to {output_dir}")
 
     # Prepare the output directory
-    prepare_output_directory(output_dir, None)
+    prepare_output_directory(output_dir, splits=None)
 
     #datasets: Dict[str, List[np.ndarray]] = {}
     hdf5_file = h5py.File(hdf5_file_path, "r")
@@ -293,13 +300,23 @@ def unpack_single_system(args: argparse.Namespace) -> None:
 def unpack_multiple_systems(args: argparse.Namespace) -> None:
     """Unpack datasets from an HDF5 file for multiple systems and save them as .npy files."""
     hdf5_file_path = args.hdf5_file_path
-    output_dir = os.path.join(args.output_dir, args.name)
-    indices: None | List[int] = args.indices
-    splits: None | List[float] = args.splits
+    main_output_dir = args.output_dir
+    indices: Optional[List[int]] = args.indices
+    n_splits: int = args.n_splits
+    splits: Optional[List[float]] = args.splits
 
-    print(f"Unpacking {hdf5_file_path} to {output_dir}")
+    print(f"Unpacking {hdf5_file_path} to {main_output_dir}")
 
-    prepare_output_directory(output_dir, splits)
+    output_dirs: List[str] = []
+    if n_splits == 1:
+        output_dir = os.path.join(main_output_dir, args.name)
+        prepare_output_directory(output_dir, splits=splits)
+        output_dirs.append(output_dir)
+    else:
+        for split_idx in range(n_splits):
+            output_dir = os.path.join(main_output_dir, "splits", f"split_{split_idx}", args.name)
+            prepare_output_directory(output_dir, splits=splits)
+            output_dirs.append(output_dir)
 
     hdf5_file = h5py.File(hdf5_file_path, "r")
 
@@ -340,21 +357,32 @@ def unpack_multiple_systems(args: argparse.Namespace) -> None:
             assert key in converted_group_dict.keys(), f"Key {key} not found in converted group dictionary for {group_name}. Available keys: {converted_group_dict.keys()}"
 
         if splits is None:
-            save_numpy_batches(output_dir, group_name, converted_group_dict)
+            save_numpy_batches(main_output_dir, group_name, converted_group_dict)
             continue
 
         # Save the group data as a .npy file according to the split ratios
         first_group_value = list(converted_group_dict.values())[0]
         n_group_entries = len(first_group_value)
         n_split_entries = [int(n_group_entries * split) for split in splits]
+        remainder = n_group_entries - sum(n_split_entries)
+        for i in range(remainder):
+            n_split_entries[i % len(n_split_entries)] += 1
+        # Shuffle all indices, then split them into train/val/test according to n_split_entries
         random_indices_list = np.random.permutation(n_group_entries)
         split_starts = [0] + np.cumsum(n_split_entries).tolist()
         split_indices_list = [random_indices_list[split_starts[i]:split_starts[i + 1]] for i in range(len(split_starts) - 1)]
         
-        for split_name, split_indices in zip([TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY], split_indices_list):
-            split_group_dict = {key: value[split_indices] for key, value in converted_group_dict.items()}
-            split_group_dir = os.path.join(output_dir, split_name)
-            save_numpy_batches(split_group_dir, group_name, split_group_dict, split_indices)
+        split_names = [TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY]
+        for split_name, split_indices in zip(split_names, split_indices_list): # Iterate over training, validation, and test splits
+            for split_idx, output_dir in enumerate(output_dirs): #  Iterate over main_outputdir or split_0, split_1, split_2, etc.
+                if split_name != TEST_DIRECTORY: 
+                    split_split_indices = split_indices[split_idx::len(output_dirs)] # Split indices for the current split, take every n-th index where n is the number of output directories
+                else:
+                    split_split_indices = split_indices # For test split, take all indices to have same test set for all splits
+                split_group_dict = {key: value[split_split_indices] for key, value in converted_group_dict.items()}
+                split_group_dir = os.path.join(output_dir, split_name)
+                os.makedirs(split_group_dir, exist_ok=True)
+                save_numpy_batches(split_group_dir, group_name, split_group_dict, split_split_indices)
             
     hdf5_file.close()
 
@@ -672,7 +700,7 @@ def extract_mm_data(point_charges_file_path: str, point_charges_grad_file_path: 
 
     return mm_charges, mm_coordinates, mm_gradients
 
-def prepare_output_directory(output_dir: str, splits: None | List[float]):
+def prepare_output_directory(output_dir: str, splits: Optional[List[float]] = None) -> None:
     """Prepare the output directory by cleaning up and creating necessary subdirectories."""
     # Remove the directory and its contents if it already exists
     if os.path.exists(output_dir) and os.path.isdir(output_dir) and not os.getcwd() == output_dir:
@@ -682,6 +710,7 @@ def prepare_output_directory(output_dir: str, splits: None | List[float]):
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # Create subdirectories for training, validation, and test sets if splits are provided
     if splits is not None:
         for split_group in [TRAINING_DIRECTORY, VALIDATION_DIRECTORY, TEST_DIRECTORY]:
             split_group_dir = os.path.join(output_dir, split_group)
