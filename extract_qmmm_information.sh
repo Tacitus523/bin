@@ -10,6 +10,8 @@ ESPS_FILE=esps_by_qmmm.txt
 PC_FILE=mm_data.pc
 PCGRAD_FILE=mm_data.pcgrad
 
+esp_calculation_script="esp_calculation_from_pc.py"
+
 set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 
 if [[ -z $1 || -z $2 ]]
@@ -31,18 +33,18 @@ do
 	break
 done
 
+remove_if_exists() {
+	local file=$1
+	if [ -f $file ]
+	then rm $file
+	fi
+}
 
 extract_qm_information.sh $1 $2
 
-if [ -f $ESPS_FILE ]
-then rm $ESPS_FILE
-fi
-if [ -f $PC_FILE ]
-then rm $PC_FILE
-fi
-if [ -f $PCGRAD_FILE ]
-then rm $PCGRAD_FILE
-fi
+remove_if_exists $ESPS_FILE
+remove_if_exists $PC_FILE
+remove_if_exists $PCGRAD_FILE
 
 # # Concatenates esps from gromacs_dftb, if these are calculated with PME electrostatics, these include esps from QM zone
 # for folder in $folders
@@ -57,11 +59,7 @@ do
 	sed '/^$/d' $folder/$2.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
 done
 
-# run_esp_calc.sh $1 $2
-if [ -f "esp_calc.out" ]
-then rm "esp_calc.out"
-fi
-if [ -f "esp_calc.err" ]
-then rm "esp_calc.err"
-fi
-qsub -v PATH $(which run_esp_calc.sh) $1 $2 
+remove_if_exists "esp_calc.out"
+remove_if_exists "esp_calc.err"
+qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
+
