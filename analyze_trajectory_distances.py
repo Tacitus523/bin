@@ -12,7 +12,7 @@ import os
 import pandas as pd
 import shutil
 import sys
-from typing import Tuple
+from typing import Tuple, List, Optional
 import warnings
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -33,60 +33,78 @@ N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the l
 N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
 DPI: int = 100 # DPI for saving plots
 
-default_collection_folder_name: str = "bond_distance_analysis"
+DEFAULT_COLLECTION_FOLDER_NAME: str = "bond_distance_analysis"
+AMBER_ILDN_PATH: str = "/lustre/home/ka/ka_ipc/ka_he8978/gromacs-orca/share/gromacs/top/amber99sb-ildn.ff"
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
     ap.add_argument("-p", "--prefix", default=None, type=str, dest="prefix", action="store", required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
     ap.add_argument("-t", "--trajectory_file", default=TRAJECTORY_FILE, type=str, dest="trajectory_file", action="store", required=False, help="Relative path to the trajectory file", metavar="trajectory_file")
-    ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, dest="topology_file", action="store", required=False, help="Relative path to the topology file, not a .top, but a .gro or similar", metavar="topology_file")
+    ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, dest="topology_file", action="store", required=False, help="Relative path to the topology file", metavar="topology_file")
     args = ap.parse_args()
     if args.prefix is None:
+        target_dir = os.getcwd()
+        args.collection_folder_name = None
         present_dirs = [os.getcwd()]
-        collection_folder_name = None
     else:
-        target_dir = os.path.dirname(args.prefix)
-        if target_dir == "":
-            target_dir = "."
-        os.chdir(target_dir)
+        target_dir = os.path.dirname(os.path.abspath(args.prefix))
         prefix = os.path.basename(args.prefix)
-        present_dirs = [dir for dir in os.listdir(".") if os.path.isdir(dir) and dir.startswith(prefix)]
-        collection_folder_name = os.path.abspath(default_collection_folder_name)
-        if not os.path.exists(collection_folder_name):
-            os.makedirs(collection_folder_name)
-    args.topology_file = os.path.abspath(args.topology_file)
+        present_dirs = [dir for dir in os.listdir(target_dir) if os.path.isdir(dir) and dir.startswith(prefix)]
+        args.collection_folder_name = os.path.join(target_dir, DEFAULT_COLLECTION_FOLDER_NAME)
+        if not os.path.exists(args.collection_folder_name):
+            os.makedirs(args.collection_folder_name)
+    args.topology_file = os.path.join(target_dir, args.topology_file)
+
+    # Ensure the amber99sb-ildn.ff is accessible
+    if not os.path.exists(os.path.join(target_dir, "amber99sb-ildn.ff")):
+        os.symlink(AMBER_ILDN_PATH, os.path.join(target_dir, "amber99sb-ildn.ff"), target_is_directory=True) 
 
     valid_dirs = []
     for dir in present_dirs:
         if not os.path.exists(os.path.join(dir, args.trajectory_file)):
             continue
         valid_dirs.append(dir)
-    valid_dirs = sorted(valid_dirs)
+    valid_dirs = sorted(valid_dirs, key=lambda x: int(x.split("_")[-1]))  # Sort directories by the last part of their name
     print(f"Valid directories: {valid_dirs}")
     assert len(valid_dirs) > 0, "No valid directories found"
 
     root_dir = os.getcwd()
-    bond_distances_all_walkers = []
+    walker_dfs: List[pd.DataFrame] = []
     for dir in valid_dirs:
         print(f"Analyzing {dir}")
         os.chdir(dir)
-        local_bond_distances_result = analyze_local_bond_distances(args, collection_folder_name=collection_folder_name)
+        walker_df: Optional[pd.DataFrame] = create_walker_df(args)
         os.chdir(root_dir)
-        
-        if local_bond_distances_result is not None:
-            bond_distances, edge_indices, atomic_numbers_bonds, elements_bonds = local_bond_distances_result
-            bond_distances_all_walkers.append(bond_distances)
+
+        if walker_df is not None:
+            walker_df["Walker"] = dir
+            walker_dfs.append(walker_df)
     
-    bond_distances_all_walkers = np.concatenate(bond_distances_all_walkers, axis=0) # shape: (n_timesteps_all_walkers, n_atoms, n_atoms)
-    # edge_indices, atomic_numbers_bonds, elements_bonds are expected to be the same for all walkers
+    if walker_dfs:
+        walker_dfs = pd.concat(walker_dfs, ignore_index=True)
+    else:
+        print("No valid walker dataframes found, exiting.")
+        sys.exit(0)
+        
+    if args.collection_folder_name is not None:
+        os.chdir(args.collection_folder_name)
 
-    if collection_folder_name is not None:
-        os.chdir(collection_folder_name)
+    print("Analyzing extreme bond distances...")
+    plot_extreme_bond_distances(walker_dfs)
+    print("Plotting bond distances in subplots...")
+    plt_subplots(walker_dfs)
+    print("Analyzing global bond distances...")
+    plot_bond_length_distribution(walker_dfs)
+    print("Analyzing hydrogen bond lengths...")
+    plot_h_bond_length_distribution(walker_dfs)
 
-    analyze_global_bond_distances(bond_distances_all_walkers, edge_indices, atomic_numbers_bonds, elements_bonds) 
-
-
-def analyze_local_bond_distances(args: argparse.Namespace, collection_folder_name: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def create_walker_df(args: argparse.Namespace) -> pd.DataFrame:
+    # Suppress MDAnalysis deprecation warnings
+    warnings.filterwarnings(
+        "ignore",
+        category=DeprecationWarning,
+        module="MDAnalysis.topology.ITPParser"
+    )
 
     try:
         universe = mda.Universe(args.topology_file, args.trajectory_file, topology_format="itp")
@@ -98,6 +116,9 @@ def analyze_local_bond_distances(args: argparse.Namespace, collection_folder_nam
     qm_atoms = universe.atoms
     qm_atoms.wrap()  # Ensure atoms are wrapped in the box
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(qm_atoms)
+    bond_labels = [f"{elements_bond[0]}{unique_edge_indices[i, 0]}-{elements_bond[1]}{unique_edge_indices[i, 1]}" for i, elements_bond in enumerate(elements_bonds)]
+    n_timesteps = len(universe.trajectory)
+    n_bonds = len(unique_edge_indices)
 
     distance_matrices = []
     for timestep in universe.trajectory:
@@ -107,67 +128,67 @@ def analyze_local_bond_distances(args: argparse.Namespace, collection_folder_nam
     
     distance_matrices = np.stack(distance_matrices, axis=0) # shape: (n_timesteps, n_atoms, n_atoms)
     bond_distances_all_timesteps = distance_matrices[:, unique_edge_indices[:, 0], unique_edge_indices[:, 1]] # shape: (n_timesteps, n_bonds)
-    bond_distance_maxs = bond_distances_all_timesteps.max(axis=0)
-    bond_distance_stds = bond_distances_all_timesteps.std(axis=0)
+    bond_distance_maxs = bond_distances_all_timesteps.max(axis=0) # shape: (n_bonds,)
+    bond_distance_stds = bond_distances_all_timesteps.std(axis=0) # shape: (n_bonds,)
 
-    # plot highest/lowest bond distances and bonds with highest/lowest standard deviations
-    for data_label, bond_distance_data in zip(["bond_distances", "bond_distance_stds"],[bond_distance_maxs, bond_distance_stds]):
-        size_labels = []
-        indices_list = []
-        if data_label == "bond_distances":
-            sorted_indices = np.argsort(bond_distance_data)[::-1] # Sort the bonds by the maximum bond distance
-            size_labels.append("all")
-            indices_list.append(sorted_indices)
-        largest_bond_distance_data_indices = np.argsort(bond_distance_data)[-N_PLOTS:][::-1] # Only plot the N_PLOTS bonds with the largest values
-        smallest_bond_distance_data_indices = np.argsort(bond_distance_data)[:N_PLOTS][::-1] # Only plot the N_PLOTS bonds with the smallest values
-        size_labels.extend(["largest", "smallest"])
-        indices_list.extend([largest_bond_distance_data_indices, smallest_bond_distance_data_indices])
-        for size_label, indices in zip(size_labels, indices_list):
-            extreme_bond_data = bond_distances_all_timesteps[:, indices]
+    timestep_indices = np.repeat(np.arange(n_timesteps), n_bonds) # Repeat each entry n times, shape: (n_timesteps * n_bonds,)
+    bond_indices = np.tile(np.arange(n_bonds), n_timesteps) # Repeat the array n times, shape: (n_timesteps * n_bonds,)
+    bond_labels = np.tile(bond_labels, n_timesteps) # shape: (n_timesteps * n_bonds,)
+    elements_bond_partner1 = np.tile(elements_bonds[:, 0], n_timesteps) # shape: (n_timesteps * n_bonds,)
+    elements_bond_partner2 = np.tile(elements_bonds[:, 1], n_timesteps) # shape: (n_timesteps * n_bonds,)
+    atomic_numbers_bond_partner1 = np.tile(atomic_numbers_bonds[:, 0], n_timesteps) # shape: (n_timesteps * n_bonds,)
+    atomic_numbers_bond_partner2 = np.tile(atomic_numbers_bonds[:, 1], n_timesteps) # shape: (n_timesteps * n_bonds,)
 
-            target_edge_indices = unique_edge_indices[indices] # Get the edge indices of the bonds with the smallest/largest bond distances or all bonds
-            target_atomic_numbers_bonds = atomic_numbers_bonds[indices] # Get the atomic numbers of the atoms in the bonds with the smallest/largest bond distances or all bonds
-            target_element_bonds = elements_bonds[indices] # Get the elements of the atoms in the bonds with the smallest/largest bond distances or all bonds
+    # Create a DataFrame for the bond distances
+    walker_df = pd.DataFrame({
+        "Time Step": timestep_indices,
+        "Bond Index": bond_indices,
+        "Bond Label": bond_labels,
+        "Element 1": elements_bond_partner1,
+        "Element 2": elements_bond_partner2,
+        "Atomic Number 1": atomic_numbers_bond_partner1,
+        "Atomic Number 2": atomic_numbers_bond_partner2,
+        "Bond Distance": bond_distances_all_timesteps.flatten(),
+        "Bond Distance Max": np.tile(bond_distance_maxs, n_timesteps),
+        "Bond Distance Std": np.tile(bond_distance_stds, n_timesteps),
+    })
 
-            labels = [f"({target_element_bonds[i, 0]}{target_edge_indices[i, 0]}, {target_element_bonds[i, 1]}{target_edge_indices[i, 1]})" for i in range(len(target_edge_indices))]
-            bond_distances_df = pd.DataFrame(extreme_bond_data, columns=labels)
-            bond_distances_df["Time Step"] = np.arange(len(universe.trajectory))
-            bond_distances_df = bond_distances_df.set_index("Time Step")
-            title = f"{data_label}_{size_label}_vs_time_steps.png"
-            plot_bond_distances(bond_distances_df, title=title)
-    
-            if collection_folder_name is not None:
-                folder_name = os.path.basename(os.getcwd())
-                collection_title = f"{data_label}_{size_label}_vs_time_steps_{folder_name}.png"
-                shutil.copy(title, os.path.join(collection_folder_name, collection_title))
-    
-    return bond_distances_all_timesteps, unique_edge_indices, atomic_numbers_bonds, elements_bonds
+    return walker_df
 
-def analyze_global_bond_distances(bond_distances: np.ndarray, edge_indices: np.ndarray, atomic_numbers_bonds: np.ndarray, elements_bonds: np.ndarray) -> None:
-    bond_types = [f"({elements_bond[0]}-{elements_bond[1]})" for elements_bond in elements_bonds]
-    flat_bond_distances = bond_distances.flatten()
-    bond_distances_df = pd.DataFrame(flat_bond_distances, columns=["Bond Length"])
-    bond_distances_df["Bond Type"] = bond_types*np.shape(bond_distances)[0] # Repeat the bond types for each timestep
-    plot_bond_length_distribution(bond_distances_df)
+def plot_extreme_bond_distances(
+    walker_dfs: pd.DataFrame
+) -> None:
+    """
+    Plot the highest/lowest bond distances and bonds with the highest/lowest standard deviations.
 
-    # Get the bonds involving hydrogen atoms
-    is_h_bond_involved = np.any(atomic_numbers_bonds == 1, axis=1) # Check if any of the atoms in the bond is a hydrogen atom, shape: (n_bonds,)
-    h_bond_edges = edge_indices[is_h_bond_involved] # Get the edge indices of the bonds involving hydrogen atoms, shape: (n_h_bonds, 2)
-    
-    # Get the bond lengths of the bonds involving hydrogen atoms
-    h_bond_lengths = bond_distances[:, is_h_bond_involved] # shape: (n_timesteps, n_h_bonds,)
-    h_bond_lengths = h_bond_lengths.flatten() # shape: (n_timesteps * n_h_bonds,)
-    bond_types = [
-        f"({elements_bond[0]}-{elements_bond[1]})" if elements_bond[1] == "H" 
-        else f"({elements_bond[1]}-{elements_bond[0]})"
-        for elements_bond in elements_bonds[is_h_bond_involved]
-    ] # Get the bond types of the bonds involving hydrogen atoms, shape: (n_h_bonds,)
+    Args:
+        walker_df (pd.DataFrame): DataFrame containing bond distance data.
+    """
+    walker_labels = sorted(walker_dfs["Walker"].unique())
+    for walker_label in walker_labels:
+        walker_df = walker_dfs[walker_dfs["Walker"] == walker_label]
+        plot_bond_distances(walker_df, title=f"bond_distance_all_{walker_label}.png")
 
-    h_bond_df = pd.DataFrame(h_bond_lengths, columns=["Hydrogen Bond Length"])
-    h_bond_df["Bond Type"] = bond_types*np.shape(bond_distances)[0] # Repeat the bond types for each timestep
+        # Get the bond distance max and std
+        bond_distance_maxs = walker_df.groupby("Bond Label")["Bond Distance"].max().nlargest(N_PLOTS)
+        bond_distance_mins = walker_df.groupby("Bond Label")["Bond Distance"].min().nsmallest(N_PLOTS)
+        bond_distance_max_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nlargest(N_PLOTS)
+        bond_distance_min_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nsmallest(N_PLOTS)
 
-    plot_h_bond_length_distribution(h_bond_df)
+        max_df = walker_df[walker_df["Bond Label"].isin(bond_distance_maxs.index)]
+        min_df = walker_df[walker_df["Bond Label"].isin(bond_distance_mins.index)]
+        max_std_df = walker_df[walker_df["Bond Label"].isin(bond_distance_max_stds.index)]
+        min_std_df = walker_df[walker_df["Bond Label"].isin(bond_distance_min_stds.index)]
 
+        max_df = max_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
+        min_df = min_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
+        max_std_df = max_std_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
+        min_std_df = min_std_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
+
+        plot_bond_distances(max_df, title=f"bond_distance_max_{walker_label}.png")
+        plot_bond_distances(min_df, title=f"bond_distance_min_{walker_label}.png")
+        plot_bond_distances(max_std_df, title=f"bond_distance_max_std_{walker_label}.png")
+        plot_bond_distances(min_std_df, title=f"bond_distance_min_std_{walker_label}.png")
 
 def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -205,36 +226,101 @@ def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_dist
     # Plot the bond distances over time
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
-    bond_distances_df_shortened = bond_distances_df.iloc[-N_LAST_TIMESTEPS:]
-    sns.lineplot(data=bond_distances_df_shortened, palette="tab10")
+    if N_LAST_TIMESTEPS > 0:
+        n_last_timesteps_filter = bond_distances_df["Time Step"] >= bond_distances_df["Time Step"].nlargest(N_LAST_TIMESTEPS).min()
+        bond_distances_df = bond_distances_df[n_last_timesteps_filter]
+
+    sns.lineplot(data=bond_distances_df, palette="tab10", x="Time Step", y="Bond Distance", hue="Bond Label")
     plt.xlabel("Time Step")
     plt.ylabel("Bond Distance [Å]")
-    # plt.title("Bond Distances Over Time")
     plt.legend(title="Bonds", bbox_to_anchor=(1.05, 1))
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
 
-def plot_h_bond_length_distribution(h_bond_distances_df: pd.DataFrame, title: str = "h_bond_lengths_distribution.png"):
+def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "h_bond_lengths_distribution.png"):
+    # Get the bonds involving hydrogen atoms
+    is_h_bond_involved = (walker_dfs["Element 1"] == "H") | (walker_dfs["Element 2"] == "H")
+    h_bond_df = walker_dfs[is_h_bond_involved]
+
     # Plot the distribution of hydrogen bond lengths
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
-    sns.histplot(h_bond_distances_df, x="Hydrogen Bond Length", hue="Bond Type", palette="tab10", multiple="stack", stat="probability", common_norm=True)
+    sns.histplot(h_bond_df, x="Bond Distance", hue="Bond Label", palette="tab10", multiple="stack", stat="probability", common_norm=True)
     plt.xlabel("Hydrogen Bond Length [Å]")
     plt.ylabel("Frequency")
-    plt.title("Hydrogen Bond Length Distribution")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
 
-def plot_bond_length_distribution(h_bond_distances_df: pd.DataFrame, title: str = "bond_lengths_distribution.png"):
+def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_lengths_distribution.png"):
     # Plot the distribution of hydrogen bond lengths
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
-    sns.histplot(h_bond_distances_df, x="Bond Length", hue="Bond Type", palette="tab10", multiple="stack", stat="probability", common_norm=True)
+    sns.histplot(walker_dfs, x="Bond Distance", hue="Bond Label", palette="tab10", multiple="stack", stat="probability", common_norm=True)
     plt.xlabel("Bond Length [Å]")
     plt.ylabel("Frequency")
-    plt.title("Bond Length Distribution")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
+
+def plt_subplots(walker_dfs: pd.DataFrame) -> None:
+    """
+    Plot bond distances for all walkers in subplots.
+    
+    Args:
+        walker_dfs (pd.DataFrame): DataFrame containing bond distance data for all walkers.
+    """
+    walker_labels = sorted(walker_dfs["Walker"].unique(), key=lambda x: int(x.split("_")[-1]))  # Sort by the last part of the walker label
+    n_walkers = len(walker_labels)
+    
+    # Calculate subplot grid dimensions
+    n_cols = min(3, n_walkers)  # Maximum 3 columns
+    n_rows = (n_walkers + n_cols - 1) // n_cols  # Ceiling division
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
+    sns.set_context("talk", font_scale=1.0)
+    
+    # Flatten axes array for easier indexing
+    if n_walkers == 1:
+        axes = [axes]
+    elif n_rows == 1:
+        axes = axes
+    else:
+        axes = axes.flatten()
+    
+    # Plot for each walker
+    for idx, walker_label in enumerate(walker_labels):
+        walker_df = walker_dfs[walker_dfs["Walker"] == walker_label]
+        
+        
+        # Apply time step filter if specified
+        if N_LAST_TIMESTEPS > 0:
+            n_last_timesteps_filter = walker_df["Time Step"] >= walker_df["Time Step"].nlargest(N_LAST_TIMESTEPS).min()
+            walker_df = walker_df[n_last_timesteps_filter]
+        
+        # Plot in the corresponding subplot
+        ax = axes[idx]
+        sns.lineplot(
+            data=walker_df, 
+            x="Time Step", 
+            y="Bond Distance", 
+            hue="Bond Label",
+            palette="tab10",
+            ax=ax
+        )
+        
+        ax.set_title(f"{walker_label}")
+        ax.set_xlabel("Time Step")
+        ax.set_ylabel("Bond Distance [Å]")
+        # remove the legend for subplots
+        ax.get_legend().remove()
+
+    # Hide unused subplots
+    for idx in range(n_walkers, len(axes)):
+        axes[idx].set_visible(False)
+    
+    plt.tight_layout()
+    plt.savefig("bond_distance_all_walkers.png", dpi=DPI, bbox_inches='tight')
+    plt.close()
 
 if __name__ == "__main__":
     main()
