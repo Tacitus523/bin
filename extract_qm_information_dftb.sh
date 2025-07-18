@@ -1,3 +1,4 @@
+#!/bin/bash
 #Give folder-prefix as $1, .xyz file as $2
 # Units Output:
 # Charges: e
