@@ -97,6 +97,7 @@ def main() -> None:
     plot_bond_length_distribution(walker_dfs)
     print("Analyzing hydrogen bond lengths...")
     plot_h_bond_length_distribution(walker_dfs)
+    print("Analysis complete")
 
 def create_walker_df(args: argparse.Namespace) -> pd.DataFrame:
     # Suppress MDAnalysis deprecation warnings
@@ -170,20 +171,30 @@ def plot_extreme_bond_distances(
         plot_bond_distances(walker_df, title=f"bond_distance_all_{walker_label}.png")
 
         # Get the bond distance max and std
-        bond_distance_maxs = walker_df.groupby("Bond Label")["Bond Distance"].max().nlargest(N_PLOTS)
-        bond_distance_mins = walker_df.groupby("Bond Label")["Bond Distance"].min().nsmallest(N_PLOTS)
-        bond_distance_max_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nlargest(N_PLOTS)
-        bond_distance_min_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nsmallest(N_PLOTS)
+        bond_distance_maxs = walker_df.groupby("Bond Label")["Bond Distance"].max().nlargest(N_PLOTS).sort_values(ascending=False)
+        bond_distance_mins = walker_df.groupby("Bond Label")["Bond Distance"].min().nsmallest(N_PLOTS).sort_values(ascending=False)
+        bond_distance_max_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nlargest(N_PLOTS).sort_values(ascending=False)
+        bond_distance_min_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nsmallest(N_PLOTS).sort_values(ascending=False)
 
-        max_df = walker_df[walker_df["Bond Label"].isin(bond_distance_maxs.index)]
-        min_df = walker_df[walker_df["Bond Label"].isin(bond_distance_mins.index)]
-        max_std_df = walker_df[walker_df["Bond Label"].isin(bond_distance_max_stds.index)]
-        min_std_df = walker_df[walker_df["Bond Label"].isin(bond_distance_min_stds.index)]
+        max_bond_labels = bond_distance_maxs.index.to_list()
+        min_bond_labels = bond_distance_mins.index.to_list()
+        max_std_bond_labels = bond_distance_max_stds.index.to_list()
+        min_std_bond_labels = bond_distance_min_stds.index.to_list()
 
-        max_df = max_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
-        min_df = min_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
-        max_std_df = max_std_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
-        min_std_df = min_std_df.sort_values(by=["Time Step", "Bond Distance"], ascending=[True, False])
+        max_df = walker_df[walker_df["Bond Label"].isin(max_bond_labels)].copy()
+        min_df = walker_df[walker_df["Bond Label"].isin(min_bond_labels)].copy()
+        max_std_df = walker_df[walker_df["Bond Label"].isin(max_std_bond_labels)].copy()
+        min_std_df = walker_df[walker_df["Bond Label"].isin(min_std_bond_labels)].copy()
+
+        max_df["Bond Label"] = pd.Categorical(max_df["Bond Label"], categories=max_bond_labels, ordered=True)
+        min_df["Bond Label"] = pd.Categorical(min_df["Bond Label"], categories=min_bond_labels, ordered=True)
+        max_std_df["Bond Label"] = pd.Categorical(max_std_df["Bond Label"], categories=max_std_bond_labels, ordered=True)
+        min_std_df["Bond Label"] = pd.Categorical(min_std_df["Bond Label"], categories=min_std_bond_labels, ordered=True)
+
+        max_df = max_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
+        min_df = min_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
+        max_std_df = max_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
+        min_std_df = min_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
 
         plot_bond_distances(max_df, title=f"bond_distance_max_{walker_label}.png")
         plot_bond_distances(min_df, title=f"bond_distance_min_{walker_label}.png")
@@ -241,21 +252,38 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "h_bo
     # Get the bonds involving hydrogen atoms
     is_h_bond_involved = (walker_dfs["Element 1"] == "H") | (walker_dfs["Element 2"] == "H")
     h_bond_df = walker_dfs[is_h_bond_involved]
+    binrange = (h_bond_df["Bond Distance"].min(), min(h_bond_df["Bond Distance"].max(), 1.3))  # Limit the range to 1.3 Å
 
     # Plot the distribution of hydrogen bond lengths
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
-    sns.histplot(h_bond_df, x="Bond Distance", hue="Bond Label", palette="tab10", multiple="stack", stat="probability", common_norm=True)
+    sns.histplot(h_bond_df,
+                 x="Bond Distance", 
+                 hue="Bond Label", 
+                 palette="tab10", 
+                 multiple="stack", 
+                 stat="probability", 
+                 common_norm=True,
+                 binrange=binrange,
+                 bins=100)
     plt.xlabel("Hydrogen Bond Length [Å]")
     plt.ylabel("Frequency")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
 
 def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_lengths_distribution.png"):
-    # Plot the distribution of hydrogen bond lengths
+    binrange = (walker_dfs["Bond Distance"].min(), min(walker_dfs["Bond Distance"].max(), 2.5))  # Limit the range to 2.5 Å
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
-    sns.histplot(walker_dfs, x="Bond Distance", hue="Bond Label", palette="tab10", multiple="stack", stat="probability", common_norm=True)
+    sns.histplot(walker_dfs, 
+                 x="Bond Distance", 
+                 hue="Bond Label", 
+                 palette="tab10", 
+                 multiple="stack", 
+                 stat="probability", 
+                 common_norm=True,
+                 binrange=binrange,
+                 bins=100)
     plt.xlabel("Bond Length [Å]")
     plt.ylabel("Frequency")
     plt.tight_layout()
