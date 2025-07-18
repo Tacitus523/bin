@@ -24,6 +24,7 @@ DEFAULT_NAME = "E_elec_correlation.png"
 
 volt_to_atomic_units = 1/27.211386245988
 H_to_kcal_mol = 627.509
+H_to_eV = 27.211386245988
 
 def main():
     ap = argparse.ArgumentParser(description="Energy correlation between vacuum and water(or simply two energy files)")
@@ -81,24 +82,23 @@ def main():
     calc_e_elec = np.sum(env_charges*env_esps, axis=-1) 
 
     if env_charge_file is not None:
-        energy_1 = true_e_elec *H_to_kcal_mol
-        energy_2 = calc_e_elec *H_to_kcal_mol
+        energy_1 = true_e_elec *H_to_eV
+        energy_2 = calc_e_elec *H_to_eV
     else:
-        energy_1 = vacuum_energies *H_to_kcal_mol
-        energy_2 = env_energies *H_to_kcal_mol
+        energy_1 = vacuum_energies *H_to_eV
+        energy_2 = env_energies *H_to_eV
 
-    mean_error = np.mean(energy_2 - energy_1)
     mae = mean_absolute_error(energy_1, energy_2)
     rmse = mean_squared_error(energy_1, energy_2, squared=False)
     r2 = r2_score(energy_1, energy_2)
 
-    data["True E_elec"] = energy_1 
-    data["Calculated E_elec"] = energy_2
+    data["Continuous E_elec"] = energy_1 
+    data["Discrete E_elec"] = energy_2
 
     fig = plt.figure(figsize=(16,16))
     ax = fig.add_subplot()
     if args.data_source_file is not None:
-        plot = sns.scatterplot(x="True E_elec", y="Calculated E_elec", data=data,
+        plot = sns.scatterplot(x="Continuous E_elec", y="Discrete E_elec", data=data,
             hue="Data Source", palette=sns.color_palette("hls", 10),
             legend="full", alpha=0.1)
 
@@ -107,24 +107,24 @@ def main():
             legend_handle.set_alpha(1)
             legend_handle.set_markersize(MARKERSIZE)
     else:
-        plot = sns.scatterplot(x="True E_elec", y="Calculated E_elec", data=data,
+        plot = sns.scatterplot(x="Continuous E_elec", y="Discrete E_elec", data=data,
             palette=sns.color_palette("hls", 10), alpha=ALPHA)
 
-    value_min = data[["True E_elec","Calculated E_elec"]].min().min()
-    value_max = data[["True E_elec","Calculated E_elec"]].max().max()
+    value_min = data[["Continuous E_elec","Discrete E_elec"]].min().min()
+    value_max = data[["Continuous E_elec","Discrete E_elec"]].max().max()
     plt.plot([value_min-1, value_max+1], [value_min-1, value_max+1], "k")
     plot.set(xlim=(value_min, value_max))
     plot.set(ylim=(value_min, value_max))
 
     text_x = 0.75*(value_max-value_min) + value_min
     text_y = 0.1*(value_max-value_min) + value_min
-    ax.text(text_x, text_y, f"MAE: {mae:.3f}\nRMSE: {rmse:.3f}\nR2: {r2:.2f}", fontdict={"fontsize": LABELSIZE}, bbox={
+    ax.text(text_x, text_y, f"MAE: {mae:.3f} eV\nRMSE: {rmse:.3f} eV\nR2: {r2:.2f}", fontdict={"fontsize": LABELSIZE}, bbox={
         "facecolor": "grey", "alpha": 0.5, "pad": 10})
 
 
     plt.title(title, {'fontsize': FONTSIZE})
-    ax.set_xlabel(r'True $\text{E}_\text{elec}$ [$\frac{\text{kcal}}{\text{mol}}$]', fontsize=FONTSIZE)
-    ax.set_ylabel(r'Calculated $\text{E}_\text{elec}$ [$\frac{\text{kcal}}{\text{mol}}$]', fontsize=FONTSIZE)
+    ax.set_xlabel(r'Continuous $\text{E}_\text{elec}$ [eV]', fontsize=FONTSIZE)
+    ax.set_ylabel(r'Discrete $\text{E}_\text{elec}$ [eV]', fontsize=FONTSIZE)
     plt.tick_params(axis='both', which="major", labelsize=LABELSIZE)
 
     plt.gca().get_xaxis().get_major_formatter().set_useOffset(False)
