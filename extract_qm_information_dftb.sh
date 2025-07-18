@@ -20,7 +20,7 @@ set -o nounset   # (or set -u) causes the script to treat unset variables as an 
 if [[ -z $1 || -z $2 ]]
 then
     echo `date`" - Missing mandatory arguments: folder-prefix or .xyz file"
-    echo `date`" - Usage: ./extract_qm_information.sh [folder-prefix] [.xyz file]"
+    echo `date`" - Usage: $0 [folder-prefix] [.xyz file]"
     exit 1
 fi
 

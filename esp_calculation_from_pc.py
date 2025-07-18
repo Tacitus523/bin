@@ -1,5 +1,11 @@
-#!/usr/bin/env python3
+#!/home/lpetersen/miniconda3/envs/mda/bin/python
+#$ -N esp_calc
+#$ -cwd
+#$ -o esp_calc.out
+#$ -e esp_calc.err
+
 import argparse
+import datetime
 import os
 import json
 from typing import List, Optional, Tuple
@@ -8,9 +14,11 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 from ase.data import atomic_numbers, chemical_symbols
+from ase.io import read
 
 ESP_FILE_NAME: str = "esps_by_mm.txt"
 ESP_GRAD_FILE_NAME: str = "esp_gradients.xyz"
+DEFAULT_INPUT_FORMAT: str = "orca"
 
 angstrom_to_bohr = 1.8897259886
 atomic_units_to_volt = 27.211386245988
@@ -30,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("-i", "--input", type=str, dest="input_prefix", action="store", required=True, help="Prefix of the Input-file for the orca-calculation", metavar="file_prefix")
     ap.add_argument("-u", "--unit", choices=["V", "au"], default="au", type=str, dest="unit", action="store", required=False, help="Unit of the ESP, default: atomic units(au)", metavar="unit")
     ap.add_argument("-n", "--n_atoms", type=int, default=None, required=False, help="Deprecated: Now read from the input-file")
+    ap.add_argument("--format", choices=["orca", "dftb"], default=DEFAULT_INPUT_FORMAT, type=str, dest="input_format", action="store", required=False, help="Format of the input file, default: orca", metavar="input_format")
     args = ap.parse_args()
 
     if args.n_atoms is not None:
@@ -80,14 +89,59 @@ def write_files(
         esp_grad_file.write(grad_string)
     esp_grad_file.close()
 
+def extract_orca_inputs(input_file: str, point_charge_file: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    # Find the start of the QM coordinates in the input file
+    num_header_lines = 0
+    with open(input_file, "r") as f:
+        for line in f.readlines():
+            num_header_lines += 1
+            if "*xyz" in line: # The header ends with the line containing "*xyz". Sometimes line also seems to contain last line of .ORCAINFO
+                break
+
+    atomic_numbers = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(0,), dtype=int)
+    qm_coords = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(1,2,3))
+    mm_coords = np.genfromtxt(point_charge_file, skip_header=1, usecols=(1,2,3))
+    mm_charges = np.genfromtxt(point_charge_file, skip_header=1, usecols=(0,))
+    return atomic_numbers, qm_coords, mm_coords, mm_charges
+
+def extract_dftb_inputs(input_file: str, point_charge_file: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    # Read the coordinates from the .xyz file
+    atoms = read(input_file, format="xyz")
+    qm_coords = atoms.get_positions()
+    atomic_numbers = atoms.get_atomic_numbers()
+
+    # Read the point charges from the field.dat file, format is inversed to the Orca format and has no header
+    # The first three columns are the coordinates, the fourth column is the charge
+    mm_data = np.loadtxt(point_charge_file)
+    mm_coords = mm_data[:, :3]  # Coordinates of the MM atoms
+    mm_charges = mm_data[:, 3]   # Charges of the MM atoms
+    return atomic_numbers, qm_coords, mm_coords, mm_charges
+
+def time_decorator(func):
+    def wrapper(*args, **kwargs):
+        start_time = datetime.datetime.now()
+        print(f"Starting ESP calculation at {start_time}")
+        result = func(*args, **kwargs)
+        end_time = datetime.datetime.now()
+        print(f"ESP calculation finished at {end_time}")
+        print(f"Duration: {end_time - start_time}")
+        return result
+    return wrapper
+
+@time_decorator
 def main():
     args = parse_args()
     folder_prefix = args.folder_prefix
     input_prefix = args.input_prefix
     unit= args.unit
+    input_format = args.input_format
 
-    input_file = input_prefix + ".inp"
-    point_charge_file = input_prefix + ".pc"
+    if input_format == "orca":
+        input_file = input_prefix + ".inp"
+        point_charge_file = input_prefix + ".pc"
+    elif input_format == "dftb":
+        input_file = input_prefix + ".xyz"
+        point_charge_file = "field.dat"
 
     if folder_prefix is not None:
         sp_calculation_location = os.path.dirname(folder_prefix)
@@ -117,21 +171,17 @@ def main():
     esps_list = []
     gradients_list = []
     n_qm_atoms_list = []
-    for folder in folders:
+    for folder_idx, folder in enumerate(folders):
         os.chdir(folder)
 
-        # Find the start of the QM coordinates in the input file
-        num_header_lines = 0
-        with open(input_file, "r") as f:
-            for line in f.readlines():
-                num_header_lines += 1
-                if "*xyz" in line: # The header ends with the line containing "*xyz". Sometimes line also seems to contain last line of .ORCAINFO
-                    break
+        assert os.path.isfile(input_file), f"Input file {input_file} does not exist."
+        assert os.path.isfile(point_charge_file), f"Point charge file {point_charge_file}"
 
-        atomic_numbers = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(0,), dtype=int)
-        qm_coords = np.genfromtxt(input_file, skip_header=num_header_lines, skip_footer=2, usecols=(1,2,3))
-        mm_coords = np.genfromtxt(point_charge_file, skip_header=1, usecols=(1,2,3))
-        mm_charges = np.genfromtxt(point_charge_file, skip_header=1, usecols=(0,))
+        if input_format == "orca":
+            atomic_numbers, qm_coords, mm_coords, mm_charges = extract_orca_inputs(input_file, point_charge_file)
+        elif input_format == "dftb":
+            atomic_numbers, qm_coords, mm_coords, mm_charges = extract_dftb_inputs(input_file, point_charge_file)
+        
         n_qm_atoms = qm_coords.shape[0]
 
         esps, gradients = calculate_esp_and_esp_gradient(qm_coords, mm_coords, mm_charges)
@@ -159,6 +209,9 @@ def main():
                 write_in_folder = False
         
         os.chdir(original_folder)
+
+        if folder_idx+1 % 1000 == 0:
+            print(f"Processed {folder_idx} folders")
 
     write_files(folders, qm_atomic_numbers_list, n_qm_atoms_list, esps_list, gradients_list)
 
