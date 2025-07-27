@@ -4,9 +4,12 @@
 import argparse
 import os
 import numpy as np
-from ase.io import read, write
 import shutil
-from sklearn.model_selection import train_test_split
+from typing import List, Optional, Tuple
+
+from ase import Atoms
+from ase.io import read, write
+from sklearn.model_selection import train_test_split, KFold
 
 
 TRAIN_FILE_PREFIX: str = "train" # Prefix of the training set files
@@ -25,6 +28,9 @@ TEST_FILE: str = TEST_FILE_PREFIX + SUFFIX # Hardcoded like this in training scr
 TRAIN_SOURCES_FILE: str = "{data_sources_prefix}_{train_prefix}{data_sources_suffix}"
 VALID_SOURCES_FILE: str = "{data_sources_prefix}_{valid_prefix}{data_sources_suffix}"
 TEST_SOURCES_FILE: str = "{data_sources_prefix}_{test_prefix}{data_sources_suffix}"
+TRAIN_INDICES_FILE: str = "{train_prefix}_indices.txt"
+VALID_INDICES_FILE: str = "{valid_prefix}_indices.txt"
+TEST_INDICES_FILE: str = "{test_prefix}_indices.txt"
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Split a dataset into training, validation and test set")
@@ -59,6 +65,13 @@ def validate_args(args):
         test_prefix=TEST_FILE_PREFIX, 
         data_sources_suffix=data_sources_suffix)
 
+    args.train_indices_file = TRAIN_INDICES_FILE.format(
+        train_prefix=TRAIN_FILE_PREFIX)
+    args.valid_indices_file = VALID_INDICES_FILE.format(
+        valid_prefix=VALID_FILE_PREFIX)
+    args.test_indices_file = TEST_INDICES_FILE.format(
+        test_prefix=TEST_FILE_PREFIX)
+
     if not os.path.exists(args.data_folder):
         raise FileNotFoundError(f"Data folder {args.data_folder} does not exist")
     if not os.path.exists(os.path.join(args.data_folder, args.geom_file)):
@@ -76,33 +89,49 @@ def validate_args(args):
         raise ValueError("Proportion of the validation set must be between 0 and 1")
     if args.p_test + args.p_valid > 1:
         raise ValueError("Proportion of the test and validation set must be less than 1")
+    if args.nsplits < 1:
+        raise ValueError("Number of splits must be at least 1")
     return args
 
-def do_train_val_test_split(args):
-    # Load the complete dataset from a .extxyz file
-    data = read(args.geom_file, ":", format="extxyz")
-    print(f"Loaded {len(data)} configurations from {args.geom_file}")
+def read_data(args: argparse.Namespace) -> Tuple[List[Atoms], Optional[np.ndarray]]:
+    # Read the dataset from the .extxyz file
+    data: List[Atoms] = read(args.geom_file, ":", format="extxyz")
 
+    # Check if the sources file exists and read it
+    if args.sources_file is not None:
+        data_sources: np.ndarray = np.loadtxt(args.sources_file, dtype=str, delimiter="*") # Dummy delimiter, should not occur
+        assert len(data_sources) == len(data), \
+            f"Number of lines in sources file {args.sources_file} does not match number of configurations in {args.geom_file}: {len(data_sources)} != {len(data)}"
+    else:
+        data_sources = None
+    print(f"Loaded {len(data)} configurations from {args.geom_file}")
+    return data, data_sources
+
+def do_train_val_test_split(data: List[Atoms], args: argparse.Namespace, data_sources: Optional[np.ndarray] = None):
     # Split the dataset into training, validation and test set
     random_state = 42 # Important for equal split of data and data sources
-    train_data, test_data = train_test_split(data, test_size=args.p_test, random_state=random_state, shuffle=True)
-    train_data, valid_data = train_test_split(train_data, test_size=args.p_valid, random_state=random_state+1, shuffle=True)
+    data_indices = np.arange(len(data)) # For saving the indices of the configurations in the .extxyz files
+    train_indices, test_indices = train_test_split(data_indices, test_size=args.p_test, random_state=random_state, shuffle=True)
+    train_indices, valid_indices = train_test_split(train_indices, test_size=args.p_valid, random_state=random_state+1, shuffle=True)
+    train_data = [data[i] for i in train_indices]
+    valid_data = [data[i] for i in valid_indices]
+    test_data = [data[i] for i in test_indices]
 
     # Save the training, validation and test set in smaller .extxyz files
     write(args.train_file, train_data, format="extxyz")
     write(args.valid_file, valid_data, format="extxyz")
-    write( args.test_file, test_data, format="extxyz")
+    write(args.test_file, test_data, format="extxyz")
 
-    if args.sources_file is None:
+    np.savetxt(args.train_indices_file, train_indices, fmt="%d")
+    np.savetxt(args.valid_indices_file, valid_indices, fmt="%d")
+    np.savetxt(args.test_indices_file, test_indices, fmt="%d")
+
+    if data_sources is None:
         return
-    
-    # Split the sources file into training, validation and test set
-    with open(args.sources_file, "r") as f:
-        data_sources: np.ndarray = np.array([line.strip() for line in f.readlines()], dtype=str)
-    
-    assert len(data_sources) == len(data), f"Number of lines in sources file {args.sources_file} does not match number of configurations in {args.geom_file}"
-    train_sources, test_sources = train_test_split(data_sources, test_size=args.p_test, random_state=random_state, shuffle=True)
-    train_sources, valid_sources = train_test_split(train_sources, test_size=args.p_valid, random_state=random_state+1, shuffle=True)
+
+    train_sources = data_sources[train_indices]
+    valid_sources = data_sources[valid_indices]
+    test_sources = data_sources[test_indices]
     assert len(train_sources) == len(train_data), f"Number of lines in sources file {args.sources_file} does not match number of configurations in {args.train_file}: {len(train_sources)} != {len(train_data)}"
     assert len(valid_sources) == len(valid_data), f"Number of lines in sources file {args.sources_file} does not match number of configurations in {args.valid_file}: {len(valid_sources)} != {len(valid_data)}"
     assert len(test_sources) == len(test_data), f"Number of lines in sources file {args.sources_file} does not match number of configurations in {args.test_file}: {len(test_sources)} != {len(test_data)}"
@@ -136,19 +165,68 @@ def split_split(split_file: str, split_sources_file: str, args):
             save_sources_file = os.path.join(split_folder, split_sources_file)
             np.savetxt(save_sources_file, split_sources, fmt="%s")
 
+def do_kfold_split(data: List[Atoms], args: argparse.Namespace, data_sources: Optional[np.ndarray] = None):
+    # Perform K-Fold cross-validation split
+    random_state = 42 # Important for equal split of data and data sources
+    data_indices = np.arange(len(data)) # For saving the indices of the configurations in the .extxyz files
+    train_indices, test_indices = train_test_split(data_indices, test_size=args.p_test, random_state=random_state, shuffle=True)
+    test_data = [data[i] for i in test_indices]
+    if data_sources is not None:
+        test_sources = data_sources[test_indices]
+    
+
+    kf = KFold(n_splits=args.nsplits, shuffle=True, random_state=random_state+1)
+    for split_idx, (train_indices, valid_indices) in enumerate(kf.split(train_indices)):
+        train_split_data = [data[i] for i in train_indices]
+        valid_split_data = [data[i] for i in valid_indices]
+
+        split_folder = os.path.join("kfold_splits", f"split_{split_idx}")
+        os.makedirs(split_folder, exist_ok=True)
+        train_file = os.path.join(split_folder, args.train_file)
+        valid_file = os.path.join(split_folder, args.valid_file)
+        test_file = os.path.join(split_folder, args.test_file)
+        write(train_file, train_split_data, format="extxyz")
+        write(valid_file, valid_split_data, format="extxyz")
+        write(test_file, test_data, format="extxyz")
+
+        train_indices_file = os.path.join(split_folder, args.train_indices_file)
+        valid_indices_file = os.path.join(split_folder, args.valid_indices_file)
+        test_indices_file = os.path.join(split_folder, args.test_indices_file)
+        np.savetxt(train_indices_file, train_indices, fmt="%d")
+        np.savetxt(valid_indices_file, valid_indices, fmt="%d")
+        np.savetxt(test_indices_file, test_indices, fmt="%d")
+
+        if data_sources is not None:
+            train_split_sources = data_sources[train_indices]
+            valid_split_sources = data_sources[valid_indices]
+
+            train_sources_file = os.path.join(split_folder, args.train_sources_file)
+            valid_sources_file = os.path.join(split_folder, args.valid_sources_file)
+            test_sources_file = os.path.join(split_folder, args.test_sources_file)
+
+            np.savetxt(train_sources_file, train_split_sources, fmt="%s")
+            np.savetxt(valid_sources_file, valid_split_sources, fmt="%s")
+            np.savetxt(test_sources_file, test_sources, fmt="%s")
+
 def main():
     args = parse_args()
     for arg in vars(args):
         print(f"{arg}: {getattr(args, arg)}")
     args = validate_args(args)
-    do_train_val_test_split(args)
+
+    data, data_sources = read_data(args)
+
+    if args.nsplits == 1:
+        do_train_val_test_split(data, args, data_sources)
     if args.nsplits > 1:
-        split_split(args.train_file, args.train_sources_file, args)
-        split_split(args.valid_file, args.valid_sources_file, args)
-        for split_idx in range(args.nsplits):
-            shutil.copy(args.test_file, os.path.join("splits", f"split_{split_idx}"))
-            if args.sources_file is not None:
-                shutil.copy(args.test_sources_file, os.path.join("splits", f"split_{split_idx}"))
+        do_kfold_split(data, args, data_sources)
+        # Deprecated: split the train, valid and test set into multiple splits
+        # split_split(args.train_file, args.train_sources_file, args)
+        # split_split(args.valid_file, args.valid_sources_file, args)
+        # for split_idx in range(args.nsplits):
+        #     shutil.copy(args.test_file, os.path.join("splits", f"split_{split_idx}"))
+        #     if args.sources_file is not None:
+        #         shutil.copy(args.test_sources_file, os.path.join("splits", f"split_{split_idx}"))
 
 if __name__ == "__main__":
     main()
