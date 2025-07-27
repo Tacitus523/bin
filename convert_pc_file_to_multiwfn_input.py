@@ -17,7 +17,7 @@ def main():
 
     n_mm_atoms = np.loadtxt(pointcharge_file, max_rows=1, dtype=int)
     mm_coords = np.loadtxt(pointcharge_file, skiprows=1, usecols=(1,2,3)) *A_to_bohr
-    np.savetxt(out_file, mm_coords, header=str(n_mm_atoms), comments='')
+    np.savetxt(out_file, mm_coords, header=str(n_mm_atoms), comments='', format='%.6f %.6f %.6f', delimiter=' ')
 
 if __name__=="__main__":
     main()
