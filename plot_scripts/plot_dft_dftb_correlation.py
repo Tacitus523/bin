@@ -17,6 +17,8 @@ FORCE_UNIT = "eV/Å"  # Unit for forces
 
 MAX_DATA_POINTS = 25000  # Maximum number of data points to plot
 
+FIGSIZE = (16,9)  # Default figure size for plots
+
 dftb_atomic_energies = {
     1: -7.609986074389834,
     6: -39.29249996225988,
@@ -61,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--labels', '-l', type=str, nargs=2, help='Labels for datasets', 
                         default=['DFT', 'DFTB'])
     parser.add_argument('--fig-size', type=float, nargs=2, help='Figure size (width, height)', 
-                        default=[10, 8])
+                        default=FIGSIZE)
     parser.add_argument('--alpha', type=float, help='Point transparency', default=0.3)
     parser.add_argument('--point-size', type=float, help='Point size', default=10)
     args = parser.parse_args()
@@ -237,7 +239,6 @@ def main() -> None:
     assert np.array_equal(dft_atomic_numbers, dftb_atomic_numbers), "Atomic numbers must match in both datasets."
     assert dft_total_energies.shape == dftb_total_energies.shape, "Both datasets must have the same shape."
     assert dft_forces.shape == dftb_forces.shape, "Both datasets must have the same shape."
-    
     if args.source is not None:
         sources = np.loadtxt(args.source, dtype=str, delimiter=',')
         assert len(sources) == dft_forces.shape[0], "Source file must have the same number of entries as the datasets."
@@ -250,8 +251,10 @@ def main() -> None:
     # relative_dftb_total_energies = dftb_total_energies - dftb_total_energies[minimal_dft_energy_idx]
     dft_mean = np.mean(dft_total_energies)
     dftb_mean = np.mean(dftb_total_energies)
-    # dft_mean = -13489.227541673252
-    # dftb_mean = -712.5616871654851
+    # dft_mean = -13489.24374346578
+    # dftb_mean = -712.605326136464
+    dft_mean = -35761.06180777135
+    dftb_mean = -431.315100785927
     print(f"DFT Mean Energy: {dft_mean} eV")
     print(f"DFTB Mean Energy: {dftb_mean} eV")
     centered_dft_total_energies = dft_total_energies - dft_mean
@@ -274,7 +277,7 @@ def main() -> None:
     if args.source is not None:
         molecule_df['Source'] = sources
         molecule_df = molecule_df.sort_values(by='Source')
-        molecule_df = molecule_df[molecule_df['Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
+        #molecule_df = molecule_df[molecule_df['Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
 
     force_labels = [f"{args.labels[0]} Force", f"{args.labels[1]} Force"]
     atom_indices = np.tile(np.repeat(np.arange(dft_forces.shape[1]//3), 3), dft_forces.shape[0])
@@ -289,16 +292,19 @@ def main() -> None:
     if args.source is not None:
         atom_df['Source'] = np.repeat(sources, dft_forces.shape[1])  # Repeat sources for each force component
         atom_df = atom_df.sort_values(by='Source')
-        atom_df = atom_df[atom_df['Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
+        #atom_df = atom_df[atom_df['Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
 
     # Confirm if all keys in H_connectivity are Hydrogen atoms
     key_indices_df = atom_df[atom_df["Atom Index"].isin(H_connectivity.keys())]
     if key_indices_df["Element"].eq("H").all():
         # Replace all Hydrogen indices with their bond partners
         atom_df["Atom Index"] = atom_df["Atom Index"].replace(H_connectivity)
+    else:
+        # Replace all Hydrogen Atom Index with 0
+        atom_df.loc[atom_df["Element"] == "H", "Atom Index"] = 0
 
     print("Plotting correlations...")
-    sns.set_context("talk")
+    sns.set_context("talk", font_scale=1.3)
     sns.set_style("whitegrid")
     plot_correlation(molecule_df, energy_stats, energy_labels, "energy", ENERGY_UNIT, args)
     plot_correlation(atom_df, force_stats, force_labels, "force", FORCE_UNIT, args)
@@ -326,6 +332,10 @@ def main() -> None:
             ax=ax
         )
         ax.set_title(f"Element: {element}")
+
+    # Hide any unused subplots by making them invisible
+    for i in range(len(np.unique(dft_elements)), len(axes)):
+        axes[i].set_visible(False)
     plt.tight_layout()
     plt.savefig(f"{args.output_prefix}_element_forces.png", dpi=300)
     plt.close(fig)
