@@ -45,11 +45,11 @@ def main() -> None:
     if args.prefix is None:
         target_dir = os.getcwd()
         args.collection_folder_name = None
-        present_dirs = [os.getcwd()]
+        present_dirs = ["."]  # Use relative path for current directory
     else:
         target_dir = os.path.dirname(os.path.abspath(args.prefix))
         prefix = os.path.basename(args.prefix)
-        present_dirs = [dir for dir in os.listdir(target_dir) if os.path.isdir(dir) and dir.startswith(prefix)]
+        present_dirs = [dir for dir in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, dir)) and dir.startswith(prefix)]
         args.collection_folder_name = os.path.join(target_dir, DEFAULT_COLLECTION_FOLDER_NAME)
         if not os.path.exists(args.collection_folder_name):
             os.makedirs(args.collection_folder_name)
@@ -61,10 +61,14 @@ def main() -> None:
 
     valid_dirs = []
     for dir in present_dirs:
-        if not os.path.exists(os.path.join(dir, args.trajectory_file)):
+        if not os.path.exists(os.path.join(target_dir, dir, args.trajectory_file)):
             continue
         valid_dirs.append(dir)
-    valid_dirs = sorted(valid_dirs, key=lambda x: int(x.split("_")[-1]))  # Sort directories by the last part of their name
+    if len(valid_dirs) > 1:
+        try:
+            valid_dirs = sorted(valid_dirs, key=lambda x: int(x.split("_")[-1]))  # Sort directories by the last part of their name
+        except ValueError:
+            print("Info: Unable to sort directories by numeric suffix, using original order.")
     print(f"Valid directories: {valid_dirs}")
     assert len(valid_dirs) > 0, "No valid directories found"
 
@@ -72,12 +76,18 @@ def main() -> None:
     walker_dfs: List[pd.DataFrame] = []
     for dir in valid_dirs:
         print(f"Analyzing {dir}")
-        os.chdir(dir)
+        dir_path = os.path.join(target_dir, dir)
+        os.chdir(dir_path)
         walker_df: Optional[pd.DataFrame] = create_walker_df(args)
         os.chdir(root_dir)
 
         if walker_df is not None:
-            walker_df["Walker"] = dir
+            # Use more descriptive naming for single directory case
+            if args.prefix is None:
+                walker_name = "current_dir"
+            else:
+                walker_name = dir
+            walker_df["Walker"] = walker_name
             walker_dfs.append(walker_df)
     
     if walker_dfs:
@@ -91,8 +101,9 @@ def main() -> None:
 
     print("Analyzing extreme bond distances...")
     plot_extreme_bond_distances(walker_dfs)
-    print("Plotting bond distances in subplots...")
-    plt_subplots(walker_dfs)
+    if len(valid_dirs) > 1:
+        print("Plotting bond distances in subplots...")
+        plt_subplots(walker_dfs)
     print("Analyzing global bond distances...")
     plot_bond_length_distribution(walker_dfs)
     print("Analyzing hydrogen bond lengths...")
@@ -168,7 +179,8 @@ def plot_extreme_bond_distances(
     walker_labels = sorted(walker_dfs["Walker"].unique())
     for walker_label in walker_labels:
         walker_df = walker_dfs[walker_dfs["Walker"] == walker_label]
-        plot_bond_distances(walker_df, title=f"bond_distance_all_{walker_label}.png")
+        file_suffix = f"_{walker_label}" if walker_label != "current_dir" else ""
+        plot_bond_distances(walker_df, title=f"bond_distance_all{file_suffix}.png")
 
         # Get the bond distance max and std
         bond_distance_maxs = walker_df.groupby("Bond Label")["Bond Distance"].max().nlargest(N_PLOTS).sort_values(ascending=False)
@@ -196,10 +208,10 @@ def plot_extreme_bond_distances(
         max_std_df = max_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
         min_std_df = min_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
 
-        plot_bond_distances(max_df, title=f"bond_distance_max_{walker_label}.png")
-        plot_bond_distances(min_df, title=f"bond_distance_min_{walker_label}.png")
-        plot_bond_distances(max_std_df, title=f"bond_distance_max_std_{walker_label}.png")
-        plot_bond_distances(min_std_df, title=f"bond_distance_min_std_{walker_label}.png")
+        plot_bond_distances(max_df, title=f"bond_distance_max{file_suffix}.png")
+        plot_bond_distances(min_df, title=f"bond_distance_min{file_suffix}.png")
+        plot_bond_distances(max_std_df, title=f"bond_distance_max_std{file_suffix}.png")
+        plot_bond_distances(min_std_df, title=f"bond_distance_min_std{file_suffix}.png")
 
 def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -247,11 +259,17 @@ def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_dist
     plt.legend(title="Bonds", bbox_to_anchor=(1.05, 1))
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
+    plt.close()
 
-def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "h_bond_lengths_distribution.png"):
+def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydrogen_bond_length_distribution.png"):
     # Get the bonds involving hydrogen atoms
     is_h_bond_involved = (walker_dfs["Element 1"] == "H") | (walker_dfs["Element 2"] == "H")
     h_bond_df = walker_dfs[is_h_bond_involved]
+    
+    if h_bond_df.empty:
+        print("No hydrogen bonds found, skipping hydrogen bond distribution plot.")
+        return
+        
     binrange = (h_bond_df["Bond Distance"].min(), min(h_bond_df["Bond Distance"].max(), 1.3))  # Limit the range to 1.3 Å
 
     # Plot the distribution of hydrogen bond lengths
@@ -270,8 +288,9 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "h_bo
     plt.ylabel("Frequency")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
+    plt.close()
 
-def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_lengths_distribution.png"):
+def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_length_distribution.png"):
     binrange = (walker_dfs["Bond Distance"].min(), min(walker_dfs["Bond Distance"].max(), 2.5))  # Limit the range to 2.5 Å
     plt.figure(figsize=(10,10))
     sns.set_context(context="talk", font_scale=1.3)
@@ -288,6 +307,7 @@ def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_l
     plt.ylabel("Frequency")
     plt.tight_layout()
     plt.savefig(title, dpi=DPI)
+    plt.close()
 
 def plt_subplots(walker_dfs: pd.DataFrame) -> None:
     """
