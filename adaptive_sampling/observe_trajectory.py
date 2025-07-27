@@ -50,10 +50,22 @@ def validate_args(args: argparse.Namespace) -> None:
     time_increment = 10  # seconds
     while elapsed_time < MAX_WAIT_TIME_INITIALIZATION:
         if os.path.exists(args.topology) and os.path.exists(args.trajectory):
-            break
+            try:
+                mda.Universe(args.topology, args.trajectory)
+                break
+            except AttributeError as e:
+                pass
+            except Exception as e:
+                print(f"Error loading trajectory: {e}. Retrying...")
         if os.path.exists(args.topology) and os.path.exists(args.replacement_trajectory):
-            args.trajectory = args.replacement_trajectory
-            break
+            try:
+                mda.Universe(args.topology, args.replacement_trajectory)
+                args.trajectory = args.replacement_trajectory
+                break
+            except AttributeError as e:
+                pass
+            except Exception as e:
+                print(f"Error loading replacement trajectory: {e}. Retrying...")
         time.sleep(time_increment)
         elapsed_time += time_increment
     if not os.path.exists(args.trajectory):
@@ -67,8 +79,12 @@ def observe_trajectory(trajectory: str, topology: str) -> bool:
     all_atoms.wrap()  # Ensure atoms are wrapped in the box
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(all_atoms)
     last_frame: mda.coordinates.base.Timestep = universe.trajectory[-1]
-    distance_matrix = mda.lib.distances.distance_array(all_atoms.positions, all_atoms.positions, box=universe.dimensions)
-    bond_distances = distance_matrix[unique_edge_indices[:, 0], unique_edge_indices[:, 1]]
+    bond_distances = mda.lib.distances.distance_array(
+        all_atoms.positions[unique_edge_indices[:, 0]],
+        all_atoms.positions[unique_edge_indices[:, 1]],
+        box=universe.dimensions
+    )
+    print(f"Last frame: {last_frame.frame}, Largestest bond distance: {np.max(bond_distances):.2f} Angstroms")
     explosion_detected = np.any(bond_distances > EXPLOSION_THRESHOLD)
     return explosion_detected
 
