@@ -3,3 +3,4 @@ bazel*
 test.ipynb
 doxygen*
 *.pyc
+.vscode/
