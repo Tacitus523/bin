@@ -76,10 +76,10 @@ def validate_args(args: argparse.Namespace) -> None:
 def observe_trajectory(trajectory: str, topology: str) -> bool:
     universe: mda.Universe = mda.Universe(topology, trajectory)
     all_atoms: mda.AtomGroup = universe.select_atoms("all")
-    all_atoms.wrap()  # Ensure atoms are wrapped in the box
+    all_atoms.unwrap()  # Unwrap the atoms to avoid periodic boundary issues
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(all_atoms)
     last_frame: mda.coordinates.base.Timestep = universe.trajectory[-1]
-    bond_distances = mda.lib.distances.distance_array(
+    bond_distances = mda.lib.distances.calc_bonds(
         all_atoms.positions[unique_edge_indices[:, 0]],
         all_atoms.positions[unique_edge_indices[:, 1]],
         box=universe.dimensions

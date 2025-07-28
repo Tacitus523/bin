@@ -36,34 +36,49 @@ DPI: int = 100 # DPI for saving plots
 DEFAULT_COLLECTION_FOLDER_NAME: str = "bond_distance_analysis"
 AMBER_ILDN_PATH: str = "/lustre/home/ka/ka_ipc/ka_he8978/gromacs-orca/share/gromacs/top/amber99sb-ildn.ff"
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
-    ap.add_argument("-p", "--prefix", default=None, type=str, dest="prefix", action="store", required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
-    ap.add_argument("-t", "--trajectory_file", default=TRAJECTORY_FILE, type=str, dest="trajectory_file", action="store", required=False, help="Relative path to the trajectory file", metavar="trajectory_file")
-    ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, dest="topology_file", action="store", required=False, help="Relative path to the topology file", metavar="topology_file")
+    ap.add_argument("-p", "--prefix", default=None, type=str, required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
+    ap.add_argument("-t", "--trajectory_file", default=TRAJECTORY_FILE, type=str, required=False, help="Relative path to the trajectory file", metavar="trajectory_file")
+    ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, required=False, help="Relative path to the topology file", metavar="topology_file")
     args = ap.parse_args()
+    for key, value in vars(args).items():
+        print(f"Argument {key}: {value}")
+    return args
+    
+def validate_args(args: argparse.Namespace) -> None:
     if args.prefix is None:
-        target_dir = os.getcwd()
+        args.target_dir = os.getcwd()
         args.collection_folder_name = None
-        present_dirs = ["."]  # Use relative path for current directory
+        args.present_dirs = ["."]  # Use relative path for current directory
     else:
-        target_dir = os.path.dirname(os.path.abspath(args.prefix))
-        prefix = os.path.basename(args.prefix)
-        present_dirs = [dir for dir in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, dir)) and dir.startswith(prefix)]
-        args.collection_folder_name = os.path.join(target_dir, DEFAULT_COLLECTION_FOLDER_NAME)
+        args.target_dir = os.path.dirname(os.path.abspath(args.prefix))
+
+        args.collection_folder_name = os.path.join(args.target_dir, DEFAULT_COLLECTION_FOLDER_NAME)
         if not os.path.exists(args.collection_folder_name):
             os.makedirs(args.collection_folder_name)
-    args.topology_file = os.path.join(target_dir, args.topology_file)
+        args.present_dirs = [present_dir for present_dir in os.listdir(args.target_dir) \
+                             if os.path.isdir(os.path.join(args.target_dir, present_dir)) \
+                             and present_dir.startswith(args.prefix)]
+    
+    args.topology_file = os.path.join(args.target_dir, args.topology_file)
+
+    if not os.path.exists(args.topology_file):
+        raise FileNotFoundError(f"Topology file '{args.topology_file}' does not exist.")
+        
+def main() -> None:
+    args = parse_args()
+    validate_args(args)
 
     # Ensure the amber99sb-ildn.ff is accessible
-    if not os.path.exists(os.path.join(target_dir, "amber99sb-ildn.ff")):
-        os.symlink(AMBER_ILDN_PATH, os.path.join(target_dir, "amber99sb-ildn.ff"), target_is_directory=True) 
+    if not os.path.exists(os.path.join(args.target_dir, "amber99sb-ildn.ff")):
+        os.symlink(AMBER_ILDN_PATH, os.path.join(args.target_dir, "amber99sb-ildn.ff"), target_is_directory=True) 
 
     valid_dirs = []
-    for dir in present_dirs:
-        if not os.path.exists(os.path.join(target_dir, dir, args.trajectory_file)):
+    for present_dir in args.present_dirs:
+        if not os.path.exists(os.path.join(args.target_dir, present_dir, args.trajectory_file)):
             continue
-        valid_dirs.append(dir)
+        valid_dirs.append(present_dir)
     if len(valid_dirs) > 1:
         try:
             valid_dirs = sorted(valid_dirs, key=lambda x: int(x.split("_")[-1]))  # Sort directories by the last part of their name
@@ -73,25 +88,25 @@ def main() -> None:
     assert len(valid_dirs) > 0, "No valid directories found"
 
     root_dir = os.getcwd()
-    walker_dfs: List[pd.DataFrame] = []
-    for dir in valid_dirs:
-        print(f"Analyzing {dir}")
-        dir_path = os.path.join(target_dir, dir)
+    walker_bonds_dfs: List[pd.DataFrame] = []
+    for valid_dir in valid_dirs:
+        print(f"Analyzing {valid_dir}")
+        dir_path = os.path.join(args.target_dir, valid_dir)
         os.chdir(dir_path)
-        walker_df: Optional[pd.DataFrame] = create_walker_df(args)
+        walker_bonds_df: Optional[pd.DataFrame] = create_walker_bonds_df(args)
         os.chdir(root_dir)
 
-        if walker_df is not None:
+        if walker_bonds_df is not None:
             # Use more descriptive naming for single directory case
             if args.prefix is None:
                 walker_name = "current_dir"
             else:
-                walker_name = dir
-            walker_df["Walker"] = walker_name
-            walker_dfs.append(walker_df)
+                walker_name = valid_dir
+            walker_bonds_df["Walker"] = walker_name
+            walker_bonds_dfs.append(walker_bonds_df)
     
-    if walker_dfs:
-        walker_dfs = pd.concat(walker_dfs, ignore_index=True)
+    if walker_bonds_dfs:
+        walker_bonds_dfs = pd.concat(walker_bonds_dfs, ignore_index=True)
     else:
         print("No valid walker dataframes found, exiting.")
         sys.exit(0)
@@ -100,17 +115,17 @@ def main() -> None:
         os.chdir(args.collection_folder_name)
 
     print("Analyzing extreme bond distances...")
-    plot_extreme_bond_distances(walker_dfs)
+    plot_extreme_bond_distances(walker_bonds_dfs)
     if len(valid_dirs) > 1:
         print("Plotting bond distances in subplots...")
-        plt_subplots(walker_dfs)
+        plt_subplots(walker_bonds_dfs)
     print("Analyzing global bond distances...")
-    plot_bond_length_distribution(walker_dfs)
+    plot_bond_length_distribution(walker_bonds_dfs)
     print("Analyzing hydrogen bond lengths...")
-    plot_h_bond_length_distribution(walker_dfs)
+    plot_h_bond_length_distribution(walker_bonds_dfs)
     print("Analysis complete")
 
-def create_walker_df(args: argparse.Namespace) -> pd.DataFrame:
+def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
     # Suppress MDAnalysis deprecation warnings
     warnings.filterwarnings(
         "ignore",
@@ -119,29 +134,34 @@ def create_walker_df(args: argparse.Namespace) -> pd.DataFrame:
     )
 
     try:
-        universe = mda.Universe(args.topology_file, args.trajectory_file, topology_format="itp")
+        if args.topology_file.endswith(".top"):
+            universe = mda.Universe(args.topology_file, args.trajectory_file, topology_format="itp")
+        else:
+            universe = mda.Universe(args.topology_file, args.trajectory_file)
     except Exception as e:
         print(f"{os.getcwd()}: Problem with Topology, skipping analysis", file=sys.stderr)
         print(e, file=sys.stderr)
         return None
-
+    
     qm_atoms = universe.atoms
-    qm_atoms.wrap()  # Ensure atoms are wrapped in the box
+    qm_atoms.unwrap()  # Unwrap the atoms to avoid periodic boundary issues
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(qm_atoms)
     bond_labels = [f"{elements_bond[0]}{unique_edge_indices[i, 0]}-{elements_bond[1]}{unique_edge_indices[i, 1]}" for i, elements_bond in enumerate(elements_bonds)]
     n_timesteps = len(universe.trajectory)
     n_bonds = len(unique_edge_indices)
 
-    distance_matrices = []
+    bond_distances_all_timesteps = []
     for timestep in universe.trajectory:
         # Calculate the distance matrix
-        distance_matrix = mda.lib.distances.distance_array(qm_atoms.positions, qm_atoms.positions)
-        distance_matrices.append(distance_matrix)
+        bond_distances = mda.lib.distances.calc_bonds(qm_atoms.positions[unique_edge_indices[:, 0]],
+                                                           qm_atoms.positions[unique_edge_indices[:, 1]],
+                                                           box=universe.dimensions) # shape: (n_bonds,
+        bond_distances_all_timesteps.append(bond_distances)
     
-    distance_matrices = np.stack(distance_matrices, axis=0) # shape: (n_timesteps, n_atoms, n_atoms)
-    bond_distances_all_timesteps = distance_matrices[:, unique_edge_indices[:, 0], unique_edge_indices[:, 1]] # shape: (n_timesteps, n_bonds)
+    bond_distances_all_timesteps = np.stack(bond_distances_all_timesteps, axis=0)  # shape: (n_timesteps, n_bonds)
     bond_distance_maxs = bond_distances_all_timesteps.max(axis=0) # shape: (n_bonds,)
     bond_distance_stds = bond_distances_all_timesteps.std(axis=0) # shape: (n_bonds,)
+
 
     timestep_indices = np.repeat(np.arange(n_timesteps), n_bonds) # Repeat each entry n times, shape: (n_timesteps * n_bonds,)
     bond_indices = np.tile(np.arange(n_bonds), n_timesteps) # Repeat the array n times, shape: (n_timesteps * n_bonds,)
@@ -152,7 +172,7 @@ def create_walker_df(args: argparse.Namespace) -> pd.DataFrame:
     atomic_numbers_bond_partner2 = np.tile(atomic_numbers_bonds[:, 1], n_timesteps) # shape: (n_timesteps * n_bonds,)
 
     # Create a DataFrame for the bond distances
-    walker_df = pd.DataFrame({
+    data = {
         "Time Step": timestep_indices,
         "Bond Index": bond_indices,
         "Bond Label": bond_labels,
@@ -161,9 +181,9 @@ def create_walker_df(args: argparse.Namespace) -> pd.DataFrame:
         "Atomic Number 1": atomic_numbers_bond_partner1,
         "Atomic Number 2": atomic_numbers_bond_partner2,
         "Bond Distance": bond_distances_all_timesteps.flatten(),
-        "Bond Distance Max": np.tile(bond_distance_maxs, n_timesteps),
-        "Bond Distance Std": np.tile(bond_distance_stds, n_timesteps),
-    })
+    }
+
+    walker_df = pd.DataFrame(data)
 
     return walker_df
 
