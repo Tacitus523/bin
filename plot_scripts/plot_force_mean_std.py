@@ -108,10 +108,12 @@ def main() -> None:
     sns.set_style("whitegrid")
     sns.set_palette("tab10")
     print("Plotting largest force standard deviations")
-    plot_largest_standard_deviations(walker_force_dfs)
+    plot_largest_standard_deviations(walker_force_dfs, key="Std")
+    plot_largest_standard_deviations(walker_force_dfs, key="Weighted Std")
     if len(valid_dirs) > 1:
         print("Plotting force standard deviations in subplots")
-        plt_subplots(walker_force_dfs)
+        plt_subplots(walker_force_dfs, key="Std")
+        plt_subplots(walker_force_dfs, key="Weighted Std")
 
 def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
     try:
@@ -127,7 +129,7 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
     #Assumption: Mean and Stds alternate in trajectory
     means = np.array([atoms.positions.copy() for atoms in universe.trajectory[::2]]) # shape (n_timesteps, n_atoms, 3)
     stds = np.array([atoms.positions.copy() for atoms in universe.trajectory[1::2]]) # shape (n_timesteps, n_atoms, 3)
-    weighted_stds = stds / atomic_masses[np.newaxis, :, np.newaxis]  # shape (n_timesteps, n_atoms, 3)
+    weighted_stds = stds / (atomic_masses[np.newaxis, :, np.newaxis])  # shape (n_timesteps, n_atoms, 3)
 
     timestep_indices = np.repeat(np.arange(n_timesteps), n_atoms*3)
     atom_indices = np.tile(np.repeat(np.arange(n_atoms), 3), n_timesteps)
@@ -145,6 +147,7 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
         "Weighted Std": weighted_stds.flatten(),
     }
 
+
     walker_df = pd.DataFrame(data)
 
     # Apply time step filter if specified
@@ -154,23 +157,24 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
 
     return walker_df
 
-def plot_largest_standard_deviations(walker_dfs: pd.DataFrame) -> None:
+def plot_largest_standard_deviations(walker_dfs: pd.DataFrame, key: str) -> None:
     walker_names = walker_dfs["Walker"].unique()
     for walker_name in walker_names:
         walker_df = walker_dfs[walker_dfs["Walker"] == walker_name]
         file_suffix = f"_{walker_name}" if walker_name != "current_dir" else ""
+        key_savename = key.replace(" ", "_").lower()
+        savename = f"force_{key_savename}_max{file_suffix}.png"
         
-        max_std_per_timestep = walker_df.groupby("Time Step")["Std"].max().reset_index()
-        print(max_std_per_timestep.head())
+        max_std_per_timestep = walker_df.groupby("Time Step")[key].max().reset_index()
 
         fig, ax = plt.subplots(figsize=FIG_SIZE)
-        plot_lineplot(max_std_per_timestep, ax=ax)
+        plot_lineplot(max_std_per_timestep, key=key, ax=ax)
 
         plt.tight_layout()
-        plt.savefig(f"force_std_max{file_suffix}.png", dpi=DPI)
+        plt.savefig(savename, dpi=DPI)
         plt.close()
 
-def plt_subplots(walker_dfs: pd.DataFrame) -> None:
+def plt_subplots(walker_dfs: pd.DataFrame, key: str) -> None:
     """
     Plot force stds maximum for each walker in subplots.
     Each subplot corresponds to a walker, showing the maximum force standard deviation over time.
@@ -204,11 +208,11 @@ def plt_subplots(walker_dfs: pd.DataFrame) -> None:
     # Plot for each walker
     for idx, walker_label in enumerate(walker_labels):
         walker_df: pd.DataFrame = walker_dfs[walker_dfs["Walker"] == walker_label]
-        max_std_per_timestep: pd.DataFrame = walker_df.groupby("Time Step")["Std"].max().reset_index()
+        max_std_per_timestep: pd.DataFrame = walker_df.groupby("Time Step")[key].max().reset_index()
 
         # Plot in the corresponding subplot
         ax = axes[idx]
-        plot_lineplot(max_std_per_timestep, ax=ax)
+        plot_lineplot(max_std_per_timestep, key=key, ax=ax)
         
         ax.set_title(f"{walker_label}")
         if ax.get_legend() is not None:
@@ -219,18 +223,20 @@ def plt_subplots(walker_dfs: pd.DataFrame) -> None:
         axes[idx].set_visible(False)
     
     plt.tight_layout()
-    plt.savefig("force_std_max_all_walkers.png", dpi=DPI, bbox_inches='tight')
+    key_savename = key.replace(" ", "_").lower()
+    savename = f"force_{key_savename}_max_all_walkers.png"
+    plt.savefig(savename, dpi=DPI, bbox_inches='tight')
     plt.close()
 
-def plot_lineplot(data: pd.DataFrame, ax=None) -> None:
+def plot_lineplot(data: pd.DataFrame, key, ax=None) -> None:
     sns.lineplot(
         data=data, 
         x="Time Step", 
-        y="Std",
+        y=key,
         ax=ax,
     )
     ax.set_xlabel("Time Step")
-    ax.set_ylabel(f"Max. Force Std Dev [{FORCE_UNIT}]")
+    ax.set_ylabel(f"Max. Force {key} Dev [{FORCE_UNIT}]")
     ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
     ax.ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
     

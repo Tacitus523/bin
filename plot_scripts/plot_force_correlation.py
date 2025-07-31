@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-# Intended use: comparison of forces from .xvgs from reruns and .extxyz files 
+# Intended use: comparison of forces from .xvgs from reruns and .extxyz files
+# Expected units: .xvg files in kJ/mol/nm, .extxyz files in eV/Å
+# Conversion to eV/Å is done internally 
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -11,11 +13,59 @@ from ase.io import read
 
 FORCES_KEY = "gromacs_force"
 
-UNIT = "eV/Å"  # Unit for forces
+SCATTER_SAVENAME = "force_scatter_comparison.png"
+TIMESERIES_SAVENAME = "force_max_difference.png"
+
+FORCE_UNIT = "eV/Å"  # Unit for forces
+
+DPI = 300 # DPI for saving plots
 
 nm_TO_angstrom = 10.0  # Conversion factor from nm to Ångstrom
 eV_TO_kJ_per_mol = 96.485  # Conversion factor from eV to kJ/mol
 kJ_mol_nm_TO_eV_angstrom = (1/eV_TO_kJ_per_mol) / nm_TO_angstrom  # Conversion factor from kJ/mol/nm to eV/Å
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compare and plot flattened force data from multiple files")
+    parser.add_argument(
+        "files",
+        type=str,
+        nargs="+",
+        help="Paths to .xvg or .extxyz files (minimum 2 required). Reference Method first!"
+    )
+    parser.add_argument(
+        "--labels", "-l",
+        type=str,
+        nargs="+",
+        help="Labels for datasets (must match number of files)",
+        default=None
+    )
+    parser.add_argument(
+        "--fig-size",
+        type=float,
+        nargs=2,
+        help="Figure size (width, height)",
+        default=[10, 8]
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        help="Point transparency",
+        default=0.5
+    )
+    parser.add_argument(
+        "--point-size",
+        type=float,
+        help="Point size",
+        default=10
+    )
+    args = parser.parse_args()
+    if len(args.files) < 2:
+        parser.error("At least two files must be provided.")
+    if args.labels is not None and len(args.labels) != len(args.files):
+        parser.error("Number of labels must match number of files.")
+    if args.labels is None:
+        args.labels = [f"Dataset {i+1}" for i in range(len(args.files))]
+    return args
 
 def read_file(file_path: str) -> Tuple[Optional[np.ndarray], np.ndarray]:
     """
@@ -38,7 +88,6 @@ def read_file(file_path: str) -> Tuple[Optional[np.ndarray], np.ndarray]:
         return None, forces  # No time data in EXTXYZ, only forces
     else:
         raise ValueError(f"Unsupported file format: {file_path}. Only .xvg and .extxyz files are supported.")
-
 
 def read_xvg_file(file_path: str) -> np.ndarray:
     """
@@ -95,7 +144,6 @@ def read_extxyz_file(file_path: str) -> np.ndarray:
 
     return forces
 
-
 def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, float]:
     """
     Calculate statistical measures between two datasets.
@@ -120,133 +168,171 @@ def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, floa
         'r_squared': r_squared
     }
 
+def plot_force_correlation(
+    combined_df: pd.DataFrame,
+    ref_label: str,
+    stats: List[Dict[str, float]],
+    args: argparse.Namespace,
+) -> None:
+    """
+    Create and save a scatter plot comparing reference and method forces.
+
+    Args:
+        combined_df: DataFrame containing the data to plot.
+        ref_label: Label for the reference method.
+        stats: List of statistics dictionaries for each method.
+        args: Parsed command-line arguments.
+        UNIT: String representing the force unit.
+        DPI: Dots per inch for saved figure.
+    """
+    sns.set_context("talk")
+    fig, ax = plt.subplots(figsize=args.fig_size)
+
+    norm = plt.Normalize(combined_df["Step"].min(), combined_df["Step"].max())
+    sm = plt.cm.ScalarMappable(cmap="magma_r", norm=norm)
+
+    sns.scatterplot(
+        data=combined_df,
+        x=f"{ref_label} Force",
+        y="Method Force",
+        hue="Step",
+        hue_norm=norm,
+        style="Method",
+        palette="magma_r",
+        alpha=args.alpha,
+        s=args.point_size,
+        edgecolor=None,
+        legend="brief",
+        ax=ax
+    )
+
+    ax.set_xlabel(f"{ref_label} Force ({FORCE_UNIT})")
+    ax.set_ylabel(f"Method Force ({FORCE_UNIT})")
+
+    cbar = plt.colorbar(sm, ax=ax)
+    cbar.set_label("Step")
+
+    min_val = min(combined_df[f"{ref_label} Force"].min(), combined_df["Method Force"].min())
+    max_val = max(combined_df[f"{ref_label} Force"].max(), combined_df["Method Force"].max())
+    plt.plot([min_val, max_val], [min_val, max_val], "r--", alpha=0.7)
+
+    plt.legend(loc="lower right")
+    for legend_handle in ax.get_legend().legend_handles:
+        legend_handle.set_markersize(args.point_size)
+        legend_handle.set_alpha(1.0)
+
+    annotation_text = "Statistics:\n"
+    for i, (label, stat) in enumerate(zip(args.labels[1:], stats)):
+        annotation_text += f"{label}:\n"
+        annotation_text += f"  RMSE: {stat['rmse']:.2f} {FORCE_UNIT}\n"
+        annotation_text += f"  R²: {stat['r_squared']:.2f}\n"
+        if i < len(stats) - 1:
+            annotation_text += "\n"
+
+    plt.annotate(
+        annotation_text,
+        xy=(0.05, 0.95),
+        xycoords="axes fraction",
+        fontsize=12,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.7),
+        va="top"
+    )
+
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(SCATTER_SAVENAME, dpi=DPI, bbox_inches='tight')
+    plt.close()
+
+def plot_max_force_difference(
+        data: pd.DataFrame,
+        ref_label: str,
+        args: argparse.Namespace
+) -> None:
+    """
+    Plot the maximum force difference for each method compared to the reference method.
+    """
+    sns.set_context("talk")
+    fig, ax = plt.subplots(figsize=args.fig_size)
+
+    # Calculate the maximum force difference for each method
+    max_force_differences: pd.DataFrame = data.groupby(["Method", "Step"]).max("Force Difference").reset_index()
+    #max_force_differences = max_force_differences.pivot(index="Step", columns="Method", values="Force Difference")
+
+    # Plot the maximum force differences
+    sns.lineplot(
+        data=max_force_differences,
+        x="Step",
+        y="Force Difference",
+        hue="Method",
+        ax=ax,
+        palette="tab10",
+    )
+    ax.set_xlabel("Step")
+    ax.set_ylabel(r"Max. $\Delta$ Force" + f" [{FORCE_UNIT}]")
+
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(TIMESERIES_SAVENAME, dpi=DPI, bbox_inches='tight')
+    plt.close() 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Compare and plot flattened XVG data')
-    parser.add_argument('file1', type=str, help='Path to first XVG file')
-    parser.add_argument('file2', type=str, help='Path to second XVG file')
-    parser.add_argument('--output', '-o', type=str, help='Output file path', default='xvg_comparison.png')
-    parser.add_argument('--title', '-t', type=str, help='Plot title', default='')
-    parser.add_argument('--labels', '-l', type=str, nargs=2, help='Labels for datasets', 
-                        default=['Forces 1', 'Forces 2'])
-    parser.add_argument('--fig-size', type=float, nargs=2, help='Figure size (width, height)', 
-                        default=[10, 8])
-    parser.add_argument('--alpha', type=float, help='Point transparency', default=0.5)
-    parser.add_argument('--point-size', type=float, help='Point size', default=10)
-    args = parser.parse_args()
+    args = parse_args()
 
     # Read data files
     try:
-        time1, forces1 = read_file(args.file1)
-        time2, forces2 = read_file(args.file2)
+        readouts: List[Tuple[Optional[np.ndarray], np.ndarray]] = [read_file(file) for file in args.files]
     except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}")
         return
-
-    assert forces1.shape == forces2.shape, "Both datasets must have the same shape."
-
-
+    time_data = [readout[0] for readout in readouts]
+    forces_data = [readout[1] for readout in readouts]
+    for forces in forces_data:
+        assert forces.shape == forces_data[0].shape, "All datasets must have the same shape."
 
     # Assert time matching if available
-    if time1 is not None and time2 is not None:
-        if len(time1) != len(time2):
-            raise ValueError("Time vectors must have the same length for both datasets.")
-        assert np.array_equal(time1, time2), "Time vectors must match for both datasets."
+    first_valid_time = next((t for t in time_data if t is not None), None)
+    if first_valid_time is not None:
+        for time in time_data:
+            if time is not None and not np.array_equal(time, first_valid_time):
+                raise ValueError("Time vectors must match across all datasets.")
 
-    n_steps = forces1.shape[0]
-    n_entries_per_molecule = forces1.shape[1]
+    ref_force = forces_data[0]  # Reference method is the first dataset
+    ref_label = args.labels[0] if args.labels else "Reference"
+    n_steps = ref_force.shape[0]
+    n_entries_per_molecule = ref_force.shape[1] # flattened forces per molecule, n_atoms * 3
     steps = np.arange(n_steps).repeat(n_entries_per_molecule)
 
-    flat_forces1 = forces1.flatten()
-    flat_forces2 = forces2.flatten()
+    flat_ref_force = ref_force.flatten()
+    flat_method_forces = [forces.flatten() for forces in forces_data[1:]]  # Skip reference method
 
     # Calculate statistics
-    stats = calculate_statistics(flat_forces1, flat_forces2)
+    stats = [calculate_statistics(flat_ref_force, flat_force) for flat_force in flat_method_forces]
     
     # Prepare dataframe for plotting
-    df = pd.DataFrame({
-        args.labels[0]: flat_forces1,
-        args.labels[1]: flat_forces2,
-        "Step": steps,
-        "Expected false": steps>=13
-    })
+    dfs = []
+    for label, flat_force in zip(args.labels[1:], flat_method_forces):
+        df = pd.DataFrame({
+            "Step": steps,
+            "Time": np.repeat(first_valid_time, n_entries_per_molecule) if first_valid_time is not None else None,
+            "Method Force": flat_force,
+            f"{ref_label} Force": flat_ref_force,
+            "Method": label
+        })
+        df["Force Difference"] = df["Method Force"] - df[f"{ref_label} Force"]
+        dfs.append(df)
+    combined_df = pd.concat(dfs, ignore_index=True)
 
-    true_df = df[df["Expected false"] == False]
-    false_df = df[df["Expected false"] == True]
-    
-    # Create scatter plot with color scale for time
-    sns.set_context("talk")
-    plt.figure(figsize=tuple(args.fig_size))
-    
-    # Add color bar for steps
-    norm = plt.Normalize(df["Step"].min(), df["Step"].max())
-    sm = plt.cm.ScalarMappable(cmap="magma_r", norm=norm)
-    
-    scatter_true = plt.scatter(
-        x=true_df[args.labels[0]], 
-        y=true_df[args.labels[1]], 
-        c=true_df["Step"], 
-        cmap=sm.cmap, 
-        norm=sm.norm,
-        alpha=args.alpha, 
-        s=args.point_size,
-        marker='o',
-        label='Assumed Correct'
+    plot_force_correlation(
+        combined_df=combined_df,
+        ref_label=ref_label,
+        stats=stats,
+        args=args,
     )
-
-    scatter_false = plt.scatter(
-        x=false_df[args.labels[0]], 
-        y=false_df[args.labels[1]], 
-        c=false_df["Step"], 
-        cmap=sm.cmap,
-        norm=sm.norm,
-        alpha=args.alpha, 
-        s=args.point_size,
-        marker='X',
-        label='Assumed Incorrect'
+    plot_max_force_difference(
+        data=combined_df,
+        ref_label=ref_label,
+        args=args
     )
-    
-    plt.xlabel(f"{args.labels[0]} ({UNIT})")
-    plt.ylabel(f"{args.labels[1]} ({UNIT})")
-
-    cbar = plt.colorbar(sm, ax=plt.gca())
-    cbar.set_label("Step")
-    
-    # Add perfect correlation line
-    min_val = min(df[args.labels[0]].min(), df[args.labels[1]].min())
-    max_val = max(df[args.labels[0]].max(), df[args.labels[1]].max())
-    plt.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.7)
-    
-    plt.legend(loc='lower right')
-    for legend_handle in plt.gca().get_legend().legend_handles:
-        legend_handle.set_sizes([args.point_size])
-        legend_handle.set_alpha(1.0)  # Set legend point transparency to 1.0
-        legend_handle.set_color('black')  # Set legend point color to black
-
-    # Add annotation with statistics
-    annotation_text = (
-        f'Correlation: {stats["correlation"]:.4f}\n'
-        f'RMSE: {stats["rmse"]:.4f}\n'
-        f'R²: {stats["r_squared"]:.4f}\n'
-        f'n = {n_steps} Steps'
-    )
-    
-    plt.annotate(annotation_text, 
-                xy=(0.05, 0.95), 
-                xycoords='axes fraction', 
-                fontsize=12, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.7),
-                va='top')
-    
-    plt.title(args.title)
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    
-    # Save figure
-    plt.savefig(args.output, dpi=300)
-    print(f"Plot saved to {args.output}")
-    
-    plt.show()
 
 
 if __name__ == '__main__':

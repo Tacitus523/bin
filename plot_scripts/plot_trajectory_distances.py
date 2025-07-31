@@ -77,6 +77,7 @@ def main() -> None:
     valid_dirs = []
     for present_dir in args.present_dirs:
         if not os.path.exists(os.path.join(args.target_dir, present_dir, args.trajectory_file)):
+            print(f"Skipping {present_dir}: {args.trajectory_file} does not exist.")
             continue
         valid_dirs.append(present_dir)
     if len(valid_dirs) > 1:
@@ -200,14 +201,15 @@ def plot_extreme_bond_distances(
     for walker_label in walker_labels:
         walker_df = walker_dfs[walker_dfs["Walker"] == walker_label]
         file_suffix = f"_{walker_label}" if walker_label != "current_dir" else ""
-        plot_bond_distances(walker_df, title=f"bond_distance_all{file_suffix}.png")
 
         # Get the bond distance max and std
+        bond_distance_all = walker_df.groupby("Bond Label")["Bond Distance"].max().sort_values(ascending=False)
         bond_distance_maxs = walker_df.groupby("Bond Label")["Bond Distance"].max().nlargest(N_PLOTS).sort_values(ascending=False)
         bond_distance_mins = walker_df.groupby("Bond Label")["Bond Distance"].min().nsmallest(N_PLOTS).sort_values(ascending=False)
         bond_distance_max_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nlargest(N_PLOTS).sort_values(ascending=False)
         bond_distance_min_stds = walker_df.groupby("Bond Label")["Bond Distance"].std().nsmallest(N_PLOTS).sort_values(ascending=False)
 
+        bond_labels = bond_distance_all.index.to_list()
         max_bond_labels = bond_distance_maxs.index.to_list()
         min_bond_labels = bond_distance_mins.index.to_list()
         max_std_bond_labels = bond_distance_max_stds.index.to_list()
@@ -218,16 +220,19 @@ def plot_extreme_bond_distances(
         max_std_df = walker_df[walker_df["Bond Label"].isin(max_std_bond_labels)].copy()
         min_std_df = walker_df[walker_df["Bond Label"].isin(min_std_bond_labels)].copy()
 
+        walker_df["Bond Label"] = pd.Categorical(walker_df["Bond Label"], categories=bond_labels, ordered=True)
         max_df["Bond Label"] = pd.Categorical(max_df["Bond Label"], categories=max_bond_labels, ordered=True)
         min_df["Bond Label"] = pd.Categorical(min_df["Bond Label"], categories=min_bond_labels, ordered=True)
         max_std_df["Bond Label"] = pd.Categorical(max_std_df["Bond Label"], categories=max_std_bond_labels, ordered=True)
         min_std_df["Bond Label"] = pd.Categorical(min_std_df["Bond Label"], categories=min_std_bond_labels, ordered=True)
 
-        max_df = max_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
-        min_df = min_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
-        max_std_df = max_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
-        min_std_df = min_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[True, True])
+        walker_df = walker_df.sort_values(by=["Bond Label", "Time Step"], ascending=[False, True])
+        max_df = max_df.sort_values(by=["Bond Label", "Time Step"], ascending=[False, True])
+        min_df = min_df.sort_values(by=["Bond Label", "Time Step"], ascending=[False, True])
+        max_std_df = max_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[False, True])
+        min_std_df = min_std_df.sort_values(by=["Bond Label", "Time Step"], ascending=[False, True])
 
+        plot_bond_distances(walker_df, title=f"bond_distance_all{file_suffix}.png")
         plot_bond_distances(max_df, title=f"bond_distance_max{file_suffix}.png")
         plot_bond_distances(min_df, title=f"bond_distance_min{file_suffix}.png")
         plot_bond_distances(max_std_df, title=f"bond_distance_max_std{file_suffix}.png")

@@ -84,7 +84,6 @@ def observe_trajectory(trajectory: str, topology: str) -> bool:
         all_atoms.positions[unique_edge_indices[:, 1]],
         box=universe.dimensions
     )
-    print(f"Last frame: {last_frame.frame}, Largestest bond distance: {np.max(bond_distances):.2f} Angstroms")
     explosion_detected = np.any(bond_distances > EXPLOSION_THRESHOLD)
     return explosion_detected
 
