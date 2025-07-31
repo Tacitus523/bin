@@ -55,6 +55,9 @@ set -- "${POSITIONAL_ARGS[@]}"
 if [[ -z $1 || -z $2 || -z $3 ]]; then
     echo "$(date) - Missing mandatory arguments: start, end, batch_size"
     usage
+elif [[ $# -gt 3 ]]; then
+    echo "$(date) - Too many arguments provided"
+    usage
 fi
 
 set -o errexit # Exit immediately when a command fails

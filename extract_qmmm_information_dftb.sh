@@ -104,21 +104,28 @@ convert_to_xyz() {
 # 	convert_to_xyz $folder/$gro_file $num_atoms $comment $folder/$TMP_GEOM_FILE
 # done
 
-# Call the qm information extraction script
-#extract_qm_information_dftb.sh $folder_prefix $xyz_file
+remove_if_exists "esp_calc.out"
+remove_if_exists "esp_calc.err"
+qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V --format dftb # ESP in Volt, change to au, if requiered
 
+# Call the qm information extraction script
+extract_qm_information_dftb.sh $folder_prefix $xyz_file
+
+echo "Extracting point charges and gradients from the DFTB detailed.out files..."
 remove_if_exists $PC_FILE
 remove_if_exists $PCGRAD_FILE
-
+counter=0
 for folder in $folders
 do
 	n_mm_atoms=$(grep 'forces_ext_charges' $folder/results.tag | awk -F, '{print $2}')
 	echo $n_mm_atoms >> $PC_FILE
 	sed -e 's/^[ \t]*//' -e '/^$/d' $folder/field.dat | awk '{print $4, $1, $2, $3}' >> $PC_FILE # Remove leading spaces, empty lines, and reorder columns to match orca format (charge, x, y, z)
 	echo $n_mm_atoms >> $PCGRAD_FILE
-	grep -A $n_mm_atoms 'forces_ext_charges' $folder/results.tag | tail -n +2 >> $PCGRAD_FILE 
-done
+	grep -A $n_mm_atoms 'forces_ext_charges' $folder/results.tag | tail -n +2 >> $PCGRAD_FILE
 
-# remove_if_exists "esp_calc.out"
-# remove_if_exists "esp_calc.err"
-# qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V --format dftb # ESP in Volt, change to au, if requiered
+	counter=$((counter + 1))
+	if (( $counter % 1000 == 0 ))
+	then
+		echo "Processed $counter folders"
+	fi
+done

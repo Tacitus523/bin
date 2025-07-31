@@ -6,11 +6,13 @@ print_usage() {
     echo "DFTB Example: $0 GEOM_ detailed.out"
 }
 
-if [ $1 = "-h" ] || [ $1 = "--help" ]; then
+if [ $1 = "-h" ] || [ $1 = "--help" ]
+then
     print_usage
     exit 0
 fi
-if [ $# -ne 2 ]; then
+if [ $# -ne 2 ]
+then
     echo "Error: Invalid number of arguments."
     print_usage
     exit 1
@@ -32,7 +34,8 @@ fi
 function check_DFT_folder() {
     local folder="$1"
     local file_prefix="$2"
-    if ! tac ${folder}/${file_prefix}*.out 2> /dev/null | grep -q -m 1 "****ORCA TERMINATED NORMALLY****" 2> /dev/null; then 
+    if ! tac ${folder}/${file_prefix}*.out 2> /dev/null | grep -q -m 1 "****ORCA TERMINATED NORMALLY****" 2> /dev/null
+    then 
         echo "${folder} failed"
     fi
 }
@@ -41,7 +44,8 @@ export -f check_DFT_folder
 function check_DFTB_folder() {
     local folder="$1"
     local file_prefix="$2"
-    if ! tac ${folder}/${file_prefix}*.out 2> /dev/null | grep -q -m 1 "SCC converged" 2> /dev/null; then 
+    if ! grep -q -m 1 "SCC converged" ${folder}/${file_prefix}*.out 2> /dev/null
+    then 
         echo "${folder} failed"
     fi
 }
@@ -51,8 +55,8 @@ export -f check_DFTB_folder
 if [[ $(basename $file_prefix) == "detailed" ]] 
 then 
     echo "Checking DFTB folders for convergence..."
-    find "$folder_prefix"* -type d | parallel -j 10 "check_DFTB_folder {} '$file_prefix'"
+    find "$folder_prefix"* -type d | parallel -j 32 "check_DFTB_folder {} '$file_prefix'"
 else
     echo "Checking DFT folders for convergence..."
-    find "$folder_prefix"* -type d | parallel -j 10 "check_DFT_folder {} '$file_prefix'"
+    find "$folder_prefix"* -type d | parallel -j 32 "check_DFT_folder {} '$file_prefix'"
 fi

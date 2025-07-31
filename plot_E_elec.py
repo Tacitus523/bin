@@ -26,7 +26,7 @@ volt_to_atomic_units = 1/27.211386245988
 H_to_kcal_mol = 627.509
 H_to_eV = 27.211386245988
 
-def main():
+def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Energy correlation between vacuum and water(or simply two energy files)")
     ap.add_argument("-v", type=str, dest="vacuum_energy_file", action="store", required=True, help="File with vacuum energy data", metavar="vacuum energy file")
     ap.add_argument("-e", type=str, dest="env_energy_file", action="store", required=False, default=None, help="File with energy data in environment [H]", metavar="environment energy file") # in Hartree
@@ -36,6 +36,10 @@ def main():
     ap.add_argument("-t", type=str, dest="title", action="store", required=False, default=None, help="Title of the plot", metavar=f"title, default: None")
     ap.add_argument("-o", type=str, dest="out_file", action="store", required=False, default=None, help="File name of the saved figure", metavar=f"out file, default: {DEFAULT_NAME}")
     args = ap.parse_args()
+    return args
+
+def main():
+    args = parse_args()
 
     vacuum_energy_file = args.vacuum_energy_file
     vacuum_energies = np.loadtxt(vacuum_energy_file)
@@ -99,7 +103,7 @@ def main():
     ax = fig.add_subplot()
     if args.data_source_file is not None:
         plot = sns.scatterplot(x="Continuous E_elec", y="Discrete E_elec", data=data,
-            hue="Data Source", palette=sns.color_palette("hls", 10),
+            hue="Data Source", palette="tab10",
             legend="full", alpha=0.1)
 
         legend = plt.legend(title='Data Source', loc='upper left', fontsize=FONTSIZE, title_fontsize=FONTSIZE)
