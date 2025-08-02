@@ -71,8 +71,9 @@ def main() -> None:
     validate_args(args)
 
     # Ensure the amber99sb-ildn.ff is accessible
-    if not os.path.exists(os.path.join(args.target_dir, "amber99sb-ildn.ff")):
-        os.symlink(AMBER_ILDN_PATH, os.path.join(args.target_dir, "amber99sb-ildn.ff"), target_is_directory=True) 
+    topology_folder = os.path.dirname(args.topology_file)
+    if not os.path.exists(os.path.join(topology_folder, "amber99sb-ildn.ff")):
+        os.symlink(AMBER_ILDN_PATH, os.path.join(topology_folder, "amber99sb-ildn.ff"), target_is_directory=True) 
 
     valid_dirs = []
     for present_dir in args.present_dirs:
