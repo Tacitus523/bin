@@ -20,6 +20,7 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
+from MDAnalysis.topology.guessers import guess_atom_element
 import seaborn as sns
 from ase.data import atomic_numbers
 
@@ -145,7 +146,10 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
         return None
     
     qm_atoms = universe.atoms
-    qm_atoms.unwrap()  # Unwrap the atoms to avoid periodic boundary issues
+    try:
+        qm_atoms.unwrap()  # Unwrap the atoms to avoid periodic boundary issues
+    except Exception as e:
+        print("Warning: Unwrapping atoms failed, continuing without unwrapping.", file=sys.stderr)
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(qm_atoms)
     bond_labels = [f"{elements_bond[0]}{unique_edge_indices[i, 0]}-{elements_bond[1]}{unique_edge_indices[i, 1]}" for i, elements_bond in enumerate(elements_bonds)]
     n_timesteps = len(universe.trajectory)
@@ -258,7 +262,15 @@ def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, n
         for atom_b in atom_a.bonded_atoms:
             if atom_a.index < atom_b.index:
                 unique_index = [atom_a.index, atom_b.index]
-                elements_bond = [atom_a.element, atom_b.element]
+                try:
+                    # Use the actual element if available
+                    elements_bond = [atom_a.element, atom_b.element]
+                except mda.exceptions.NoDataError:
+                    # Fallback to the element guess
+                    elements_bond = [guess_atom_element(atom_a.name), guess_atom_element(atom_b.name)]
+                except Exception as e:
+                    print(f"Error guessing element for atoms {atom_a.index} and {atom_b.index}: {e}")
+                    raise
                 atomic_numbers_bond = [atomic_numbers.get(element, 0) for element in elements_bond]
                 unique_edge_indices.append(unique_index)
                 elements_bonds.append(elements_bond)

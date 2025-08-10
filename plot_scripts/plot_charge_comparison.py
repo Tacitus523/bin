@@ -11,49 +11,32 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 
-
-
-
+# LABELS = ["Mulliken", "Löwdin", "Hirshfeld", "ESP"]
 # VAC_CHARGE_FILES = [
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_vacuum/scan/charges_mull.txt", 
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_vacuum/scan/charges_loew.txt", 
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_vacuum/scan/charges_hirsh.txt",
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_vacuum/scan/charges_esp.txt"      
+#     "charges_mull_vac.txt",
+#     "charges_loew_vac.txt",
+#     "charges_hirsh_vac.txt",
+#     "charges_esp_vac.txt"
 # ]
-
 # WATER_CHARGE_FILES = [
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_water/scan/charges_mull.txt",     
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_water/scan/charges_loew.txt", 
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_water/scan/charges_hirsh.txt",
-#     "/data/lpetersen/thiol_disulfide/B3LYP_aug-cc-pVTZ_water/scan/charges_esp.txt"  
+#     "charges_mull_env.txt",
+#     "charges_loew_env.txt",
+#     "charges_hirsh_env.txt",
+#     "charges_esp_env.txt"
 # ]
+# ENV_LABELS = ["Vacuum", "Water", "Difference"]
 
-LABELS = ["Mulliken", "Löwdin", "Hirshfeld", "ESP"]
+LABELS = ["Mulliken vac", "Mulliken env"]
 VAC_CHARGE_FILES = [
-    "charges_mull_vac.txt",
-    "charges_loew_vac.txt",
-    "charges_hirsh_vac.txt",
-    "charges_esp_vac.txt"
+    "charges_dftb_vac.txt",
+    "charges_dftb_env.txt"
 ]
+
 WATER_CHARGE_FILES = [
-    "charges_mull_env.txt",
-    "charges_loew_env.txt",
-    "charges_hirsh_env.txt",
-    "charges_esp_env.txt"
+    "charges_dft_vac.txt"
+    "charges_dft_env.txt"
 ]
-ENV_LABELS = ["Vacuum", "Water", "Difference"]
-
-# LABELS = ["Mulliken vac", "Mulliken env"]
-# VAC_CHARGE_FILES = [
-#     "charges_dftb_vac.txt",
-#     "charges_dftb_env.txt"
-# ]
-
-# WATER_CHARGE_FILES = [
-#     "charges_dft_vac.txt"
-#     "charges_dft_env.txt"
-# ]
-#ENV_LABELS = ["DFT", "DFTB", "Difference"]
+ENV_LABELS = ["DFT", "DFTB", "Difference"]
 
 GEOMS_FILE = "geoms_vac.extxyz"
 
@@ -75,9 +58,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("-l", type=str, dest="labels", nargs="+", required=False, default=LABELS, help="Labels for the charge types", metavar="labels")
     ap.add_argument("-t", "--total", type=float, dest="total_charge", required=False, default=TOTAL_CHARGE, help="Total charge expected in the system", metavar="total charge")
     args = ap.parse_args()
-    validate_args(args)
     for key, value in vars(args).items():
         print(f"{key}: {value}")
+    validate_args(args)
     return args
 
 def validate_args(args: argparse.Namespace) -> None:
@@ -120,16 +103,27 @@ def construct_dataframe(vacs: List[np.ndarray], waters: List[np.ndarray], charge
         for charge_type_idx in range(n_charge_types):
             env_label = ENV_LABELS[env_idx] # shape: (1,)
             charge_type_label = charge_type_labels[charge_type_idx] # shape: (1,)
-            charge_type_data = charge_type_data_list[env_idx][charge_type_idx] # shape: (n_datapoints_per_charge_type,)
+            charge_type_data = charge_type_data_list[env_idx][charge_type_idx] # shape: (n_molecules, n_atoms)
+            n_molecules = charge_type_data.shape[0]
+            n_atoms = charge_type_data.shape[1]
             df = pd.DataFrame({
                 "Charge": charge_type_data.flatten(),
                 "Charge type": charge_type_label,
                 "Element": elements.flatten(),
-                "Environment": env_label
+                "Environment": env_label,
+                "Dataset molecule idx": np.repeat(np.arange(n_molecules), n_atoms),
+                "Dataset atom idx": np.tile(np.arange(n_atoms), n_molecules)
             })
             data_frames.append(df)
     # Concatenate all dataframes into one
     data = pd.concat(data_frames, ignore_index=True)
+
+    # Molecule with maximal charge on an atom
+    env_data = data[data["Environment"].isin(ENV_LABELS[:2])]  # Drop Difference environment
+    max_charge_entry = env_data.loc[env_data["Charge"].idxmax()]
+    min_charge_entry = env_data.loc[env_data["Charge"].idxmin()]
+    print(f"Maximum charge entry: {max_charge_entry}, Charge: {max_charge_entry['Charge']:.2f}") 
+    print(f"Minimum charge entry: {min_charge_entry}, Charge: {min_charge_entry['Charge']:.2f}")
     return data
 
 def plot_histogram(data: pd.DataFrame):
@@ -306,7 +300,6 @@ def create_charge_correlation_plot(
     
     return ax
 
-
 def plot_correlation(data: pd.DataFrame) -> None:
     """
     Plot correlation between different charge types.
@@ -373,7 +366,6 @@ def plot_correlation(data: pd.DataFrame) -> None:
     plt.tight_layout()
     plt.savefig(f"correlation_charge.png", dpi=DPI)
     plt.close()
-
 
 def main() -> None:
     args = parse_args()

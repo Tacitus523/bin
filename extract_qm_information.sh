@@ -2,7 +2,7 @@
 # Units
 # Geometries: Angstrom
 # Energies: Hartree
-# Forces: Hartree/Bohr
+# Gradients: Hartree/Bohr
 # Charges: e
 # Dipoles: e*Bohr (atomic units)
 # Quadrupoles: e*Bohr^2 (atomic units)
@@ -26,6 +26,7 @@ do
 	fi
 	break
 done
+echo "Found $(echo $folders | wc -w) folders with prefix $1"
 
 remove_if_exists() {
 	local file=$1
@@ -55,6 +56,7 @@ remove_if_exists $GEOMS_FILE
 remove_if_exists $GRADIENTS_FILE
 remove_if_exists $DIPOLE_FILE
 remove_if_exists $QUADRUPOLE_FILE
+remove_if_exists "forces.xyz" # Previously used file, renamed to gradients.xyz
 
 for folder in $folders
 do

@@ -32,6 +32,7 @@ do
 	fi
 	break
 done
+echo "Found $(echo $folders | wc -w) folders with prefix $1"
 
 remove_if_exists() {
 	local file=$1
