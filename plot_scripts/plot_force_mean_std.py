@@ -36,6 +36,8 @@ DEFAULT_COLLECTION_FOLDER_NAME: str = "std_analysis"
 ENERGY_UNIT = "eV"
 FORCE_UNIT = "eV/Å"
 
+MAX_DATA_POINTS = 50000
+
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
     ap.add_argument("-p", "--prefix", default=None, type=str, required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
@@ -147,6 +149,11 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
         "Weighted Std": weighted_stds.flatten(),
     }
 
+    # Subsample data if it exceeds MAX_DATA_POINTS
+    if len(data["Time Step"]) > MAX_DATA_POINTS:
+        indices = np.random.choice(len(data["Time Step"]), MAX_DATA_POINTS, replace=False)
+        indices = np.sort(indices)  # Sort indices to maintain order
+        data = {key: np.array(value)[indices] for key, value in data.items()}
 
     walker_df = pd.DataFrame(data)
 
