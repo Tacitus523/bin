@@ -188,17 +188,18 @@ def plot_force_correlation(
     sns.set_context("talk")
     fig, ax = plt.subplots(figsize=args.fig_size)
 
-    norm = plt.Normalize(combined_df["Step"].min(), combined_df["Step"].max())
-    sm = plt.cm.ScalarMappable(cmap="magma_r", norm=norm)
+    #norm = plt.Normalize(combined_df["Step"].min(), combined_df["Step"].max())
+    #sm = plt.cm.ScalarMappable(cmap="magma_r", norm=norm)
 
     sns.scatterplot(
         data=combined_df,
         x=f"{ref_label} Force",
         y="Method Force",
-        hue="Step",
-        hue_norm=norm,
+        #hue="Step",
+        # hue_norm=norm,
+        hue="Method",
         style="Method",
-        palette="magma_r",
+        palette="tab10",
         alpha=args.alpha,
         s=args.point_size,
         edgecolor=None,
@@ -209,12 +210,12 @@ def plot_force_correlation(
     ax.set_xlabel(f"{ref_label} Force ({FORCE_UNIT})")
     ax.set_ylabel(f"Method Force ({FORCE_UNIT})")
 
-    cbar = plt.colorbar(sm, ax=ax)
-    cbar.set_label("Step")
+    # cbar = plt.colorbar(sm, ax=ax)
+    # cbar.set_label("Step")
 
     min_val = min(combined_df[f"{ref_label} Force"].min(), combined_df["Method Force"].min())
     max_val = max(combined_df[f"{ref_label} Force"].max(), combined_df["Method Force"].max())
-    plt.plot([min_val, max_val], [min_val, max_val], "r--", alpha=0.7)
+    plt.plot([min_val, max_val], [min_val, max_val], "r--", alpha=0.7, linewidth=0.5)
 
     plt.legend(loc="lower right")
     for legend_handle in ax.get_legend().legend_handles:
@@ -255,20 +256,41 @@ def plot_max_force_difference(
     fig, ax = plt.subplots(figsize=args.fig_size)
 
     # Calculate the maximum force difference for each method
-    max_force_differences: pd.DataFrame = data.groupby(["Method", "Step"]).max("Force Difference").reset_index()
+    max_force_differences: pd.DataFrame = data.groupby(["Method", "Step"]).max("Abs. Force Difference").reset_index()
     #max_force_differences = max_force_differences.pivot(index="Step", columns="Method", values="Force Difference")
 
     # Plot the maximum force differences
     sns.lineplot(
         data=max_force_differences,
         x="Step",
-        y="Force Difference",
+        y="Abs. Force Difference",
         hue="Method",
         ax=ax,
         palette="tab10",
     )
     ax.set_xlabel("Step")
-    ax.set_ylabel(r"Max. $\Delta$ Force" + f" [{FORCE_UNIT}]")
+    ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" [{FORCE_UNIT}]")
+
+    # Calculate and mark mean of maximum force differences for each method
+    mean_of_max_force_diff = max_force_differences.groupby("Method")["Abs. Force Difference"].mean()
+    
+    # Get the same colors as the lineplot (tab10 palette)
+    palette = sns.color_palette("tab10", n_colors=len(mean_of_max_force_diff))
+    
+    # Add horizontal lines for mean values and y-ticks
+    current_yticks = list(ax.get_yticks())
+    current_yticklabels = [f"{tick:.2f}" for tick in current_yticks]
+    
+    for i, (method, mean_val) in enumerate(mean_of_max_force_diff.items()):
+        # Add horizontal line across the entire plot
+        ax.axhline(y=mean_val, color=palette[i], linestyle='--', alpha=0.7, linewidth=1)
+        # Add the mean value to y-ticks
+        current_yticks.append(mean_val)
+        current_yticklabels.append(f"{mean_val:.3f}")
+    
+    # Update y-ticks to include mean values
+    ax.set_yticks(current_yticks)
+    ax.set_yticklabels(current_yticklabels)
 
     plt.grid(alpha=0.3)
     plt.tight_layout()
@@ -318,7 +340,7 @@ def main() -> None:
             f"{ref_label} Force": flat_ref_force,
             "Method": label
         })
-        df["Force Difference"] = df["Method Force"] - df[f"{ref_label} Force"]
+        df["Abs. Force Difference"] = np.abs(df["Method Force"] - df[f"{ref_label} Force"])
         dfs.append(df)
     combined_df = pd.concat(dfs, ignore_index=True)
 

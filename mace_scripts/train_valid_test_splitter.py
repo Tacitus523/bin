@@ -43,6 +43,8 @@ def parse_args():
     parser.add_argument("-e", "--test-file", dest="test_file", type=str, default=TEST_FILE, required=False, help="Name of the file test set is saved to")
     parser.add_argument("--p_test", type=float, default=0.2, required=False, help="Proportion of the whole dataset used for the test set")
     parser.add_argument("--p_valid", type=float, default=0.2, required=False, help="Proportion of the not-test part of the dataset used for the validation set")
+    parser.add_argument("--kfold", action="store_true", default=False, required=False, 
+        help="Only with --nsplits: Perform K-Fold cross-validation split with overlapping training sets. Default: Overlap validation sets instead of training sets.")
     args = parser.parse_args()
     return args
 
@@ -177,6 +179,9 @@ def do_kfold_split(data: List[Atoms], args: argparse.Namespace, data_sources: Op
 
     kf = KFold(n_splits=args.nsplits, shuffle=True, random_state=random_state+1)
     for split_idx, (train_indices, valid_indices) in enumerate(kf.split(train_indices)):
+        if not args.kfold:
+            # Overlap validation sets instead of training sets when not using K-Fold
+            train_indices, valid_indices = valid_indices, train_indices
         train_split_data = [data[i] for i in train_indices]
         valid_split_data = [data[i] for i in valid_indices]
 
