@@ -22,12 +22,21 @@ def main():
     mm_charges = np.loadtxt(pointcharge_file, skiprows=1, usecols=(0,))
     mm_coords = np.loadtxt(pointcharge_file, skiprows=1, usecols=(1,2,3)) *A_to_bohr
 
-    # Subsample if too many atoms
     n_mm_atoms_subsample = min(n_mm_atoms, args.n_subsample)
-    random_indices = np.random.choice(n_mm_atoms, size=n_mm_atoms_subsample, replace=False)
-    random_indices.sort()
-    mm_charges = mm_charges[random_indices]
-    mm_coords = mm_coords[random_indices]
+    if n_mm_atoms > args.n_subsample:
+        # Sort by distance from center
+        mm_center = np.mean(mm_coords, axis=0)
+        dist_from_center = np.linalg.norm(mm_coords - mm_center, axis=1)
+        sorted_indices = np.argsort(dist_from_center)
+        mm_charges = mm_charges[sorted_indices[:n_mm_atoms_subsample]]
+        mm_coords = mm_coords[sorted_indices[:n_mm_atoms_subsample]]
+
+    # # Subsample if too many atoms
+    # n_mm_atoms_subsample = min(n_mm_atoms, args.n_subsample)
+    # random_indices = np.random.choice(n_mm_atoms, size=n_mm_atoms_subsample, replace=False)
+    # random_indices.sort()
+    # mm_charges = mm_charges[random_indices]
+    # mm_coords = mm_coords[random_indices]
     mm_data =  np.concatenate([mm_coords, mm_charges[:, np.newaxis]], axis=1) # Only need coords in Bohr(first three columns), but charges are useful later
 
     # Write output file
