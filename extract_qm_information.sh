@@ -16,7 +16,7 @@ then
     exit 1
 fi
 
-folders=$(find $1* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folders=$(find $1* -maxdepth 1 \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
 	if ! [ -f $folder/$2*.out ]
@@ -35,11 +35,25 @@ remove_if_exists() {
 	fi
 }
 
+extract_multiwfn_charge() {
+	local file=$1
+	output_file=$2
+
+	if [ -f $file ]
+	then
+		awk '{print $5}' $file | tr '\n' ' ' >> $output_file
+		echo '' >> $output_file # basicially makes a \n
+	fi
+}
+
 FOLDER_FILE=folder_order.txt
 CHARGES_MULL_FILE=charges_mull.txt
 CHARGES_HIRSH_FILE=charges_hirsh.txt
 CHARGES_LOEW_FILE=charges_loew.txt
-#CHARGES_ESP_FILE=charges_esp.txt
+CHARGES_CHELPG_FILE=charges_chelpg.txt
+CHARGES_MK_FILE=charges_mk.txt
+CHARGES_EEM_FILE=charges_eem.txt
+CHARGES_RESP_FILE=charges_resp.txt
 ENERGIES_FILE=energies.txt
 GEOMS_FILE=geoms.xyz
 GRADIENTS_FILE=gradients.xyz
@@ -50,14 +64,19 @@ remove_if_exists $FOLDER_FILE
 remove_if_exists $CHARGES_MULL_FILE
 remove_if_exists $CHARGES_HIRSH_FILE
 remove_if_exists $CHARGES_LOEW_FILE
-#remove_if_exists $CHARGES_ESP_FILE
+remove_if_exists $CHARGES_CHELPG_FILE
+remove_if_exists $CHARGES_MK_FILE
+remove_if_exists $CHARGES_EEM_FILE
+remove_if_exists $CHARGES_RESP_FILE
 remove_if_exists $ENERGIES_FILE
 remove_if_exists $GEOMS_FILE
 remove_if_exists $GRADIENTS_FILE
 remove_if_exists $DIPOLE_FILE
 remove_if_exists $QUADRUPOLE_FILE
 remove_if_exists "forces.xyz" # Previously used file, renamed to gradients.xyz
+remove_if_exists "charges_esp.txt" # Previously used file, renamed to charges_chelpg.txt
 
+counter=0
 for folder in $folders
 do
 	num_atoms=$(grep -m 1 "Number of atoms" $folder/$2*.out | awk '{print $NF}')
@@ -67,12 +86,15 @@ do
 	tac $folder/$2*.out | grep -B $(($num_atoms+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
 	tac $folder/$2*.out | grep -B $(($num_atoms+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
 	tac $folder/$2*.out | grep -B $(($num_atoms+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
-	#awk '{print $5}' $folder/$2.molden.chg | tr '\n' ' ' >> $CHARGES_ESP_FILE
 
 	echo '' >> $CHARGES_MULL_FILE # basicially makes a \n
 	echo '' >> $CHARGES_HIRSH_FILE # basicially makes a \n 
 	echo '' >> $CHARGES_LOEW_FILE # basicially makes a \n
-	#echo '' >> $CHARGES_ESP_FILE # basicially makes a \n 
+
+	extract_multiwfn_charge "$folder/CHELPG.chg" $CHARGES_CHELPG_FILE
+	extract_multiwfn_charge "$folder/MK.chg" $CHARGES_MK_FILE
+	extract_multiwfn_charge "$folder/EEM.chg" $CHARGES_EEM_FILE
+	extract_multiwfn_charge "$folder/RESP.chg" $CHARGES_RESP_FILE
 
 	tac $folder/$2*.out | grep -m 1 'FINAL SINGLE' | tac | awk '{print $5}' >> $ENERGIES_FILE
 	echo $num_atoms >> $GEOMS_FILE
@@ -89,5 +111,11 @@ do
 		tac $folder/$2*.out | grep -m 1 -B7 'QUADRUPOLE MOMENT (A.U.)' | grep 'TOT' | tac | awk '{print $2, $3, $4, $5, $6, $7}' >> $QUADRUPOLE_FILE
 	else
 		echo "nan nan nan nan nan nan" >> $QUADRUPOLE_FILE  # placeholder if missing
+	fi
+
+	counter=$((counter + 1))
+	if ((counter % 1000 == 0)) 
+	then
+		echo "Processed $counter folders"
 	fi
 done
