@@ -4,27 +4,22 @@ TRAIN_SCRIPT="train_mace.sh"
 
 CONFIG_FILE="config.yaml"
 
-# Default data folder
-DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
-
-# Default number of epochs
-EPOCHS=100
-
 # Default number of submissions
 NUM_SUBMISSIONS=1
 
 # Default job name
 job_name=$(basename $PWD)
+email_flag="--mail-user=$MY_EMAIL --mail-type=END,FAIL"
 
 print_usage() {
-    echo "Usage: $0 [-n number_of_submissions] [-e number_of_epochs] [-d data_folder]" >&2
+    echo "Usage: $0 [-n number_of_submissions] [-d data_folder]" >&2
 }
 
 # Parse arguments
 while getopts "n:e:d:" flag
 do
     case $flag in
-        e) EPOCHS=${OPTARG};;
+        e) echo "option -e is deprecated, enter number of epochs directly in config file" ;;
         d) DATA_FOLDER=${OPTARG};;
         n) NUM_SUBMISSIONS=$OPTARG ;;
         *) print_usage; exit 1 ;;
@@ -44,18 +39,32 @@ then
     exit 1
 fi
 
-# Submit jobs
-data_folder=$(readlink -f $DATA_FOLDER)
 config_file=$(readlink -f $CONFIG_FILE)
-echo "Data folder: $data_folder"
+if [ -n "$DATA_FOLDER" ]
+then
+    if [ ! -d "$DATA_FOLDER" ]
+    then
+        echo "Data folder does not exist: $DATA_FOLDER" >&2
+        exit 1
+    fi
+    data_folder=$(readlink -f $DATA_FOLDER)
+    data_folder_flag="-d $data_folder"
+    echo "Data folder: $data_folder"
+fi
+
 echo "Config file: $config_file"
-echo "Number of epochs: $EPOCHS"
 echo "Number of submissions: $NUM_SUBMISSIONS"
 
 if [ $NUM_SUBMISSIONS -eq 1 ]
 then
-    sbatch --job-name=$job_name $TRAIN_SCRIPT -e $EPOCHS -d $data_folder -c $config_file
+    sbatch --job-name=$job_name $email_flag $TRAIN_SCRIPT $data_folder_flag -c $config_file
     exit 0
+fi
+
+if [ -z "$DATA_FOLDER" ]
+then
+    echo "Data folder is required for multiple submissions" >&2
+    exit 1
 fi
 
 for ((i=0; i<NUM_SUBMISSIONS; i++))
@@ -64,6 +73,6 @@ do
     split_data_folder="$data_folder/split_$i"
     mkdir -p $submission_dir
     cd $submission_dir
-    sbatch --job-name="${job_name}_$i" $TRAIN_SCRIPT -e $EPOCHS -d $split_data_folder -c $config_file
+    sbatch --job-name="${job_name}_$i" $email_flag $TRAIN_SCRIPT -d $split_data_folder -c $config_file
     cd ..
 done

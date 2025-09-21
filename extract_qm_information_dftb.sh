@@ -28,7 +28,7 @@ fi
 folder_prefix=$1
 xyz_file=$2
 
-folders=$(find $folder_prefix* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folders=$(find $folder_prefix* -maxdepth 1 \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
 	if ! [ -f $folder/$DETAIL_FILE ]

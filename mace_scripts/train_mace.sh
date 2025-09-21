@@ -6,8 +6,6 @@
 #SBATCH --output=train.out
 #SBATCH --error=train.err
 #SBATCH --gres=gpu:1
-#SBATCH --mail-user=lukas.petersen@kit.edu
-#SBATCH --mail-type=END,FAIL
 #SBATCH --oversubscribe # Allow sharing of resources
 
 module load compiler/gnu/10.2
@@ -21,8 +19,6 @@ export PYTHONPATH=${PYTHONPATH}:"/lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_devel
 TRAIN_FILE="train.extxyz"
 VALID_FILE="valid.extxyz"
 TEST_FILE="test.extxyz"
-# Default value, gets overwritten by the command line argument from submit_train_mace.sh
-EPOCHS=100
 
 MODEL_NAME="QEq"
 
@@ -37,14 +33,13 @@ else
 fi
 
 print_usage() {
-    echo "Usage: $0 [-e number_of_epochs] [-d data_folder]" >&2
+    echo "Usage: $0 [-d data_folder]" >&2
 }
 
-# Parse command line arguments for epochs and data folder
+# Parse command line arguments for data folder
 while getopts e:d:c: flag
 do
     case "${flag}" in
-        e) EPOCHS=${OPTARG};;
         d) DATA_FOLDER=${OPTARG};;
         c) config_file=${OPTARG};;
 
@@ -52,27 +47,27 @@ do
     esac
 done
 
-data_folder=$(readlink -f $DATA_FOLDER)
-train_file=$(readlink -f $DATA_FOLDER/$TRAIN_FILE)
-valid_file=$(readlink -f $DATA_FOLDER/$VALID_FILE)
-test_file=$(readlink -f $DATA_FOLDER/$TEST_FILE)
-
 echo "Starting training: $(date)"
-echo "Data folder: $data_folder"
-echo "Train file: $train_file"
-echo "Valid file: $valid_file"
-echo "Test file: $test_file"
 echo "Model name: $MODEL_NAME"
-echo "Number of epochs: $EPOCHS"
+if [ -n "$DATA_FOLDER" ]
+then
+    data_folder=$(readlink -f $DATA_FOLDER)
+    train_file=$(readlink -f $DATA_FOLDER/$TRAIN_FILE)
+    valid_file=$(readlink -f $DATA_FOLDER/$VALID_FILE)
+    test_file=$(readlink -f $DATA_FOLDER/$TEST_FILE)
+    file_flags="--train_file $train_file --valid_file $valid_file --test_file $test_file"
+
+    echo "Data folder: $data_folder"
+    echo "Train file: $train_file"
+    echo "Valid file: $valid_file"
+    echo "Test file: $test_file"
+fi
 
 python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/lukas_train.py  \
     --config $config_file \
     --name=$MODEL_NAME \
     --seed=$RANDOM \
-    --train_file=$train_file \
-    --valid_file=$valid_file \
-    --test_file=$test_file \
-    --max_num_epochs=$EPOCHS \
+    $file_flags \
     --wandb_name=$WANDB_NAME \
 
 training_exit_status=$?

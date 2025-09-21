@@ -8,6 +8,9 @@ from typing import Dict, List, Any, Tuple, Optional, Union
 
 from ase import Atoms
 from ase.io import read, write
+"""
+Merge vacuum and environment .extxyz files, prefixing properties and calculating differences.
+"""
 
 # Default config values
 VACUUM_FILE: str = "vacuum.extxyz"
