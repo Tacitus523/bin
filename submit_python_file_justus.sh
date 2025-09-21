@@ -4,62 +4,69 @@
 # Use the -p flag to specify the python file to run
 # Use the -e flag to send an email when the job finishes or fails
 
-EMAIL="lukas.petersen@kit.edu"
+EMAIL=$MY_MAIL
 
-queue_script="/lustre/home/ka/ka_ipc/ka_he8978/bin/qpython_justus.sh"
+queue_script="$HOME/bin/qpython_justus.sh"
 
 print_usage() {
-  echo "Usage: 'submit_python_file.sh' to run without wandb or 'submit_python_file.sh -s' to sync to wandb"
-  echo "Usage: 'submit_python_file.sh -p python_file' to submit a python file"
-  echo "Usage: 'submit_python_file.sh -c config_path' to submit a python file with a configuration file"
+  echo "Usage: submit_python_file_justus.sh [-e] python_file.py [-- additional_args]"
+  echo "  -e             : Send email when job finishes or fails (optional)"
+  echo "  python_file.py : Python file to submit (mandatory)"
+  echo "  additional_args: Any additional arguments to pass to the submitted job"
 }
 
-sync=false
-config_path=""
+# Parse options and arguments
 email_flag=""
-while getopts ':p:c:se' flag; do
-  case $flag in
-    p)
-      python_script="$OPTARG"
-      echo "Using Python file: $python_script";;
-    s) sync=true ;;
-    c)
-      config_path="$OPTARG"
-      echo "Using configs: $config_path";;
-    e) email_flag="--mail-user=$EMAIL --mail-type=END,FAIL" ;;
-    \?)
-      echo "Invalid option: -$OPTARG"
+python_script=""
+additional_args=""
+
+# Process all arguments to separate flags from script name and additional args
+while [ $# -gt 0 ]; do
+  case $1 in
+    -e)
+      email_flag="--mail-user=$EMAIL --mail-type=END,FAIL"
+      echo "Email notifications enabled for $EMAIL"
+      shift
+      ;;
+    -h)
       print_usage
-      exit 1;;
-    :)
-      echo "Option -$OPTARG requires an argument."
+      exit 0
+      ;;
+    --)
+      shift
+      additional_args="$*"
+      echo "Additional arguments: $additional_args"
+      break
+      ;;
+    -*)
+      echo "Error: Unknown option $1"
       print_usage
-      exit 1;;
-    *) print_usage
-       exit 1 ;;
+      exit 1
+      ;;
+    *)
+      if [ -z "$python_script" ]; then
+        python_script="$1"
+        shift
+      else
+        # All remaining args are additional arguments
+        additional_args="$*"
+        break
+      fi
+      ;;
   esac
 done
 
-if [ -z "$python_script" ]
-then
-  echo "ERROR: Python file not specified."
+if [ -z "$python_script" ]; then
+  echo "Error: Python file to submit is required."
   print_usage
   exit 1
-fi
-
-if [ -z "$config_path" ]
-then echo "INFO: Did not get a config_file"
+elif [ ! -f "$python_script" ]; then
+  echo "Error: Python file '$python_script' does not exist."
+  exit 1
 fi
 
 name=`basename $PWD`
 name_flag="--job-name $name"
-job_id=$(sbatch $name_flag $email_flag $queue_script $python_script $config_path| awk '{print $4}')
+job_id=$(sbatch $name_flag $email_flag $queue_script $python_script $additional_args | awk '{print $4}')
 echo "Submitted job $job_id to queue as $name"
 echo $job_id
-echo `date`" $PWD" >> $HOME/checklist.txt
-
-# # for wandb sync
-# if $sync
-# then
-#     nohup sync_wandb.sh $job_id &
-# fi
