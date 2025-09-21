@@ -14,7 +14,10 @@ python_script="/home/lpetersen/kgcnn_fork/calc_prediction_std.py"
 queue_script="/home/lpetersen/bin/qpython.sh"
 
 print_usage() {
-  echo "Usage: 'submit_python_file.sh' to run without wandb or 'submit_python_file.sh -s' to sync to wandb"
+  echo "Usage: $0 -p python_script [-c config_path] [-s]"
+  echo "  -p python_script : Path to the python script to run (required)"
+  echo "  -c config_path   : Path to the configuration file (optional)"
+  echo "  -s               : Keep the process running to sync wandb data (optional)"
 }
 
 sync=false
