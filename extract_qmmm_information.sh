@@ -6,9 +6,11 @@
 # MM_charge: e
 # MM_gradient: H/B (no confirmation)
 
-ESPS_FILE=esps_by_qmmm.txt
+ESPS_BY_QMMM_FILE=esps_by_qmmm.txt
 PC_FILE=mm_data.pc
 PCGRAD_FILE=mm_data.pcgrad
+MULTIWFN_INPUTS=multiwfn_esp_input.pc
+ESPS_BY_QM_FILE=esps_by_qm.pc
 
 esp_calculation_script="esp_calculation_from_pc.py"
 
@@ -22,7 +24,7 @@ then
 fi
 
 
-folders=$(find $1* -maxdepth 1 -type d | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folders=$(find $1* -maxdepth 1 \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
 	if ! [ -f $folder/$2.out ]
@@ -32,7 +34,6 @@ do
 	fi
 	break
 done
-echo "Found $(echo $folders | wc -w) folders with prefix $1"
 
 remove_if_exists() {
 	local file=$1
@@ -41,26 +42,39 @@ remove_if_exists() {
 	fi
 }
 
-extract_qm_information.sh $1 $2
+cat_if_exists() {
+	local file=$1
+	local target=$2
+	if [ -f $file ]
+	then cat $file >> $target
+	fi
+}
 
-remove_if_exists $ESPS_FILE
+remove_if_exists $ESPS_BY_QMMM_FILE
 remove_if_exists $PC_FILE
 remove_if_exists $PCGRAD_FILE
+remove_if_exists $MULTIWFN_INPUTS
+remove_if_exists $ESPS_BY_QM_FILE
+
+remove_if_exists "esp_calc.out"
+remove_if_exists "esp_calc.err"
+qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
 
 # # Concatenates esps from gromacs_dftb, if these are calculated with PME electrostatics, these include esps from QM zone
 # for folder in $folders
 # do
-# 	tail -n 1 $folder/qm_dftb_esp.xvg | awk '{for (i=2; i<=NF; i++) print $i}' | tr '\n' ' ' >> $ESPS_FILE
-# 	echo '' >> $ESPS_FILE # basicially makes a \n 
+# 	tail -n 1 $folder/qm_dftb_esp.xvg | awk '{for (i=2; i<=NF; i++) print $i}' | tr '\n' ' ' >> $ESPS_BY_QMMM_FILE
+# 	echo '' >> $ESPS_BY_QMMM_FILE # basicially makes a \n 
 # done
 
 for folder in $folders
 do
 	sed '/^$/d' $folder/$2.pc >> $PC_FILE # concatenate all pc files, remove empty lines
 	sed '/^$/d' $folder/$2.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
+	cat_if_exists $folder/$MULTIWFN_INPUTS $MULTIWFN_INPUTS
+	cat_if_exists $folder/$ESPS_BY_QM_FILE $ESPS_BY_QM_FILE
 done
 
-remove_if_exists "esp_calc.out"
-remove_if_exists "esp_calc.err"
-qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V # ESP in Volt, change to au, if requiered
+extract_qm_information.sh $1 $2
+
 
