@@ -1,6 +1,6 @@
 # Give the .tpr as $1 and the plumed as $2, and any other files as $3, $4, etc.
 
-EMAIL="lukas.petersen@kit.edu"
+EMAIL=$MY_MAIL
 
 N_WALKER=16 # Also has to be adjusted in plumed.dat
 WALKER_SCRIPT="multiple_walkers_justus.sh"
@@ -10,6 +10,7 @@ print_usage() {
     exit 1
 }
 
+email_flag="--mail-user=$EMAIL --mail-type=END,FAIL"
 while getopts ":t:p:e" opt; do
     case ${opt} in
         t )

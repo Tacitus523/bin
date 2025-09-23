@@ -5,59 +5,23 @@
 #SBATCH --output=simulation.out
 #SBATCH --error=simulation.err
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
-#SBATCH --gres=gpu:1
-# #SBATCH --ntasks=1
-# #SBATCH --cpus-per-task=16
-
-#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
-GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
-# GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/gromacs-machine-learning/release/bin/GMXRC"
-PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
-
-OBSERVATION_SCRIPT=$(which observe_trajectory.py)
-
-# module load chem/orca
-# GROMACS_PATH=/lustre/home/ka/ka_ipc/ka_he8978/gromacs-orca/bin/GMXRC
-# ORCA_PATH=$(dirname $(which orca))
-# export PATH="$ORCA_PATH:$PATH"
-# export LD_LIBRARY_PATH="$ORCA_PATH:$LD_LIBRARY_PATH"
-# export GMX_ORCA_PATH=$ORCA_PATH
-
-# # Add these after loading the ORCA module
-# export OMPI_MCA_rmaps_base_oversubscribe=1
-# export NSLOTS=$SLURM_CPUS_PER_TASK
-# export HWLOC_HIDE_ERRORS=1
-
-export GMX_QMMM_VARIANT=2
-export OMP_NUM_THREADS=1
-#export GMX_DFTB_ESP=1
-#export GMX_DFTB_CHARGES=100
-#export GMX_DFTB_QM_COORD=100
-#export GMX_DFTB_MM_COORD=100
-#export GMX_DFTB_MM_COORD_FULL=100
-export GMX_N_MODELS=1 # Number of neural network models
-export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.05  # Threshold for the energy standard deviation between models for a structure to be considered relevant
-export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
-export GMX_NN_EVAL_FREQ=1 # Frequency of evaluation of the neural network, 1 means every step
-export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or mace,maceqeq, amp for pytorch
-export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
-export GMX_PYTORCH_EXTXYZ=1000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
-export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
-export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
 
 print_usage() {
-    echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
+    echo "Usage: $0 -t <tpr_file> [-p <plumed_file>] [-s <simulation_type>] [additional_files...]"
     exit 1
 }
 
-while getopts ":t:p:" opt; do
+simulation_type="pytorch"
+while getopts ":t:p:s:" opt; do
     case ${opt} in
         t )
             tpr_file=$OPTARG
             ;;
         p )
             plumed_file=$OPTARG
+            ;;
+        s)
+            simulation_type=$OPTARG
             ;;
         \? )
             echo "Invalid option: -$OPTARG" 1>&2
@@ -70,6 +34,88 @@ while getopts ":t:p:" opt; do
     esac
 done
 shift $((OPTIND -1))
+
+# General environment setup
+export GMX_QMMM_VARIANT=2 # Cutoff for QM/MM interactions
+export OMP_NUM_THREADS=1
+export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
+export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
+
+case "$simulation_type" in
+    "pytorch"*|"tensorflow"*)
+        if [[ $simulation_type == "pytorch" ]]
+        then
+            echo "Using PyTorch simulation type"
+            GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+            PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
+        elif [[ $simulation_type == "pytorch_cpu" ]]
+        then
+            echo "Using PyTorch CPU simulation type"
+            GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cpu/bin/GMXRC"
+            PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cpu"
+        elif [[ $simulation_type == "tensorflow" ]]
+        then
+            echo "Using TensorFlow simulation type"
+            GROMACS_PATH="/home/ka/ka_ipc/ka_he8978/gromacs-tensorflow/bin/GMXRC"
+            export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/tensorflow_prebuilt/lib:$LD_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/jsoncpp_exe/lib64:$LD_LIBRARY_PATH"
+        else
+            echo "Unknown PyTorch simulation type: $simulation_type"
+            exit 1
+        fi
+        parallel_flag="-ntomp 1 -ntmpi 1"
+        module load lib/cudnn/9.0.0_cuda-12.3
+        export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
+        export GMX_N_MODELS=3 # Number of neural network models
+        export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
+        export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.5  # Threshold for the energy standard deviation between models for a structure to be considered relevant
+        export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
+        export GMX_NN_EVAL_FREQ=100 # Frequency of evaluation of the neural network, 1 means every step
+        export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp2nd, hdnnp4th, schnet or painn for tensorflow, or mace, maceqeq, amp for pytorch
+        export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
+        export GMX_NN_EXTXYZ=1000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
+
+        #OBSERVATION_SCRIPT=$(which observe_trajectory.py) # Used to recognize explosions in the simulation
+        ;;
+    "orca")
+        export HWLOC_HIDE_ERRORS=1 # Hide errors from hwloc, which is used by ORCA
+        module load chem/orca
+        GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-orca/bin/GMXRC"
+        parallel_flag="-ntomp 1 -ntmpi 1" 
+        ORCA_PATH=$(dirname $(which orca))
+        export PATH="$ORCA_PATH:$PATH"
+        export LD_LIBRARY_PATH="$ORCA_PATH:$LD_LIBRARY_PATH"
+        export GMX_ORCA_PATH=$ORCA_PATH
+        # basename set in submit_single_walker_justus.sh
+        ;;
+    "dftb")
+        GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/gromacs-machine-learning/release/bin/GMXRC"
+        parallel_flag=""
+        #export GMX_DFTB_ESP=1
+        #export GMX_DFTB_CHARGES=100
+        #export GMX_DFTB_QM_COORD=100
+        #export GMX_DFTB_MM_COORD=100
+        #export GMX_DFTB_MM_COORD_FULL=100
+        ;;
+    *)
+        echo "Unknown simulation type: $simulation_type"
+        exit 1
+esac
+
+source $GROMACS_PATH
+if which gmx > /dev/null 2>&1; then
+    gmx_command=$(which gmx)
+elif which gmx_d > /dev/null 2>&1; then
+    gmx_command=$(which gmx_d)
+else
+    echo "GROMACS command not found. Please check your GROMACS installation."
+    exit 1
+fi
+
+# For adding and overwriting environment variables from a file
+if [ -f "GMX_VARS.sh" ]; then
+    source GMX_VARS.sh
+fi
 
 # Check if mandatory argument is set
 if [ -z "${tpr_file}" ]; then
@@ -94,15 +140,6 @@ for file in "${additional_files[@]}"; do
 done
 
 echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
-
-source $GROMACS_PATH
-
-module load lib/cudnn/9.0.0_cuda-12.3
-export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
-
-# set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
-# set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
-# set -o nounset   # (or set -u) causes the script to treat unset variables as an error and exit immediately
 
 # Define the signal handler function when job times out
 # Note: This is not executed here, but rather when the associated 
@@ -176,17 +213,15 @@ sourcedir=$PWD
 workdir=$SCRATCH
 
 mkdir -vp $workdir
-cp -r -v $tpr_file "${additional_files[@]}" $workdir
+cp -r -v $tpr_file $plumed_file "${additional_files[@]}" $workdir
 cd $workdir
 
-export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
 basename_tpr=$(basename $tpr_file .tpr)
-export GMX_QM_ORCA_BASENAME=$basename_tpr # Set basename for ORCA output files
 
-gmx -quiet mdrun -deffnm $basename_tpr -s "$tpr_file" $rerun_command$plumed_command &
+$gmx_command -quiet mdrun $parallel_flag -deffnm $basename_tpr $rerun_command $plumed_command &
 mdrun_pid=$!
 
-if [ -f $OBSERVATION_SCRIPT ]
+if [ -f "$OBSERVATION_SCRIPT" ]
 then
     $OBSERVATION_SCRIPT --basename "$basename_tpr" &
     observation_pid=$!
@@ -195,8 +230,16 @@ else
     echo "Observation script not found, running mdrun without observation."
 fi
 
-wait # Wait for all parallel processes to finish, also allows trap finalize_job to be called
+wait $mdrun_pid
+simulation_exit_code=$?
+# Wait for all parallel processes to finish, also allows trap finalize_job to be called
 
 cd $sourcedir
 rsync -a $workdir/ .
 rm -r $workdir
+
+if [ $simulation_exit_code -ne 0 ]; then
+    echo "$(date): Simulation failed with exit code $simulation_exit_code"
+    exit $simulation_exit_code
+fi
+echo "$(date): Simulation finished successfully."

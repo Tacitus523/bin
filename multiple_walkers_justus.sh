@@ -26,9 +26,9 @@ export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the ne
 export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.1  # Threshold for the energy standard deviation between models for a structure to be considered relevant
 export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
 export GMX_NN_EVAL_FREQ=1 # Frequency of evaluation of the neural network, 1 means every step
-export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp, schnet or painn for tensorflow, or mace,maceqeq, amp for pytorch
+export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp2nd, hdnnp4th, schnet or painn for tensorflow, or mace, maceqeq, amp for pytorch
 export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
-export GMX_PYTORCH_EXTXYZ=1000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
+export GMX_NN_EXTXYZ=2000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
 export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
 
@@ -81,6 +81,11 @@ done
 echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
 
 source $GROMACS_PATH
+
+# For adding and overwriting environment variables from a file
+if [ -f "GMX_VARS.sh" ]; then
+    source GMX_VARS.sh
+fi
 
 module load system/parallel
 module load lib/cudnn/9.0.0_cuda-12.3
@@ -238,14 +243,14 @@ run_mdrun() {
     local tpr_file=$2
     local plumed_file=$3
     local append_command=$4
-    local observation_script=$5
+    local observation_script=$OBSERVATION_SCRIPT
     basename_tpr=$(basename $tpr_file .tpr)
 
     cd "WALKER_$walker_id"
     if [ "$walker_id" -eq 0 ]; then
-        gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $append_command
+        gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -plumed "$plumed_file" $append_command
     else
-        gmx -quiet mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -s "$tpr_file" -plumed "$plumed_file" $append_command &>> mdrun.out
+        gmx -quiet mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -plumed "$plumed_file" $append_command &>> mdrun.out
     fi
     mdrun_pid=$!
 
@@ -259,15 +264,25 @@ run_mdrun() {
     fi
 
     echo "Finished walker $walker_id at $(date)"
+    rsync -a ./ "$sourcedir/WALKER_$walker_id/"
 }
 
 export -f run_mdrun
 export OBSERVATION_SCRIPT
 export -f mexican_standoff
-parallel -j $N_WALKER "run_mdrun {} $tpr_file $plumed_file $append_command \$OBSERVATION_SCRIPT" ::: $(seq 0 $((N_WALKER-1))) &
+export sourcedir
+parallel -j $N_WALKER "run_mdrun {} $tpr_file $plumed_file $append_command" ::: $(seq 0 $((N_WALKER-1))) &
+mdrun_pid=$!
 
-wait # Wait for all parallel processes to finish, also allows trap finalize_job to be called
+wait $mdrun_pid # Wait for all parallel processes to finish, also allows trap finalize_job to be called
+simulation_exit_code=$?
 
 cd $sourcedir
 rsync -a $workdir/ .
 rm -r $workdir
+
+if [ $simulation_exit_code -ne 0 ]; then
+    echo "$(date): Simulation failed with exit code $simulation_exit_code"
+    exit $simulation_exit_code
+fi
+echo "$(date): Simulation finished successfully."
