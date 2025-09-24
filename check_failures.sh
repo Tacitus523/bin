@@ -55,8 +55,8 @@ export -f check_DFTB_folder
 if [[ $(basename $file_prefix) == "detailed" ]] 
 then 
     echo "Checking DFTB folders for convergence..."
-    find "$folder_prefix"* -type d | parallel -j 32 "check_DFTB_folder {} '$file_prefix'"
+    find "$folder_prefix"* \( -type d -o -type l \) | parallel -j 32 "check_DFTB_folder {} '$file_prefix'"
 else
     echo "Checking DFT folders for convergence..."
-    find "$folder_prefix"* -type d | parallel -j 32 "check_DFT_folder {} '$file_prefix'"
+    find "$folder_prefix"* \( -type d -o -type l \) | parallel -j 32 "check_DFT_folder {} '$file_prefix'"
 fi
