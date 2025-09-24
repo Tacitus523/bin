@@ -14,7 +14,7 @@ PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
 
 OBSERVATION_SCRIPT=$(which observe_trajectory.py)
 
-export GMX_QMMM_VARIANT=2
+export GMX_QMMM_VARIANT=2 # 1 for PME, 2 for cutoff
 export OMP_NUM_THREADS=1
 #export GMX_DFTB_ESP=1
 #export GMX_DFTB_CHARGES=100
