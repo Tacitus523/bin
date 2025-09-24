@@ -271,7 +271,7 @@ export -f run_mdrun
 export OBSERVATION_SCRIPT
 export -f mexican_standoff
 export sourcedir
-parallel -j $N_WALKER "run_mdrun {} $tpr_file $plumed_file $append_command" ::: $(seq 0 $((N_WALKER-1))) &
+parallel --line-buffer -j $N_WALKER "run_mdrun {} $tpr_file $plumed_file $append_command" ::: $(seq 0 $((N_WALKER-1))) &
 mdrun_pid=$!
 
 wait $mdrun_pid # Wait for all parallel processes to finish, also allows trap finalize_job to be called
