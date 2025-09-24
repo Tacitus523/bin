@@ -9,8 +9,6 @@
 ESPS_BY_QMMM_FILE=esps_by_qmmm.txt
 PC_FILE=mm_data.pc
 PCGRAD_FILE=mm_data.pcgrad
-MULTIWFN_INPUTS=multiwfn_esp_input.pc
-ESPS_BY_QM_FILE=esps_by_qm.pc
 
 esp_calculation_script="esp_calculation_from_pc.py"
 
@@ -53,8 +51,6 @@ cat_if_exists() {
 remove_if_exists $ESPS_BY_QMMM_FILE
 remove_if_exists $PC_FILE
 remove_if_exists $PCGRAD_FILE
-remove_if_exists $MULTIWFN_INPUTS
-remove_if_exists $ESPS_BY_QM_FILE
 
 remove_if_exists "esp_calc.out"
 remove_if_exists "esp_calc.err"
@@ -71,8 +67,6 @@ for folder in $folders
 do
 	sed '/^$/d' $folder/$2.pc >> $PC_FILE # concatenate all pc files, remove empty lines
 	sed '/^$/d' $folder/$2.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
-	cat_if_exists $folder/$MULTIWFN_INPUTS $MULTIWFN_INPUTS
-	cat_if_exists $folder/$ESPS_BY_QM_FILE $ESPS_BY_QM_FILE
 done
 
 extract_qm_information.sh $1 $2

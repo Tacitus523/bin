@@ -35,6 +35,14 @@ remove_if_exists() {
 	fi
 }
 
+cat_if_exists() {
+	local file=$1
+	local target=$2
+	if [ -f $file ]
+	then cat $file >> $target
+	fi
+}
+
 extract_multiwfn_charge() {
 	local file=$1
 	output_file=$2
@@ -59,6 +67,8 @@ GEOMS_FILE=geoms.xyz
 GRADIENTS_FILE=gradients.xyz
 DIPOLE_FILE=dipoles.txt
 QUADRUPOLE_FILE=quadrupoles.txt
+MULTIWFN_INPUTS=multiwfn_esp_input.pc
+ESPS_BY_QM_FILE=esps_by_qm.pc
 
 remove_if_exists $FOLDER_FILE
 remove_if_exists $CHARGES_MULL_FILE
@@ -75,6 +85,8 @@ remove_if_exists $DIPOLE_FILE
 remove_if_exists $QUADRUPOLE_FILE
 remove_if_exists "forces.xyz" # Previously used file, renamed to gradients.xyz
 remove_if_exists "charges_esp.txt" # Previously used file, renamed to charges_chelpg.txt
+remove_if_exists $MULTIWFN_INPUTS
+remove_if_exists $ESPS_BY_QM_FILE
 
 counter=0
 for folder in $folders
@@ -113,6 +125,9 @@ do
 		echo "nan nan nan nan nan nan" >> $QUADRUPOLE_FILE  # placeholder if missing
 	fi
 
+	cat_if_exists $folder/$MULTIWFN_INPUTS $MULTIWFN_INPUTS
+	cat_if_exists $folder/$ESPS_BY_QM_FILE $ESPS_BY_QM_FILE
+	
 	counter=$((counter + 1))
 	if ((counter % 1000 == 0)) 
 	then
