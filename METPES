@@ -1,36 +1,52 @@
-#!/usr/bin/env python
+#!/home/lpetersen/miniconda3/envs/mda/bin/python
 """
   Script creates metad pes from hills
-
-  Change for your needs.
-
-  Credits to DM
-
-  USAGE: METPES e_max
-
 """
-
-PERIODIC_LIMITS = ((-180, 120), (-100, 240))  # for periodic CVs, in degrees
-NON_PERIODIC_LIMITS = ((1.8, 11), (1.8, 11))  # for non-periodic CVs, in Angstrom
-
-################
-#import modules#
-################
+import argparse
+import os
+import sys
+from typing import Optional, Tuple, List
 
 import matplotlib.pyplot as plt
 import numpy as np
-import sys
 
-if len(sys.argv) != 2:
-	print('Usage: METPES e_max')
-	exit()
-if sys.argv[1] == '--help':
-	print('Usage: METPES e_max')
-	exit()
 
-kj_to_kcal = 1/4.184
+PERIODIC_LIMITS = ((-180, 120), (-100, 240))  # for periodic CVs, in degrees
+NON_PERIODIC_LIMITS = ((1.8, 11), (1.8, 11))  # for non-periodic CVs, in Angstrom
+FIGSIZE = (7, 6)
+DPI = 100
 
-def analyze_fes_file(file_path: str) -> list:
+KJ_TO_KCAL = 1/4.184
+
+def parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser(
+		description="Create metad PES from hills file"
+	)
+	parser.add_argument(
+		"e_max", 
+		type=float, 
+		help="Maximum energy for contour lines (in kcal/mol)"
+	)
+	parser.add_argument(
+		"-f", "--fes_file", 
+		type=str, 
+		default="fes.dat", 
+		help="Path to the fes.dat file (default: fes.dat)"
+	)
+	parser.add_argument(
+		"-d", "--directory",
+		type=str,
+		default=None,
+		help="Directory to scan for files with prefixed 'fes_'"
+	)
+	args = parser.parse_args()
+	if args.directory is not None:
+		assert os.path.isdir(args.directory), f"Error: {args.directory} is not a valid directory."
+	else:
+		assert os.path.isfile(args.fes_file), f"Error: {args.fes_file} not found."
+	return args
+
+def analyze_fes_file(file_path: str) -> Tuple[List[int], List[bool]]:
 	"""
 	Extracts the nbins numbers from a plumed generated fes.dat file
 	"""
@@ -57,91 +73,129 @@ def analyze_fes_file(file_path: str) -> list:
 		raise ValueError(f'Found more than 2 nbins in file {file_path}')
 	return nbins_list, periodicity_list
 
-e_max = float(sys.argv[1])
-nbins_list, periodicity_list = analyze_fes_file('fes.dat')
-x, y, energies = np.loadtxt("fes.dat", usecols=(0,1,2), skiprows=0, unpack=True) # in rad
-xx = np.reshape(x, nbins_list)
-yy = np.reshape(y, nbins_list)
+def load_fes_data(fes_file_path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[bool]]:
+	nbins_list, periodicity_list = analyze_fes_file(fes_file_path)
+	x, y, energies = np.loadtxt(fes_file_path, usecols=(0,1,2), skiprows=0, unpack=True) # in rad
 
-if periodicity_list[0] is True:
-	xx = (xx*360/(2*np.pi)) # in deg
-	xx = np.concatenate([xx-360, xx, xx+360], axis=1)
-	xx = np.concatenate([xx, xx, xx], axis=0)
-else:
-	xx = (xx*10) # in Angstrom
+	xx = np.reshape(x, nbins_list)
+	yy = np.reshape(y, nbins_list)
 
-if periodicity_list[1] is True:
-	yy = (yy*360/(2*np.pi)) # in deg
-	yy = np.concatenate([yy-360, yy, yy+360], axis=0)
-	yy = np.concatenate([yy, yy, yy], axis=1)
-else:
-	yy = (yy*10) # in Angstrom
+	if periodicity_list[0] is True:
+		xx = (xx*360/(2*np.pi)) # in deg
+		xx = np.concatenate([xx-360, xx, xx+360], axis=1)
+		xx = np.concatenate([xx, xx, xx], axis=0)
+	else:
+		xx = (xx*10) # in Angstrom
 
+	if periodicity_list[1] is True:
+		yy = (yy*360/(2*np.pi)) # in deg
+		yy = np.concatenate([yy-360, yy, yy+360], axis=0)
+		yy = np.concatenate([yy, yy, yy], axis=1)
+	else:
+		yy = (yy*10) # in Angstrom
 
+	# kcal/mol
+	zz = np.reshape(energies*KJ_TO_KCAL, nbins_list)
+	for CV_idx, periodicity_bool in enumerate(periodicity_list):
+		if periodicity_bool is True:
+			zz = np.concatenate([zz, zz, zz], axis=CV_idx)
+	return xx, yy, zz, periodicity_list
 
-fig = plt.figure(figsize=[7,6], dpi=200)
+def plot_multiple_fes(args: argparse.Namespace) -> None:
+	fes_files = [os.path.join(args.directory, f) for f in os.listdir(args.directory) if f.startswith("fes_") and f.endswith(".dat")]
+	fes_files.sort()
+	num_files = len(fes_files)
+	if num_files == 0:
+		print(f"No fes_*.dat files found in directory {args.directory}. Exiting.")
+		sys.exit(1)
 
-label_fs = 18
-ticks_fs = 16
-labelpad = -.8
+	# Determine grid size for subplots
+	ncols = 3
+	nrows = (num_files + ncols - 1) // ncols  # Ceiling division
 
-ax = plt.gca()
-if periodicity_list[0] is True:
-	ax.set_xlim(PERIODIC_LIMITS[0][0], PERIODIC_LIMITS[0][1])
-	ax.set_xlabel(r"$\varphi$ [°]", 
+	fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols*FIGSIZE[0], nrows*FIGSIZE[1]))
+	axes = axes.flatten()  # Flatten to easily iterate over
+
+	for ax, fes_file in zip(axes, fes_files):
+		args.fes_file = fes_file
+		plot_single_fes(args, ax=ax)
+
+	# Remove any unused subplots
+	for i in range(num_files, len(axes)):
+		fig.delaxes(axes[i])
+
+	plt.tight_layout()
+	output_file = os.path.join(args.directory, "PMFs.png")
+	plt.savefig(output_file, dpi=DPI)
+	print(f"PES figure saved to {output_file}")
+
+def plot_single_fes(
+		args: argparse.Namespace,
+		ax=None
+	) -> None:
+	xx, yy, zz, periodicity_list = load_fes_data(args.fes_file)
+
+	standalone = False
+	if ax is None:
+		fig, ax = plt.subplots(figsize=FIGSIZE)
+		standalone = True
+
+	label_fs = 18
+	ticks_fs = 16
+	labelpad = -.8
+
+	if periodicity_list[0] is True:
+		ax.set_xlim(PERIODIC_LIMITS[0][0], PERIODIC_LIMITS[0][1])
+		ax.set_xlabel(r"$\varphi$ [°]", 
+						fontsize=label_fs, labelpad=labelpad)
+	else:
+		ax.set_xlim(NON_PERIODIC_LIMITS[0][0], NON_PERIODIC_LIMITS[0][1])
+		ax.set_xlabel(r"S$^\mathrm{1}$-S$^\mathrm{2}$" + u" [\u212B]", 
+						fontsize=label_fs, labelpad=labelpad)
+
+	if periodicity_list[1] is True:
+		ax.set_ylim(PERIODIC_LIMITS[1][0], PERIODIC_LIMITS[1][1])
+		ax.set_ylabel(r"$\psi$ [°]", 
 					fontsize=label_fs, labelpad=labelpad)
-else:
-	ax.set_xlim(NON_PERIODIC_LIMITS[0][0], NON_PERIODIC_LIMITS[0][1])
-	ax.set_xlabel(r"S$^\mathrm{1}$-S$^\mathrm{2}$" + u" [\u212B]", 
-					fontsize=label_fs, labelpad=labelpad)
+	else:
+		ax.set_ylim(NON_PERIODIC_LIMITS[1][0], NON_PERIODIC_LIMITS[1][1])
+		ax.set_ylabel(r"S$^\mathrm{2}$-S$^\mathrm{3}$" + u" [\u212B]", 
+						fontsize=label_fs, labelpad=labelpad)
 
-if periodicity_list[1] is True:
-	ax.set_ylim(PERIODIC_LIMITS[1][0], PERIODIC_LIMITS[1][1])
-	ax.set_ylabel(r"$\psi$ [°]", 
-				fontsize=label_fs, labelpad=labelpad)
-else:
-	ax.set_ylim(NON_PERIODIC_LIMITS[1][0], NON_PERIODIC_LIMITS[1][1])
-	ax.set_ylabel(r"S$^\mathrm{2}$-S$^\mathrm{3}$" + u" [\u212B]", 
-					fontsize=label_fs, labelpad=labelpad)
+	ax.tick_params(axis='x', labelsize=ticks_fs)
+	ax.tick_params(axis='y', labelsize=ticks_fs)
+	ax.set_aspect('equal')
 
-ax.tick_params(axis='x', labelsize=ticks_fs)
-ax.tick_params(axis='y', labelsize=ticks_fs)
-ax.set_aspect('equal')
+	e_max = args.e_max
+	lines=np.arange(0, e_max+.1, 1.0)
+	linesf=np.arange(0, e_max+.1, 0.1)
+	cbticks=np.arange(0, e_max+.1, 5)
+
+	fig1 = ax.contourf(xx, yy, zz, cmap="viridis", levels=linesf)
+	fig2 = ax.contour(xx, yy, zz, levels=lines, colors="black", linewidths=0.3)
+
+	# Modified colorbar to match actual plot height
+	cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02, 
+					fraction=0.053, aspect=20)  # Adjust aspect to control height
+	cb.set_label(r"$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
+	cb.ax.tick_params(labelsize=ticks_fs)
 
 
+	if standalone is True:
+		fig.tight_layout()
+		plt.savefig("PMFs.png", dpi=DPI)
+		print("PES figure saved to PMFs.png")
+	else:
+		title = os.path.basename(args.fes_file).replace("fes_", "").replace(".dat", "")
+		ax.set_title(title, fontsize=14)  # Set title for the subplot
 
-######################
-### plot 1 -- SRP/M1 #
-######################
-lines=np.arange(0, e_max+.1, 1.0)
-linesf=np.arange(0, e_max+.1, 0.1)
-cbticks=np.arange(0, e_max+.1, 5)
 
-ax.set_title(" ", fontsize=label_fs, pad=0, linespacing=0)
+def main() -> None:
+	args = parse_args()
+	if args.directory is not None:
+		plot_multiple_fes(args)
+	else:
+		plot_single_fes(args)
 
-# kcal/mol
-zz = np.reshape(energies*kj_to_kcal, nbins_list)
-for CV_idx, periodicity_bool in enumerate(periodicity_list):
-	if periodicity_bool is True:
-		zz = np.concatenate([zz, zz, zz], axis=CV_idx)
-fig1 = ax.contourf(xx, yy, zz, cmap="viridis", levels=linesf)
-fig2 = ax.contour(xx, yy, zz, levels=lines, colors="black", linewidths=0.3)
-
-# Get the position of the main plot to match colorbar height
-plt.draw()  # Draw the plot to update positions
-pos = ax.get_position()
-height_fraction = pos.height/pos.width  # Calculate the height ratio
-
-# Modified colorbar to match actual plot height
-cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02, 
-                 fraction=0.053, aspect=20)  # Adjust aspect to control height
-cb.set_label(r"$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
-cb.ax.tick_params(labelsize=ticks_fs)
-
-# Labeling
-# loc_x = 0.2
-# loc_y = 11.3
-#ax.text(loc_x, loc_y, "A)", fontsize=label_fs+2, fontweight='bold', va='top', ha='right')
-
-fig.tight_layout()
-plt.savefig("PMFs.png")
+if __name__ == "__main__":
+	main()
