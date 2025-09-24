@@ -7,9 +7,15 @@ WALKER_SCRIPT="/home/lpetersen/bin/multiple_walkers.sh"
 out_file=metadynamics.out
 error_file=metadynamics.err
 
-print_usage() {
+function print_usage() {
     echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
     exit 1
+}
+
+function remove_if_exists() {
+    if [ -f "$1" ]; then
+        rm "$1"
+    fi
 }
 
 while getopts ":t:p:" opt; do
@@ -61,16 +67,18 @@ for file in "${additional_files[@]}"; do
     echo "Additional file: $file"
 done
 
-if [ -f $out_file ]
-then
-    rm $out_file
-fi
-if [ -f $error_file ]
-then
-    rm $error_file
-fi
+remove_if_exists $out_file
+remove_if_exists $error_file
 
 jobname=$(basename $tpr_file .tpr) # Use the tpr file name as the job name
 
-#qsub -N $jobname -pe nproc $N_WALKER -o $out_file -e $error_file $WALKER_SCRIPT $tpr_file $plumed_file $other_files
-qsub -N $jobname -v N_WALKER=$N_WALKER -o $out_file -e $error_file $WALKER_SCRIPT -t $tpr_file $plumed_flag "${additional_files[@]}"
+if [ "$HOSTNAME" == "hydrogen2" ]
+then
+    qsub -N $jobname -pe nproc $N_WALKER -o $out_file -e $error_file $WALKER_SCRIPT -t $tpr_file $plumed_flag "${additional_files[@]}"
+elif [ "$HOSTNAME" == "tcbserver2" ]
+then
+    qsub -N $jobname -v N_WALKER=$N_WALKER -o $out_file -e $error_file -l qu=gtx $WALKER_SCRIPT -t $tpr_file $plumed_flag "${additional_files[@]}"
+else
+    echo "Unknown host: $HOSTNAME. Cannot submit job."
+    exit 1
+fi
