@@ -224,7 +224,7 @@ function generate_append_command() {
 
 function track_fes_progress {
     while true; do
-        sleep 21600 # Every 6 hours
+        sleep 14400 # Check every 4 hours
         date +"%Y-%m-%d %H:%M:%S - Tracking FES progress"
         wc -l HILLS.*
         /home/lpetersen/bin/SUM_HILLS
