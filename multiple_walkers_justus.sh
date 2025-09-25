@@ -7,12 +7,22 @@
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
 #SBATCH --gres=gpu:1
 
+function print_usage() {
+    echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
+    exit 1
+}
+
 N_WALKER=$SLURM_NTASKS_PER_NODE
 #GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
 PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
 
 OBSERVATION_SCRIPT=$(which observe_trajectory.py)
+
+source $GROMACS_PATH
+module load system/parallel
+module load lib/cudnn/9.0.0_cuda-12.3
+export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
 
 export GMX_QMMM_VARIANT=2 # 1 for PME, 2 for cutoff
 export OMP_NUM_THREADS=1
@@ -32,10 +42,10 @@ export GMX_NN_EXTXYZ=2000 # Frequency of writing the extended xyz file, 1 means 
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
 export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
 
-print_usage() {
-    echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
-    exit 1
-}
+# For adding and overwriting environment variables from a file
+if [ -f "GMX_VARS.sh" ]; then
+    source GMX_VARS.sh
+fi
 
 while getopts ":t:p:" opt; do
     case ${opt} in
@@ -66,30 +76,25 @@ fi
 echo "tpr_file: $tpr_file"
 
 if [ -z "${plumed_file}" ]; then
-    echo "Missing plumed file"
-    print_usage
+    echo "WARNING: Missing plumed file"
+    plumed_command=""
+else
+    if [ ! -f "${plumed_file}" ]; then
+        echo "Plumed file ${plumed_file} does not exist" 1>&2
     exit 1
 fi
 echo "plumed_file: $plumed_file"
+    plumed_command="-plumed $plumed_file"
+fi
 
 # Remaining arguments are additional files
 additional_files=("$@")
-for file in "${additional_files[@]}"; do
+for file in "${additional_files[@]}"
+do
     echo "Additional file: $file"
 done
 
 echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
-
-source $GROMACS_PATH
-
-# For adding and overwriting environment variables from a file
-if [ -f "GMX_VARS.sh" ]; then
-    source GMX_VARS.sh
-fi
-
-module load system/parallel
-module load lib/cudnn/9.0.0_cuda-12.3
-export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
 
 # set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
 # set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
@@ -103,8 +108,8 @@ finalize_job()
     # Do whatever cleanup you want here.
     echo "function finalize_job called at $(date)"
     cd $sourcedir
-    rsync -a $workdir/ .
-    rm -r $workdir
+    rsync -a $scratch_dir/ .
+    rm -r $scratch_dir
     exit 1
 }
 
@@ -137,9 +142,10 @@ mexican_standoff() {
 
 # Handles append identification and append command generation.
 # Checks if HILLS files are present, if WALKER_* folders and if .cpt files are present.
-generate_append_command() {
+function generate_append_command() {
     local files=("$@")
     
+    local append_command=""
     local hills_found=false
     for file in "${files[@]}"
     do
@@ -155,7 +161,7 @@ generate_append_command() {
     then
         for folder in "${files[@]}"
         do
-            if [ -d $folder ] && [[ $folder == WALKER_* ]]
+            if [ -d "$folder" ] && [[ $folder == WALKER_* ]]
             then
                 walker_found=true
                 break
@@ -195,28 +201,39 @@ generate_append_command() {
         exit 1
     fi
 
-    echo $append_command
+    echo "$append_command"
+}
+
+function track_fes_progress {
+    while true; do
+        sleep 14400 # Check every 4 hours
+        date +"%Y-%m-%d %H:%M:%S - Tracking FES progress"
+        wc -l HILLS.*
+        $HOME/bin/SUM_HILLS
+        mkdir -p fes_progress
+        mv fes.dat fes_progress/fes_$(date +%Y_%m_%d_%H_%M).dat
+        $HOME/bin/plot_scripts/METPES 10 -d fes_progress
+    done
 }
 
 # Call finalize_job function as soon as we receive USR1 signal
 trap 'finalize_job' USR1
 
-basename_tpr=$(basename $tpr_file .tpr)
+sourcedir=$PWD
+scratch_dir=$SCRATCH
+
+mkdir -vp $scratch_dir
+cp -r $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
+cd $scratch_dir
+
+export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
+
 append_command=$(generate_append_command "${additional_files[@]}")
 if [ -n "$append_command" ]
 then
     echo "Appending to existing simulation!"
     echo "Append command: $append_command"
 fi
-
-sourcedir=$PWD
-workdir=$SCRATCH
-
-mkdir -vp $workdir
-cp -r -v $tpr_file $plumed_file "${additional_files[@]}" $workdir
-cd $workdir
-
-export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
 
 # Create directories for each walker
 for i in `seq 0 $((N_WALKER-1))`
@@ -234,55 +251,67 @@ do
 
     cd WALKER_$i/
     sed -i -e 's/NUMWALKER/'${i}'/g' $plumed_file
+    # If appending, add RESTART at the top of the plumed file
+    if [ -n "$append_command" ]; then
+        tmp_plumed="${plumed_file}.tmp"
+        { echo "RESTART"; cat "$plumed_file"; } > "$tmp_plumed"
+        mv "$tmp_plumed" "$plumed_file"
+    fi
     cd ..
 done
 
 # Run each walker in parallel using GNU parallel
-run_mdrun() {
+function run_mdrun() {
     local walker_id=$1
-    local tpr_file=$2
-    local plumed_file=$3
-    local append_command=$4
-    local observation_script=$OBSERVATION_SCRIPT
+    shift
+    local tpr_file=$1
+    shift
+    # Remaining arguments
+    local mdrun_args="$@"
     basename_tpr=$(basename $tpr_file .tpr)
 
     cd "WALKER_$walker_id"
-    if [ "$walker_id" -eq 0 ]; then
-        gmx mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -plumed "$plumed_file" $append_command
+    if [ $walker_id -eq 0 ]
+    then
+        echo "Starting walker $walker_id at $(date)"
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args
     else
-        gmx -quiet mdrun -deffnm $basename_tpr -ntomp 1 -ntmpi 1 -plumed "$plumed_file" $append_command &>> mdrun.out
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args &>> mdrun.out
     fi
-    mdrun_pid=$!
+    run_pid=$!
 
     if [ -f "$observation_script" ]
     then
         "$observation_script" --basename $basename_tpr &
         observation_pid=$!
-        mexican_standoff $mdrun_pid $observation_pid &
+        mexican_standoff $run_pid $observation_pid &
     else
         echo "Observation script not found, running mdrun without observation."
     fi
 
     echo "Finished walker $walker_id at $(date)"
-    rsync -a ./ "$sourcedir/WALKER_$walker_id/"
 }
 
 export -f run_mdrun
 export OBSERVATION_SCRIPT
 export -f mexican_standoff
-export sourcedir
-parallel --line-buffer -j $N_WALKER "run_mdrun {} $tpr_file $plumed_file $append_command" ::: $(seq 0 $((N_WALKER-1))) &
+parallel --line-buffer -j $N_WALKER run_mdrun {} $tpr_file $plumed_command $append_command ::: $(seq 0 $((N_WALKER-1))) &
 mdrun_pid=$!
 
+track_fes_progress &
+track_pid=$!
+
 wait $mdrun_pid # Wait for all parallel processes to finish, also allows trap finalize_job to be called
-simulation_exit_code=$?
+mdrun_exit_code=$?
+kill $track_pid || true # Stop the FES tracking if still running
 
 cd $sourcedir
-rsync -a $workdir/ .
-rm -r $workdir
+rsync -a $scratch_dir/ .
+rm -r $scratch_dir
 
-if [ $simulation_exit_code -ne 0 ]; then
-    echo "$(date): Simulation failed with exit code $simulation_exit_code"
-    exit $simulation_exit_code
+if [ $mdrun_exit_code -eq 0 ]; then
+    echo "$(date): All walkers completed successfully."
+else
+    echo "One or more walkers failed with exit code
 fi
-echo "$(date): Simulation finished successfully."
+exit $mdrun_exit_code

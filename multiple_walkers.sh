@@ -129,7 +129,7 @@ sourcedir=$PWD
 scratchdir_prefix="/scratch"
 scratch_dir_suffix="${USER}/metadynamic_$JOB_ID"
 scratch_dir="$scratchdir_prefix/$scratch_dir_suffix"
-scratch_dir_on_login="$scratchdir_prefix/$HOSTNAME/$scratch_dir_suffix" # For printing on login node
+scratch_dir_on_login="$scratchdir_prefix/${HOSTNAME%.ipc.kit.edu}/$scratch_dir_suffix" # For printing on login node
 
 echo "Starting multiple walkers: $(date)"
 echo "Running on $HOSTNAME"
@@ -219,7 +219,7 @@ function generate_append_command() {
         exit 1
     fi
 
-    echo $append_command
+    echo "$append_command"
 }
 
 function track_fes_progress {
@@ -238,8 +238,14 @@ mkdir -vp $scratch_dir
 cp -r $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
 cd $scratch_dir
 
-tpr_prefix=$(basename $tpr_file .tpr)
 export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
+
+append_command=$(generate_append_command "${additional_files[@]}")
+if [ -n "$append_command" ]
+then
+    echo "Appending to existing simulation!"
+    echo "Append command: $append_command"
+fi
 
 # Create directories for each walker
 for i in `seq 0 $((N_WALKER-1))`
@@ -257,44 +263,45 @@ do
 
     cd WALKER_$i/
     sed -i -e 's/NUMWALKER/'${i}'/g' $plumed_file
+    # If appending, add RESTART at the top of the plumed file
+    if [ -n "$append_command" ]; then
+        tmp_plumed="${plumed_file}.tmp"
+        { echo "RESTART"; cat "$plumed_file"; } > "$tmp_plumed"
+        mv "$tmp_plumed" "$plumed_file"
+    fi
     cd ..
 done
-
-append_command=$(generate_append_command "${additional_files[@]}")
-if [ -n "$append_command" ]
-then
-    echo "Appending to existing simulation!"
-    echo "Append command: $append_command"
-fi
 
 # Run each walker in parallel using GNU parallel
 function run_mdrun() {
     local walker_id=$1
-    local tpr_file=$2
-    local plumed_command=$3
-    local append_command=$4
+    shift
+    local tpr_file=$1
+    shift
+    # Remaining arguments
+    local mdrun_args="$@"
     basename_tpr=$(basename $tpr_file .tpr)
 
     cd "WALKER_$walker_id"
     if [ $walker_id -eq 0 ]
     then
         echo "Starting walker $walker_id at $(date)"
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s "$tpr_file" $plumed_command $append_command
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args
     else
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s "$tpr_file" $plumed_command $append_command &>> mdrun.out
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args &>> mdrun.out
     fi
     echo "Finished walker $walker_id at $(date)"
 }
 export gmx_command
 export -f run_mdrun
-parallel --line-buffer -j $N_WALKER "run_mdrun {} $tpr_file $plumed_command $append_command" ::: $(seq 0 $((N_WALKER-1))) &
-run_pid=$!
+parallel --line-buffer -j $N_WALKER run_mdrun {} $tpr_file $plumed_command $append_command ::: $(seq 0 $((N_WALKER-1))) &
+mdrun_pid=$!
 
 track_fes_progress &
 track_pid=$!
 
-wait $run_pid # Wait for all walkers to finish, allowing trap to handle cleanup on failure
-run_exit_code=$?
+wait $mdrun_pid # Wait for all walkers to finish, allowing trap to handle cleanup on failure
+mdrun_exit_code=$?
 kill $track_pid || true # Stop the FES tracking if still running
 
 cd $sourcedir
@@ -308,9 +315,9 @@ else
     rm -r $scratch_dir
 fi
 
-if [ $run_exit_code -eq 0 ]; then
-    echo "All walkers completed successfully."
+if [ $mdrun_exit_code -eq 0 ]; then
+    echo "$(date): All walkers completed successfully."
 else
-    echo "One or more walkers failed with exit code $run_exit_code"
+    echo "One or more walkers failed with exit code
 fi
-exit $run_exit_code
+exit $mdrun_exit_code
