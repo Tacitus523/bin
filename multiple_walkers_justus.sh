@@ -10,6 +10,7 @@
 N_WALKER=$SLURM_NTASKS_PER_NODE
 #GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
 GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas-release/bin"
 PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
 
 OBSERVATION_SCRIPT=$(which observe_trajectory.py)
@@ -89,6 +90,7 @@ fi
 
 module load system/parallel
 module load lib/cudnn/9.0.0_cuda-12.3
+export PATH="$PLUMED_PATH:$PATH"
 export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
 
 # set -o errexit   # (or set -e) cause batch script to exit immediately when a command fails.
