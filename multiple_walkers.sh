@@ -318,6 +318,6 @@ fi
 if [ $mdrun_exit_code -eq 0 ]; then
     echo "$(date): All walkers completed successfully."
 else
-    echo "One or more walkers failed with exit code
+    echo "One or more walkers failed with exit code"
 fi
 exit $mdrun_exit_code
