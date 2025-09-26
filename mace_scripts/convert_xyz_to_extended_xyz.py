@@ -19,6 +19,7 @@ ESP_GRAD_FILE: Optional[str] = "esp_gradients_conv.xyz" # eV/e/A to eV/e/A, xyz 
 DIPOLE_FILE: Optional[str] = "dipoles.txt" # au to Debye, optional, gets filled with zeros if not present
 QUADRUPOLE_FILE: Optional[str] = "quadrupoles.txt" # au to au, optional, gets filled with zeros if not present
 PC_FILE: Optional[str] = "mm_data.pc" # Angstrom units to Angstrom units, optional
+SOURCE_LABEL: Optional[str] = "Unlabeled Data" # Label for the data source, optional, used in training to distinguish different data sources
 OUTFILE: Optional[str] = "geoms.extxyz"
 
 TOTAL_CHARGE: Optional[float] = 0.0 # Mostly deprecated, charge_file used instead, used if charge_file is not present
@@ -79,6 +80,7 @@ def read_config(args: argparse.Namespace) -> Dict[str, str|int|float]:
     config_data.setdefault("DIPOLE_FILE", DIPOLE_FILE)
     config_data.setdefault("QUADRUPOLE_FILE", QUADRUPOLE_FILE)
     config_data.setdefault("PC_FILE", PC_FILE)
+    config_data.setdefault("SOURCE_LABEL", SOURCE_LABEL)
     config_data.setdefault("OUTFILE", OUTFILE)
     config_data.setdefault("TOTAL_CHARGE", TOTAL_CHARGE)
     config_data.setdefault("BOXSIZE", BOXSIZE)
@@ -320,6 +322,7 @@ def write_extxyz(
         dipoles: np.ndarray,
         quadrupoles: np.ndarray,
     ) -> None:
+    source_label = config_data["SOURCE_LABEL"]
     outfile = config_data["OUTFILE"]
     boxsize = config_data["BOXSIZE"]
     
@@ -329,6 +332,7 @@ def write_extxyz(
         molecule.set_cell([boxsize, boxsize, boxsize], scale_atoms=False)
         molecule.set_pbc((False, False, False))
 
+        molecule.info["data_source"] = source_label
         molecule.info[energy_key] = energies[mol_idx]
         molecule.info[total_charge_key] = total_charges[mol_idx]
         molecule.info[dipole_key] = dipoles[mol_idx]
