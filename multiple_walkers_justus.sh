@@ -5,16 +5,16 @@
 #SBATCH --output=metadynamics.out
 #SBATCH --error=metadynamics.err
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
-#SBATCH --gres=gpu:1
+##SBATCH --gres=gpu:1
 
 function print_usage() {
     echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
     exit 1
 }
 
-N_WALKER=$SLURM_NTASKS_PER_NODE
 #GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
-GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+GROMACS_PATH=/lustre/home/ka/ka_ipc/ka_he8978/gromacs-tensorflow/bin/GMXRC
 PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas-release/bin"
 PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
 
@@ -25,6 +25,8 @@ module load system/parallel
 module load lib/cudnn/9.0.0_cuda-12.3
 export PATH="$PLUMED_PATH:$PATH"
 export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/tensorflow_prebuilt/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/jsoncpp_exe/lib64:$LD_LIBRARY_PATH"
 
 export GMX_QMMM_VARIANT=2 # 1 for PME, 2 for cutoff
 export OMP_NUM_THREADS=1
@@ -83,10 +85,10 @@ if [ -z "${plumed_file}" ]; then
 else
     if [ ! -f "${plumed_file}" ]; then
         echo "Plumed file ${plumed_file} does not exist" 1>&2
-    exit 1
-fi
-echo "plumed_file: $plumed_file"
-    plumed_command="-plumed $plumed_file"
+        exit 1
+    fi
+    echo "plumed_file: $plumed_file"
+    plumed_command="-plumed $(basename $plumed_file)"
 fi
 
 # Remaining arguments are additional files
@@ -95,6 +97,15 @@ for file in "${additional_files[@]}"
 do
     echo "Additional file: $file"
 done
+
+if which gmx > /dev/null 2>&1; then
+    gmx_command=$(which gmx)
+elif which gmx_d > /dev/null 2>&1; then
+    gmx_command=$(which gmx_d)
+else
+    echo "GROMACS command not found. Please check your GROMACS installation."
+    exit 1
+fi
 
 echo "Starting simulation on $SLURM_JOB_NODELIST: $(date)"
 
@@ -113,33 +124,6 @@ finalize_job()
     rsync -a $scratch_dir/ .
     rm -r $scratch_dir
     exit 1
-}
-
-mexican_standoff() {
-    # receive two process IDs. Waits for one of them to finish, then kills the other.
-    local pid1=$1 # mdrun process ID
-    local pid2=$2 # observation script process ID
-    while true
-    do
-        if ! kill -0 "$pid1" > /dev/null 2>&1
-        then
-            kill "$pid2" > /dev/null 2>&1
-            break
-        elif ! kill -0 "$pid2" > /dev/null 2>&1
-        then
-            # First try SIGTERM
-            kill "$pid1" > /dev/null 2>&1
-            sleep 60
-            # If process still exists, use SIGKILL
-            if kill -0 "$pid1" 2>/dev/null
-            then
-                echo "Process $pid1 did not terminate, sending SIGKILL"
-                kill -9 "$pid1" > /dev/null 2>&1
-            fi
-            break
-        fi
-        sleep 10 # Sleep for 120 seconds before checking again
-    done
 }
 
 # Handles append identification and append command generation.
@@ -206,6 +190,30 @@ function generate_append_command() {
     echo "$append_command"
 }
 
+function observe_trajectory {
+    local basename_tpr=$1
+    local gmx_pid=$2
+
+    if ! [ -f "$OBSERVATION_SCRIPT" ]
+    then
+        echo "Observation script $OBSERVATION_SCRIPT not found!" 1>&2
+        return 1
+    fi
+
+    while true
+    do
+        sleep 60 # Check every minute
+        $OBSERVATION_SCRIPT --basename "$basename_tpr" --once 1> /dev/null
+        observation_exit_code=$?
+        if [ $observation_exit_code -ne 0 ]
+        then
+            echo "Observation script detected an explosion. Stopping mdrun."
+            kill $gmx_pid 2>/dev/null || true # Stop mdrun if still running
+            exit $observation_exit_code
+        fi
+    done
+}
+
 function track_fes_progress {
     while true; do
         sleep 14400 # Check every 4 hours
@@ -228,8 +236,18 @@ mkdir -vp $scratch_dir
 cp -r $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
 cd $scratch_dir
 
-export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
+# Local pathes to copied files
+tpr_file=$(basename $tpr_file)
+plumed_file=$(basename $plumed_file)
+local_additional_files=()
+for file in "${additional_files[@]}"
+do
+    local_additional_files+=("$(basename $file)")
+done
+additional_files=("${local_additional_files[@]}")
+export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path in scratch directory
 
+# Append to existing simulation?
 append_command=$(generate_append_command "${additional_files[@]}")
 if [ -n "$append_command" ]
 then
@@ -276,27 +294,35 @@ function run_mdrun() {
     if [ $walker_id -eq 0 ]
     then
         echo "Starting walker $walker_id at $(date)"
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args
-    else
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args &>> mdrun.out
-    fi
-    run_pid=$!
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args &
+        run_pid=$!
 
-    if [ -f "$observation_script" ]
-    then
-        "$observation_script" --basename $basename_tpr &
+        observe_trajectory $basename_tpr $run_pid &
         observation_pid=$!
-        mexican_standoff $run_pid $observation_pid &
     else
-        echo "Observation script not found, running mdrun without observation."
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args >> mdrun.log 2>&1 &
+        run_pid=$!
+
+        observe_trajectory $basename_tpr $run_pid >> mdrun.log 2>&1 &
+        observation_pid=$!
     fi
 
-    echo "Finished walker $walker_id at $(date)"
+    wait $run_pid
+    run_exit_code=$?
+    kill $observation_pid 2>/dev/null || true # Stop observation script if still running
+
+    if [ $run_exit_code -ne 0 ]; then
+        echo "mdrun for walker $walker_id failed with exit code $run_exit_code"
+        exit $run_exit_code
+    else
+        echo "mdrun for walker $walker_id completed successfully at $(date)"
+    fi
 }
 
 export -f run_mdrun
 export OBSERVATION_SCRIPT
-export -f mexican_standoff
+export -f observe_trajectory
+export gmx_command
 parallel --line-buffer -j $N_WALKER run_mdrun {} $tpr_file $plumed_command $append_command ::: $(seq 0 $((N_WALKER-1))) &
 mdrun_pid=$!
 
@@ -305,7 +331,8 @@ track_pid=$!
 
 wait $mdrun_pid # Wait for all parallel processes to finish, also allows trap finalize_job to be called
 mdrun_exit_code=$?
-kill $track_pid || true # Stop the FES tracking if still running
+disown $track_pid
+kill $track_pid 2>/dev/null || true # Stop the FES tracking if still running
 
 cd $sourcedir
 rsync -a $scratch_dir/ .
@@ -314,6 +341,6 @@ rm -r $scratch_dir
 if [ $mdrun_exit_code -eq 0 ]; then
     echo "$(date): All walkers completed successfully."
 else
-    echo "One or more walkers failed with exit code
+    echo "One or more walkers failed with exit code $mdrun_exit_code"
 fi
 exit $mdrun_exit_code
