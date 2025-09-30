@@ -1,9 +1,11 @@
-#!/usr/bin/env python3
+#!/lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/kgcnn_new/bin/python
 # Gets a trajectory and a topology, checks the last frame for explosion indefinitely
 # Breaks the loop if explosion is detected
 import argparse
 import os
 import time
+import shutil
+import sys
 from typing import Tuple, List, Optional
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -15,7 +17,7 @@ import numpy as np
 
 MAX_WAIT_TIME_INITIALIZATION = 120 # seconds to wait for initialization
 SLEEP_TIME = 30 # seconds to sleep between checks
-EXPLOSION_THRESHOLD = 4.0 # Angstroms, threshold for explosion detection
+EXPLOSION_THRESHOLD = 2.5 # Angstroms, threshold for explosion detection
 DEFAULT_BASENAME = "run"
 DEFAULT_TRAJECTORY = "{}.xtc"
 DEFAULT_TOPOLOGY = "{}.tpr"
@@ -74,17 +76,30 @@ def validate_args(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"Topology file {args.topology} does not exist.")
     
 def observe_trajectory(trajectory: str, topology: str) -> bool:
-    universe: mda.Universe = mda.Universe(topology, trajectory)
+    # temp_trajectory = "temp_trajectory.xtc"
+    try:
+    #     # Create a copy of the trajectory to avoid issues with incomplete writes
+    #     shutil.copy2(trajectory, temp_trajectory)
+    #     universe: mda.Universe = mda.Universe(topology, temp_trajectory)
+        universe: mda.Universe = mda.Universe(topology, trajectory)
+    except (OSError, AttributeError) as e:
+        # If the trajectory is being written to, it might be incomplete
+        # Assume no explosion in this case
+        return False
+    if universe.trajectory.n_frames < 2:
+        # Not enough frames to compare, assume no explosion
+        return False
+    last_frame: mda.coordinates.base.Timestep = universe.trajectory[-2]  # Second last frame, as last might be still being written
     all_atoms: mda.AtomGroup = universe.select_atoms("all")
     all_atoms.unwrap()  # Unwrap the atoms to avoid periodic boundary issues
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(all_atoms)
-    last_frame: mda.coordinates.base.Timestep = universe.trajectory[-1]
     bond_distances = mda.lib.distances.calc_bonds(
         all_atoms.positions[unique_edge_indices[:, 0]],
         all_atoms.positions[unique_edge_indices[:, 1]],
         box=universe.dimensions
     )
     explosion_detected = np.any(bond_distances > EXPLOSION_THRESHOLD)
+    # os.remove(temp_trajectory)
     return explosion_detected
 
 def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -124,11 +139,11 @@ def main() -> None:
     while True:
         explosion_detected = observe_trajectory(args.trajectory, args.topology)
         if explosion_detected:
-            print("Explosion detected in the last frame of the trajectory.")
-            break
+            print("Explosion detected in the last frame of the trajectory.", file=sys.stderr)
+            sys.exit(1)
         elif args.once:
-            print("No explosion detected in the last frame of the trajectory. Exiting.")
-            break
+            print("No explosion detected in the last frame of the trajectory.")
+            sys.exit(0)
         else:
             time.sleep(SLEEP_TIME)
 
