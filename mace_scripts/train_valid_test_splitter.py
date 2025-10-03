@@ -132,6 +132,10 @@ def validate_args(args):
                 
         if args.num_samples < 1:
             raise ValueError("Number of samples must be at least 1")
+        
+        if args.output_file is None:
+            base, ext = os.path.splitext(args.train_file)
+            args.output_file = f"{base}_subsampled_{args.num_samples}{ext}"
             
     return args
 
