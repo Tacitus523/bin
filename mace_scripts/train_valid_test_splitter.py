@@ -101,7 +101,7 @@ def validate_args(args):
         if not os.path.exists(os.path.join(args.data_folder, args.geom_file)):
             raise FileNotFoundError(f"Geometry file {args.geom_file} does not exist in {args.data_folder}")
         if not os.path.exists(os.path.join(args.data_folder, args.sources_file)):
-            print(f"WARNING: Sources file {args.sources_file} does not exist in {args.data_folder}. Not splitting the sources file.")
+            print(f"WARNING: Sources file {DATA_SOURCES_FILE} does not exist in {args.data_folder}. Not splitting the sources file.")
             args.sources_file = None
             args.train_sources_file = None
             args.valid_sources_file = None
