@@ -25,6 +25,7 @@ then
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/run/OpenBLAS-0.3.10/lib"
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/run/plumed-2.5.1-openblas/lib"
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib"
+    export LD_LIBRARY_PATH="/usr/local/run/libatlas3-base-3.10.3:$LD_LIBRARY_PATH" # Requiered for okd libblas3
 else
     echo "Unknown host: $SGE_O_HOST. Cannot set environment."
     exit 1
