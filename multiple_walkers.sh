@@ -141,23 +141,6 @@ set -o errexit   # (or set -e) cause batch script to exit immediately when a com
 set -o pipefail  # cause batch script to exit immediately also when the command that failed is embedded in a pipeline
 set -o nounset   # (or set -u) causes the script to treat unset variables as an error and exit immediately
 
-# Cleanup function for graceful exit
-function cleanup() {
-    local exit_code=$?
-    echo "Cleaning up on exit (code: $exit_code)"
-    if [ -n "${scratch_dir:-}" ] && [ -d "$scratch_dir" ]; then
-        echo "Copying results back from $scratch_dir"
-        cd "$sourcedir" 2>/dev/null || true
-        rsync -a "$scratch_dir/" . 2>/dev/null || true
-        rm -rf "$scratch_dir" 2>/dev/null || true
-    fi
-    exit $exit_code
-}
-
-# Set trap for cleanup
-trap cleanup EXIT INT TERM
-
-
 # Handles append identification and append command generation.
 # Checks if HILLS files are present, if WALKER_* folders and if .cpt files are present.
 function generate_append_command() {
@@ -282,24 +265,70 @@ function run_mdrun() {
     local mdrun_args="$@"
     basename_tpr=$(basename $tpr_file .tpr)
 
-    cd "WALKER_$walker_id"
     if [ $walker_id -eq 0 ]
     then
         echo "Starting walker $walker_id at $(date)"
         $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args
+        return_code=$?
     else
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args &>> mdrun.out
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args >> mdrun.log 2>&1
+        return_code=$?
     fi
-    echo "Finished walker $walker_id at $(date)"
+
+    if [ $return_code -ne 0 ]; then
+        echo "Walker $walker_id failed with exit code $return_code at $(date)"
+    else
+        echo "Walker $walker_id completed successfully at $(date)"
+    fi
+    return $return_code
 }
-export gmx_command
-export -f run_mdrun
-parallel --line-buffer -j $N_WALKER run_mdrun {} $tpr_file $plumed_command $append_command ::: $(seq 0 $((N_WALKER-1))) &
+# export gmx_command
+# export -f run_mdrun
+# export parent_pid=$$
+# parallel --line-buffer -j $N_WALKER run_mdrun {} $tpr_file $plumed_command $append_command ::: $(seq 0 $((N_WALKER-1))) &
+# parallel_pid=$!
+
+# for i in `seq 0 $((N_WALKER-1))`
+# do
+#     cd WALKER_$i/
+#     run_mdrun $i $tpr_file $plumed_command $append_command &
+#     cd ..
+# done
+
+function start_runs() {
+    local tpr_file=$1
+    shift
+    local mdrun_args="$@"
+
+    pids=()
+    for i in `seq 0 $((N_WALKER-1))`
+    do
+        cd WALKER_$i/
+        run_mdrun $i $tpr_file $mdrun_args &
+        pids+=($!)
+        cd ..
+    done
+
+    wait
+
+    exit_code=0
+    for pid in "${pids[@]}"; do
+        wait $pid
+        pid_exit_code=$?
+        if [ $pid_exit_code -ne 0 ]; then
+            exit_code=$pid_exit_code
+        fi
+    done
+    return $exit_code
+}
+
+start_runs $tpr_file $plumed_command $append_command &
 mdrun_pid=$!
 
 track_fes_progress &
 track_pid=$!
 
+#wait $parallel_pid # Wait for all walkers to finish, allowing trap to handle cleanup on failure
 wait $mdrun_pid # Wait for all walkers to finish, allowing trap to handle cleanup on failure
 mdrun_exit_code=$?
 kill $track_pid || true # Stop the FES tracking if still running
