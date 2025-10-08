@@ -331,7 +331,7 @@ track_pid=$!
 #wait $parallel_pid # Wait for all walkers to finish, allowing trap to handle cleanup on failure
 wait $mdrun_pid # Wait for all walkers to finish, allowing trap to handle cleanup on failure
 mdrun_exit_code=$?
-kill $track_pid || true # Stop the FES tracking if still running
+kill $track_pid 2>/dev/null || true # Stop the FES tracking if still running
 
 cd $sourcedir
 rsync -a $scratch_dir/ .

@@ -57,8 +57,8 @@ if [ -z "$SLURM_JOB_ID" ]
 then
     eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER -m $model_file)
     echo "Submitted evaluation job with ID: $eval_output"
-    plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
-    echo "Submitted plot job with ID: $plot_output"
+    # plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
+    # echo "Submitted plot job with ID: $plot_output"
     exit
 fi
 
@@ -71,4 +71,25 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
         --configs="$test_file" \
         --model="$model_file" \
         --output="$OUTPUT_FILE" \
-        --device="cuda" 
+        --device="cuda"
+eval_exit_status=$?
+
+if [ $eval_exit_status -ne 0 ]
+then
+    echo "Evaluation failed with exit status $eval_exit_status" >&2
+    exit $eval_exit_status
+else
+    echo "Evaluation completed successfully: $(date)"
+fi
+echo "Output written to: $OUTPUT_FILE"
+
+echo "Starting plot generation: $(date)"
+$PLOT_SCRIPT -g $OUTPUT_FILE
+plot_exit_status=$?
+if [ $plot_exit_status -ne 0 ]
+then
+    echo "Plot generation failed with exit status $plot_exit_status" >&2
+    exit $plot_exit_status
+else
+    echo "Plot generation completed successfully: $(date)"
+fi

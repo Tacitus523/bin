@@ -6,7 +6,6 @@
 #SBATCH --output=train.out
 #SBATCH --error=train.err
 #SBATCH --gres=gpu:1
-#SBATCH --oversubscribe # Allow sharing of resources
 
 module load compiler/gnu/10.2
 module load devel/cuda/12.3
@@ -21,6 +20,8 @@ VALID_FILE="valid.extxyz"
 TEST_FILE="test.extxyz"
 
 MODEL_NAME="QEq"
+
+EVAL_SCRIPT="$(which submit_eval_mace_qEq.sh)"
 
 # Atomization energies for the DFT and DFTB methods, deprecated since config.yaml
 DFT_E0s='{1: -13.575035506869515, 6: -1029.6173622986487, 7: -1485.1410643783852, 8: -2042.617308911902, 16: -10832.265333248919}'
@@ -61,6 +62,9 @@ then
     echo "Train file: $train_file"
     echo "Valid file: $valid_file"
     echo "Test file: $test_file"
+else
+    test_file=$(grep "test_file:" $config_file | awk '{print $2}')
+    data_folder=$(dirname $test_file)
 fi
 
 python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/lukas_train.py  \
@@ -72,10 +76,40 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
 
 training_exit_status=$?
 
-echo "Finished training: $(date)"
+if [ $training_exit_status -ne 0 ]
+then
+    echo "Training failed with exit status $training_exit_status" >&2
+    exit $training_exit_status
+else
+    echo "Training completed successfully: $(date)"
+fi
 
-# # Convert the model to a scripted model
-# if [ $training_exit_status -eq 0 ]
-# then
-#     convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
-# fi
+# Evaluate the trained model
+if ! [ -x "$EVAL_SCRIPT" ]
+then
+    echo "Evaluation script not found or not executable: $EVAL_SCRIPT" >&2
+    exit 1
+fi
+
+if ! [ -f "$test_file" ]
+then
+    echo "Test file not found: $test_file" >&2
+    echo "Skipping evaluation." >&2
+    exit 1
+fi
+
+model_file="${MODEL_NAME}_swa_compiled.pt"
+if ! [ -f "$model_file" ]
+then
+    echo "SWA model file not found: $model_file" >&2
+    echo "Falling back to regular model file." >&2
+    model_file="${MODEL_NAME}_compiled.pt"
+fi
+if ! [ -f "$model_file" ]
+then
+    echo "Model file not found: $model_file" >&2
+    echo "Skipping evaluation." >&2
+    exit 1
+fi
+
+$EVAL_SCRIPT -m $model_file -d $data_folder

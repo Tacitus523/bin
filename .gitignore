@@ -1,6 +1,7 @@
 Orca5*
 bazel*
 jq
+yq
 test.ipynb
 doxygen*
 *.pyc

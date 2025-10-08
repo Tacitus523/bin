@@ -2,7 +2,7 @@
 
 EMAIL=$MY_MAIL
 
-N_WALKER=16 # Also has to be adjusted in plumed.dat
+export N_WALKER=16 # Also has to be adjusted in plumed.dat
 WALKER_SCRIPT="multiple_walkers_justus.sh"
 
 print_usage() {
@@ -57,4 +57,6 @@ done
 
 job_name=$(basename $tpr_file .tpr)_metaD
 
-sbatch $email_flag --ntasks-per-node=$N_WALKER --job-name=$job_name $WALKER_SCRIPT -t $tpr_file -p $plumed_file "${additional_files[@]}"
+#N_TASKS=$((N_WALKER * 2)) # Run + observation
+N_TASKS=$N_WALKER # Only run, observation is lightweight
+sbatch $email_flag --ntasks-per-node=$N_TASKS --job-name=$job_name $WALKER_SCRIPT -t $tpr_file -p $plumed_file "${additional_files[@]}"

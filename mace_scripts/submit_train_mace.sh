@@ -40,6 +40,12 @@ then
 fi
 
 config_file=$(readlink -f $CONFIG_FILE)
+if [ ! -f "$config_file" ]
+then
+    echo "Config file does not exist: $config_file" >&2
+    exit 1
+fi
+
 if [ -n "$DATA_FOLDER" ]
 then
     if [ ! -d "$DATA_FOLDER" ]
@@ -69,10 +75,20 @@ fi
 
 for ((i=0; i<NUM_SUBMISSIONS; i++))
 do
+    if [ -n "$data_folder" ]
+    then
+        split_data_folder="$data_folder/split_$i"
+        if [ ! -d "$split_data_folder" ]
+        then
+            echo "Data folder does not exist: $split_data_folder" >&2
+            exit 1
+        fi
+        split_data_folder_flag="-d $split_data_folder"
+    fi
+
     submission_dir="model_$i"
-    split_data_folder="$data_folder/split_$i"
     mkdir -p $submission_dir
     cd $submission_dir
-    sbatch --job-name="${job_name}_$i" $email_flag $TRAIN_SCRIPT -d $split_data_folder -c $config_file
+    sbatch --job-name="${job_name}_$i" $email_flag $TRAIN_SCRIPT $split_data_folder_flag -c $config_file
     cd ..
 done
