@@ -26,6 +26,41 @@ then
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/run/plumed-2.5.1-openblas/lib"
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib"
     export LD_LIBRARY_PATH="/usr/local/run/libatlas3-base-3.10.3:$LD_LIBRARY_PATH" # Requiered for okd libblas3
+    total_cores=$(nproc)
+    cores=$((total_cores / 4)) # assume 4 GPUs per node, fair share of cores
+    case $QUEUE in
+        gtx*a)
+            export CUDA_VISIBLE_DEVICES=0
+            gpu_id=0
+            core_start=$((0*cores))
+            core_end=$((1*cores-1))
+            ;;
+        gtx*b)
+            export CUDA_VISIBLE_DEVICES=1
+            gpu_id=1
+            core_start=$((1*cores))
+            core_end=$((2*cores-1))
+            ;;
+        gtx*c)
+            export CUDA_VISIBLE_DEVICES=2
+            gpu_id=2
+            core_start=$((2*cores))
+            core_end=$((3*cores-1))
+            ;;
+        gtx*d)
+            export CUDA_VISIBLE_DEVICES=3
+            gpu_id=3
+            core_start=$((3*cores))
+            core_end=$((4*cores-1))
+            ;;
+        *)
+            echo "Error: Unknown queue $QUEUE"
+            echo "       This script only works for queues a, b, c, d!"
+            echo
+            exit -1
+            ;;
+    esac
+    export mdrun_resource_flags="-gpu_id $gpu_id -ntomp $cores -pin on -pinoffset $core_start -pinstride 1"
 else
     echo "Unknown host: $SGE_O_HOST. Cannot set environment."
     exit 1
@@ -269,10 +304,10 @@ function run_mdrun() {
     if [ $walker_id -eq 0 ]
     then
         echo "Starting walker $walker_id at $(date)"
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args $mdrun_resource_flags
         return_code=$?
     else
-        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args >> mdrun.log 2>&1
+        $gmx_command -quiet mdrun -deffnm $basename_tpr -s $tpr_file $mdrun_args $mdrun_resource_flags >> mdrun.log 2>&1
         return_code=$?
     fi
 
