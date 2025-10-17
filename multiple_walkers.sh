@@ -245,6 +245,10 @@ function generate_append_command() {
 function track_fes_progress {
     while true; do
         sleep 14400 # Check every 4 hours
+        if [ ! -f HILLS.0 ]; then
+            echo "No HILLS files found, not tracking FES progress."
+            return 0
+        fi
         date +"%Y-%m-%d %H:%M:%S - Tracking FES progress"
         wc -l HILLS.*
         /home/lpetersen/bin/SUM_HILLS
@@ -352,8 +356,6 @@ function start_runs() {
         pids+=($!)
         cd ..
     done
-
-    wait
 
     exit_code=0
     for pid in "${pids[@]}"; do
