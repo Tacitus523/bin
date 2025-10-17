@@ -8,8 +8,8 @@
 
 pythonfile=$1
 pythonfile=${pythonfile#"/srv/nfs"}
-
-config_path="$2" # optional
+shift  # Remove the first argument (python file) from the list of options
+all_opts="$*" # Collect all options in a variable
 
 # Which GPU?
 #gpu_id=$( echo $QUEUE | awk '/a/ {print 0} /b/ {print 1}  /c/ {print 2}  /d/ {print 3}')
@@ -56,6 +56,7 @@ echo "# Core range: " $core_start "-" $core_end
 echo "# Job ID: " $JOB_ID
 echo "# gpuid: " $gpu_id
 echo "# Python file: " $pythonfile
+echo "# Options: " $all_opts
 
 # In case of external API usage I saved some API-keys here
 if [ -f ~/.api_keys ]; then
@@ -72,14 +73,6 @@ export PATH="/home/lpetersen/anaconda_interpreter/bin:$PATH"
 source /home/lpetersen/anaconda_interpreter/etc/profile.d/conda.sh
 conda activate kgcnn_new
 
-# Deprecated CUDA setting on server
-# export XLA_FLAGS="--xla_gpu_cuda_data_dir=/usr/lib/cuda"
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/run/cuda/lib
-
-# Even older deprecated CUDA setting on server
-#CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))
-#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/:$CUDNN_PATH/lib
-
 # set OpenMP parallel threads variable:
 export OMP_NUM_THREADS=$cores
 
@@ -88,12 +81,7 @@ ulimit -s unlimited
 # Start time of calculation
 start=$( date "+%s" )
 
-if [ -z "$config_path" ]
-then 
-    taskset -c $core_start-$core_end python3 $pythonfile -g $gpu_id
-else
-    taskset -c $core_start-$core_end python3 $pythonfile -g $gpu_id -c $config_path
-fi
+taskset -c $core_start-$core_end python3 $pythonfile -g $gpu_id $all_opts
 
 # End time of calculation
 end=$( date "+%s" )

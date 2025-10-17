@@ -1,66 +1,74 @@
 # Submit the python script to the queue and gives it the name of the current folder in the queue
 # Use the -s flag to keep this process running until it finishes and sync training data to wandb
 
-#python_script="/home/lpetersen/dftb-nn/Behler_4th_Gen.py"
-#python_script="/home/lpetersen/kgcnn_fork/hdnnp4th.py"
-#python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th.py"
-#python_script="/home/lpetersen/kgcnn_fork/hdnnp2nd.py"
-#python_script="/home/lpetersen/kgcnn_fork/force_hdnnp4th_hyp_param_search.py"
-#python_script="/home/lpetersen/kgcnn_fork/charge_hyp_param_search.py"
-#python_script="/home/lpetersen/kgcnn_fork/test_load_model.py"
-#python_script="/home/lpetersen/kgcnn_fork/retrieve_trial.py"
-python_script="/home/lpetersen/kgcnn_fork/calc_prediction_std.py"
+default_python_script="/home/lpetersen/kgcnn_fork/calc_prediction_std.py"
 
 queue_script="/home/lpetersen/bin/qpython.sh"
 
 print_usage() {
-  echo "Usage: $0 -p python_script [-c config_path] [-s]"
-  echo "  -p python_script : Path to the python script to run (required)"
-  echo "  -c config_path   : Path to the configuration file (optional)"
+  echo "Usage: $0 python_script [-s] [-- additional_flags_and_args]"
+  echo "  python_script : Path to the python script to run (required)"
   echo "  -s               : Keep the process running to sync wandb data (optional)"
+  echo "  -- additional flags and args : Additional flags and arguments to pass to the python script (optional)"
 }
 
 sync=false
-config_path=""
-while getopts ':p:c:s' flag; do
-  case $flag in
-    p)
-      python_script="$OPTARG"
-      echo "Using Python file: $python_script";;
-    s) sync=true ;;
-    c)
-      config_path="$OPTARG"
-      echo "Using configs: $config_path";;
-    \?)
-      echo "Invalid option: -$OPTARG"
+additional_args=""
+
+# Process all arguments to separate flags from script name and additional args
+while [ $# -gt 0 ]; do
+  case $1 in
+    -s) sync=true ;;
+    -h)
       print_usage
-      exit 1;;
-    :)
-      echo "Option -$OPTARG requires an argument."
+      exit 0
+      ;;
+    --)
+      shift
+      additional_args="$*"
+      echo "Additional arguments: $additional_args"
+      break
+      ;;
+    -*)
+      echo "Error: Unknown option $1"
       print_usage
-      exit 1;;
-    *) print_usage
-       exit 1 ;;
+      exit 1
+      ;;
+    *)
+      if [ -z "$python_script" ]; then
+        python_script="$1"
+        shift
+      else
+        echo "Error: Multiple python scripts specified. Please provide only one."
+        print_usage
+        exit 1
+      fi
+      ;;
   esac
 done
 
-if [ -z "$config_path" ]
-then echo "INFO: Did not get a config_file"
+if [ -z "$python_script" ]; then
+  python_script=$default_python_script
 fi
+if [ ! -f "$python_script" ]; then
+  echo "Error: Python file '$python_script' does not exist."
+  exit 1
+fi
+echo "Submitting python script: $python_script"
 
-if [ -f train.err ]
-then rm train.err
-fi
+# if [ -f train.err ]
+# then rm train.err
+# fi
 
-if [ -f train.out ]
-then rm train.out
-fi
+# if [ -f train.out ]
+# then rm train.out
+# fi
 
 name=`basename $PWD`
-job_id=$(qsub -terse -N $name $queue_script $python_script $config_path)
+job_id=$(qsub -terse -N $name $queue_script $python_script $additional_args)
 echo "Submitted job $job_id to queue as $name"
 
-echo `date`" $PWD" >> /data/$USER/checklist.txt
+echo `date`" $job_id $name" >> /data/$USER/checklist.txt
 
 # for wandb sync
 if $sync
