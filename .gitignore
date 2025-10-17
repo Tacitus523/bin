@@ -6,3 +6,5 @@ test.ipynb
 doxygen*
 *.pyc
 .vscode/
+HDNNPPlot.py
+AMPPlot.py
