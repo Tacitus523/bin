@@ -6,5 +6,5 @@ test.ipynb
 doxygen*
 *.pyc
 .vscode/
-HDNNPPlot.py
+KGCNNPlot.py
 AMPPlot.py
