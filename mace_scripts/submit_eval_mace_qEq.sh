@@ -11,7 +11,7 @@
 DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
 TEST_FILE="test.extxyz"
 MODEL_FILE="QEq_swa.model"
-OUTPUT_FILE="geoms_mace.extxyz"
+OUTPUT_FILE="model_geoms.extxyz"
 
 print_usage() {
     echo "Usage: $0 [-d data_folder]" >&2
@@ -52,13 +52,10 @@ echo "Using model file: $model_file"
 
 # Check if the script is being run in a SLURM job
 # If not, submit it as a job
-# and set up the job dependency for the plot script
 if [ -z "$SLURM_JOB_ID" ]
 then
     eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER -m $model_file)
     echo "Submitted evaluation job with ID: $eval_output"
-    # plot_output=$(sbatch --dependency=afterok:$eval_output --kill-on-invalid-dep=yes --parsable $PLOT_SCRIPT -g $OUTPUT_FILE)
-    # echo "Submitted plot job with ID: $plot_output"
     exit
 fi
 

@@ -8,6 +8,7 @@
 #SBATCH --error=plot.out
 
 import argparse
+import json
 from typing import Dict, List, Optional, Union
 from ase.atoms import Atoms
 from ase.io import read
@@ -16,8 +17,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
+from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error, mean_squared_error
 
-MACE_GEOMS: str = "geoms_mace.extxyz"  # Should already contain reference and MACE data
+GEOMS: str = "model_geoms.extxyz"  # Should already contain reference and model data
 DATA_SOURCES_FILE: Optional[str] = None  # File containing the data source of each entry
 
 PLOT_CHARGES: bool = True
@@ -33,13 +35,13 @@ REF_ENERGY_KEY: Optional[str] = "ref_energy"
 REF_FORCES_KEY: Optional[str] = "ref_force"
 REF_CHARGES_KEY: Optional[str] = "ref_charge"
 REF_DMA_KEY: Optional[str] = "ref_multipoles"
-PRED_ENERGY_KEY: Optional[str] = "MACE_energy"
-PRED_FORCES_KEY: Optional[str] = "MACE_forces"
-PRED_CHARGES_KEY: Optional[str] = "MACE_charges"
-PRED_DMA_KEY: Optional[str] = "MACE_multipoles"
-PRED_ENEG_KEY: Optional[str] = "MACE_eneg"
-PRED_ESP_KEY: Optional[str] = "MACE_esp"
-PRED_ENEG_ESP_KEY: Optional[str] = "MACE_eneg_esp"
+PRED_ENERGY_KEY: Optional[str] = "pred_energy"
+PRED_FORCES_KEY: Optional[str] = "pred_forces"
+PRED_CHARGES_KEY: Optional[str] = "pred_charges"
+PRED_DMA_KEY: Optional[str] = "pred_multipoles"
+PRED_ENEG_KEY: Optional[str] = "pred_eneg"
+PRED_ESP_KEY: Optional[str] = "pred_esp"
+PRED_ENEG_ESP_KEY: Optional[str] = "pred_eneg_esp"
 
 # Units for plotting
 ENERGY_UNIT: str = "eV"
@@ -51,13 +53,13 @@ ESP_UNIT: str = r"$\frac{eV}{e}$"
 ENEG_ESP_UNIT: str = r"$\frac{eV}{e}$"
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plotting script for MACE data")
+    parser = argparse.ArgumentParser(description="Plotting script for model data")
     parser.add_argument(
         "-g",
         "--geoms",
         type=str,
-        default=MACE_GEOMS,
-        help="Path to the geoms file, default: %s" % MACE_GEOMS,
+        default=GEOMS,
+        help="Path to the geoms file, default: %s" % GEOMS,
     )
     parser.add_argument(
         "-s",
@@ -99,21 +101,21 @@ def parse_args() -> argparse.Namespace:
         "--eneg",
         action="store_true",
         default=PLOT_ENEG,
-        help="Plot MACE eneg data, default: %s" % PLOT_ENEG,
+        help="Plot model eneg data, default: %s" % PLOT_ENEG,
     )
     parser.add_argument(
         "-esp",
         "--esp",
         action="store_true",
         default=PLOT_ESP,
-        help="Plot MACE esp data, default: %s" % PLOT_ESP,
+        help="Plot model esp data, default: %s" % PLOT_ESP,
     )
     parser.add_argument(
         "-eneg_esp",
         "--eneg_esp",
         action="store_true",
         default=PLOT_ENEG_ESP,
-        help="Plot MACE eneg_esp data, default: %s" % PLOT_ENEG_ESP,
+        help="Plot model eneg_esp data, default: %s" % PLOT_ENEG_ESP,
     )
     args = parser.parse_args()
     return args
@@ -159,6 +161,7 @@ def extract_data(
         result["charges"] = np.array(ref_charges)
     if len(ref_DMA) > 0:
         result["DMA"] = np.array(ref_DMA)
+    result["n_atoms"] = np.array([len(m) for m in mols])
     result["elements"] = np.array(ref_elements)
 
     for key, value in keyword_kwargs.items():
@@ -167,6 +170,72 @@ def extract_data(
             [extra_property.extend(m.arrays[value].flatten()) for m in mols if value in m.arrays]
             result[key] = np.array(extra_property)
     return result
+
+def create_metrics_collection(
+    ref_data: Dict[str, np.ndarray],
+    pred_data: Dict[str, np.ndarray],
+    ) -> Dict[str, Dict[str, float]]:
+    """
+    Create metrics collection similar to the evaluate function in train.py
+    
+    Args:
+        ref_data: Dictionary containing reference data
+        pred_data: Dictionary containing predicted data
+        
+    Returns:
+        Dictionary with metrics for train/test/val splits
+    """
+    
+    metrics_collection: Dict[str, Dict[str, float]] = {"train": {}, "test": {}, "val": {}}
+    
+    # For now, put all metrics in "test" since we don't have train/val split info
+    metrics = {}
+
+    # Energy metrics
+    if "energy" in ref_data and "energy" in pred_data:
+        delta_e = ref_data["energy"] - pred_data["energy"]
+        metrics["mae_e"] = mean_absolute_error(ref_data["energy"], pred_data["energy"])
+        metrics["rmse_e"] = root_mean_squared_error(ref_data["energy"], pred_data["energy"])
+        metrics["r2_e"] = r2_score(ref_data["energy"], pred_data["energy"])
+        metrics["q95_e"] = np.percentile(np.abs(delta_e), 95)
+
+        delta_e_per_atom = delta_e / ref_data["n_atoms"]
+        metrics["mae_e_per_atom"] = np.mean(np.abs(delta_e_per_atom))
+        metrics["rmse_e_per_atom"] = np.sqrt(np.mean(delta_e_per_atom**2))
+
+    # Forces metrics
+    if "forces" in ref_data and "forces" in pred_data:
+        delta_f = ref_data["forces"] - pred_data["forces"]
+        metrics["mae_f"] = mean_absolute_error(ref_data["forces"], pred_data["forces"])
+        metrics["rmse_f"] = root_mean_squared_error(ref_data["forces"], pred_data["forces"])
+        metrics["r2_f"] = r2_score(ref_data["forces"], pred_data["forces"])
+        
+        # Relative metrics
+        metrics["q95_f"] = np.percentile(np.abs(delta_f), 95)
+
+        f_norm = np.linalg.norm(ref_data["forces"])
+        if f_norm > 0:
+            metrics["rel_mae_f"] = np.mean(np.abs(delta_f)) / (np.mean(np.abs(ref_data["forces"])) + 1e-8) * 100
+            metrics["rel_rmse_f"] = np.sqrt(np.mean(delta_f**2)) / (np.sqrt(np.mean(ref_data["forces"]**2)) + 1e-8) * 100
+
+    # Charges metrics
+    if "charges" in ref_data and "charges" in pred_data:
+        delta_q = ref_data["charges"] - pred_data["charges"]
+        metrics["mae_q"] = mean_absolute_error(ref_data["charges"], pred_data["charges"])
+        metrics["rmse_q"] = root_mean_squared_error(ref_data["charges"], pred_data["charges"])
+        metrics["r2_q"] = r2_score(ref_data["charges"], pred_data["charges"])
+        metrics["q95_q"] = np.percentile(np.abs(delta_q), 95)
+    
+    # Store in test category (could be split into train/val/test if that info is available)
+    metrics_collection["test"] = metrics
+    
+    # Save metrics to JSON file
+    output_metrics_file = "evaluation_metrics.json"
+    with open(output_metrics_file, "w") as f:
+        json.dump(metrics_collection, f, indent=2)
+    print(f"\nMetrics saved to: {output_metrics_file}\n")
+
+    return metrics_collection
 
 def plot_data(
     ref_data: Dict[str, np.ndarray],
@@ -179,7 +248,7 @@ def plot_data(
     filename: str,
 ) -> None:
     """
-    Create a scatter plot comparing reference and MACE values.
+    Create a scatter plot comparing reference and model values.
     
     Args:
         ref_data: Dictionary containing reference data
@@ -192,8 +261,8 @@ def plot_data(
         filename: Output filename for the plot
     """
     df: pd.DataFrame = create_dataframe(ref_data, pred_data, key, sources, x_label, y_label)
-    rmse: float = np.sqrt(np.mean((df[x_label] - df[y_label]) ** 2))
-    r2: float = df[x_label].corr(df[y_label], method="pearson") ** 2
+    rmse: float = root_mean_squared_error(df[x_label], df[y_label])
+    r2: float = r2_score(df[x_label], df[y_label])
 
     print(f"RMSE for {key}: {rmse:.2f} {unit}")
     print(f"R² for {key}: {r2:.4f}")
@@ -325,7 +394,6 @@ def plot_boxplot(
         print(f"Warning: Neither atoms.info nor atoms.arrays contain the property: {property_keys[0]}")
         print("Skipping boxplot creation.")
         return
-        raise ValueError(f"Neither atoms.info nor atoms.arrays contain the property: {property_keys[0]}")
     if is_info:
         for key in property_keys:
             if key not in atoms[0].info:
@@ -392,77 +460,79 @@ def main() -> None:
     else:
         pred_eneg_esp_key = None
 
-    mace_mols: List[Atoms] = read(args.geoms, format="extxyz", index=":")
+    mols: List[Atoms] = read(args.geoms, format="extxyz", index=":")
     ref_data: Dict[str, np.ndarray] = extract_data(
-        mace_mols, ref_energy_key, ref_forces_key, ref_charges_key, ref_dma_key
+        mols, ref_energy_key, ref_forces_key, ref_charges_key, ref_dma_key
     )
-    MACE_data: Dict[str, np.ndarray] = extract_data(
-        mace_mols, pred_energy_key, pred_forces_key, pred_charges_key, pred_dma_key,
+    model_data: Dict[str, np.ndarray] = extract_data(
+        mols, pred_energy_key, pred_forces_key, pred_charges_key, pred_dma_key,
         eneg=pred_eneg_key, esp=pred_esp_key, eneg_esp=pred_eneg_esp_key
     )
-    assert len(ref_data["energy"]) == len(mace_mols), "Number of reference data does not match the number of configurations"
-    assert len(MACE_data["energy"]) == len(mace_mols), "Number of MACE data does not match the number of configurations"
+    assert len(ref_data["energy"]) == len(mols), "Number of reference data does not match the number of configurations"
+    assert len(model_data["energy"]) == len(mols), "Number of model data does not match the number of configurations"
 
     if args.sources is not None:
         with open(args.sources, "r") as f:
             sources: np.ndarray = np.array([line.strip() for line in f.readlines()])
-        assert len(sources) == len(mace_mols), f"Number of sources does not match the number of configurations: {len(sources)} != {len(mace_mols)}"
+        assert len(sources) == len(mols), f"Number of sources does not match the number of configurations: {len(sources)} != {len(mols)}"
     else:
         sources = None
 
-    for name, data in zip(["Ref", "MACE"], [ref_data, MACE_data]):
+    for name, data in zip(["Ref", "Model"], [ref_data, model_data]):
         for key, value in data.items():
             # Skip non-numeric data
             if isinstance(value, np.ndarray) and value.dtype in (np.float32, np.float64, np.int32, np.int64):
                 print(f"{name} {key}: {value.shape} Min Max: {np.min(value): .1f} {np.max(value): .1f}")
 
+    metrics_collection = create_metrics_collection(ref_data, model_data) 
+
     # Use the plot function for each data type
     if args.energy:
         plot_data(
             ref_data,
-            MACE_data,
+            model_data,
             "energy",
             sources,
             "Ref Energy",
-            "Mace Energy",
+            "Model Energy",
             ENERGY_UNIT,
-            "MACEenergy.png",
+            "model_energy.png",
         )
 
     if args.forces:
         plot_data(
             ref_data,
-            MACE_data,
+            model_data,
             "forces",
             sources if sources is not None else ref_data["elements"],
             "Ref Forces",
-            "Mace Forces",
+            "Model Forces",
             FORCES_UNIT,
-            "MACEforces.png",
+            "model_forces.png",
         )
 
     if args.DMA:
         plot_data(
             ref_data,
-            MACE_data,
+            model_data,
             "DMA",
             sources,
             "Ref DMA",
-            "Mace DMA",
+            "Model DMA",
             DMA_UNIT,
-            "MACEdma.png",
+            "model_dma.png",
         )
 
     if args.charges:
         plot_data(
             ref_data,
-            MACE_data,
+            model_data,
             "charges",
             sources if sources is not None else ref_data["elements"],
             "Ref Charges",
-            "Mace Charges",
+            "Model Charges",
             CHARGES_UNIT,
-            "MACEcharges.png",
+            "model_charges.png",
         )
 
     if args.eneg or args.esp or args.eneg_esp:
@@ -478,14 +548,14 @@ def main() -> None:
             present_keys.append("eneg_esp")
             present_units.append(ENEG_ESP_UNIT)
         plot_histogram(
-            MACE_data,
+            model_data,
             present_keys,
             present_units,
-            "MACE_histogram.png",
+            "model_histogram.png",
         )
 
     plot_boxplot(
-        mace_mols,
+        mols,
         property_keys=[
             "elec_energy",
             "e_qmmm",
@@ -497,7 +567,7 @@ def main() -> None:
     )
 
     plot_boxplot(
-        mace_mols,
+        mols,
         property_keys=[
             PRED_FORCES_KEY,
             "forces_qmmm",
