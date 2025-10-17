@@ -74,7 +74,7 @@ jobname=$(basename $tpr_file .tpr) # Use the tpr file name as the job name
 
 if [ "$HOSTNAME" == "hydrogen2" ]
 then
-    qsub -N $jobname -pe nproc $N_WALKER -o $out_file -e $error_file $WALKER_SCRIPT -t $tpr_file $plumed_flag "${additional_files[@]}"
+    qsub -N $jobname -pe nproc $N_WALKER -o $out_file -e $error_file -l qu=cn $WALKER_SCRIPT -t $tpr_file $plumed_flag "${additional_files[@]}"
 elif [ "$HOSTNAME" == "tcbserver2" ]
 then
     qsub -N $jobname -v N_WALKER=$N_WALKER -o $out_file -e $error_file -l qu=gtx $WALKER_SCRIPT -t $tpr_file $plumed_flag "${additional_files[@]}"
