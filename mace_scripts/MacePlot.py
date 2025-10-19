@@ -17,18 +17,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
-from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error, mean_squared_error
+from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error
 
 GEOMS: str = "model_geoms.extxyz"  # Should already contain reference and model data
 DATA_SOURCES_FILE: Optional[str] = None  # File containing the data source of each entry
-
-PLOT_CHARGES: bool = True
-PLOT_ENERGY: bool = True
-PLOT_FORCES: bool = True
-PLOT_DMA: bool = False
-PLOT_ENEG: bool = True
-PLOT_ESP: bool = True
-PLOT_ENEG_ESP: bool = True
 
 # Keywords for extracting data
 REF_ENERGY_KEY: Optional[str] = "ref_energy"
@@ -52,6 +44,8 @@ ENEG_UNIT: str = r"$\frac{eV}{e}$"
 ESP_UNIT: str = r"$\frac{eV}{e}$"
 ENEG_ESP_UNIT: str = r"$\frac{eV}{e}$"
 
+DPI = 100
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plotting script for model data")
     parser.add_argument(
@@ -67,55 +61,6 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=DATA_SOURCES_FILE,
         help="Path to the data sources file, default: %s" % DATA_SOURCES_FILE,
-    )
-    parser.add_argument(
-        "-e",
-        "--energy",
-        action="store_false",
-        default=PLOT_ENERGY,
-        help="Plot energy data, default: %s" % PLOT_ENERGY,
-    )
-    parser.add_argument(
-        "-f",
-        "--forces",
-        action="store_false",
-        default=PLOT_FORCES,
-        help="Plot forces data, default: %s" % PLOT_FORCES,
-    )
-    parser.add_argument(
-        "-c",
-        "--charges",
-        action="store_false",
-        default=PLOT_CHARGES,
-        help="Plot charges data, default: %s" % PLOT_CHARGES,
-    )
-    parser.add_argument(
-        "-d",
-        "--DMA",
-        action="store_true",
-        default=PLOT_DMA,
-        help="Plot DMA data, default: %s" % PLOT_DMA,
-    )
-    parser.add_argument(
-        "-eneg",
-        "--eneg",
-        action="store_true",
-        default=PLOT_ENEG,
-        help="Plot model eneg data, default: %s" % PLOT_ENEG,
-    )
-    parser.add_argument(
-        "-esp",
-        "--esp",
-        action="store_true",
-        default=PLOT_ESP,
-        help="Plot model esp data, default: %s" % PLOT_ESP,
-    )
-    parser.add_argument(
-        "-eneg_esp",
-        "--eneg_esp",
-        action="store_true",
-        default=PLOT_ENEG_ESP,
-        help="Plot model eneg_esp data, default: %s" % PLOT_ENEG_ESP,
     )
     args = parser.parse_args()
     return args
@@ -137,7 +82,7 @@ def extract_data(
         if charges_keyword is not None:
             if charges_keyword == "charge":
                 ref_charges.extend(m.get_charges())
-            else:
+            elif charges_keyword in m.arrays:
                 ref_charges.extend(m.arrays[charges_keyword])
         if energy_keyword is not None:
             if energy_keyword == "energy":
@@ -149,7 +94,7 @@ def extract_data(
                 ref_forces.extend(m.get_forces().flatten())
             else:
                 ref_forces.extend(m.arrays[forces_keyword].flatten())
-        if DMA_keyword is not None:
+        if DMA_keyword is not None and DMA_keyword in m.arrays:
             AIMS_atom_multipoles = m.arrays[DMA_keyword]
             ref_DMA.extend(AIMS_atom_multipoles[:, 0])
         ref_elements.extend(m.get_chemical_symbols())
@@ -423,58 +368,21 @@ def plot_boxplot(
 
 def main() -> None:
     args: argparse.Namespace = parse_args()
-    if args.energy:
-        ref_energy_key: Optional[str] = REF_ENERGY_KEY
-        pred_energy_key: Optional[str] = PRED_ENERGY_KEY
-    else:
-        ref_energy_key = None
-        pred_energy_key = None
-    if args.forces:
-        ref_forces_key: Optional[str] = REF_FORCES_KEY
-        pred_forces_key: Optional[str] = PRED_FORCES_KEY
-    else:
-        ref_forces_key = None
-        pred_forces_key = None
-    if args.charges:
-        ref_charges_key: Optional[str] = REF_CHARGES_KEY
-        pred_charges_key: Optional[str] = PRED_CHARGES_KEY
-    else:
-        ref_charges_key = None
-        pred_charges_key = None
-    if args.DMA:
-        ref_dma_key: Optional[str] = REF_DMA_KEY
-        pred_dma_key: Optional[str] = PRED_DMA_KEY
-    else:
-        ref_dma_key = None
-        pred_dma_key = None
-    if args.eneg:
-        pred_eneg_key: Optional[str] = PRED_ENEG_KEY
-    else:
-        pred_eneg_key = None
-    if args.esp:
-        pred_esp_key: Optional[str] = PRED_ESP_KEY
-    else:
-        pred_esp_key = None
-    if args.eneg_esp:
-        pred_eneg_esp_key: Optional[str] = PRED_ENEG_ESP_KEY
-    else:
-        pred_eneg_esp_key = None
 
-    mols: List[Atoms] = read(args.geoms, format="extxyz", index=":")
+    molecules: List[Atoms] = read(args.geoms, format="extxyz", index=":")
     ref_data: Dict[str, np.ndarray] = extract_data(
-        mols, ref_energy_key, ref_forces_key, ref_charges_key, ref_dma_key
-    )
+        molecules, REF_ENERGY_KEY, REF_FORCES_KEY, REF_CHARGES_KEY, REF_DMA_KEY)
     model_data: Dict[str, np.ndarray] = extract_data(
-        mols, pred_energy_key, pred_forces_key, pred_charges_key, pred_dma_key,
-        eneg=pred_eneg_key, esp=pred_esp_key, eneg_esp=pred_eneg_esp_key
+        molecules, PRED_ENERGY_KEY, PRED_FORCES_KEY, PRED_CHARGES_KEY, PRED_DMA_KEY,
+        eneg=PRED_ENEG_KEY, esp=PRED_ESP_KEY, eneg_esp=PRED_ENEG_ESP_KEY
     )
-    assert len(ref_data["energy"]) == len(mols), "Number of reference data does not match the number of configurations"
-    assert len(model_data["energy"]) == len(mols), "Number of model data does not match the number of configurations"
+    assert len(ref_data["energy"]) == len(molecules), "Number of reference data does not match the number of configurations"
+    assert len(model_data["energy"]) == len(molecules), "Number of model data does not match the number of configurations"
 
     if args.sources is not None:
         with open(args.sources, "r") as f:
             sources: np.ndarray = np.array([line.strip() for line in f.readlines()])
-        assert len(sources) == len(mols), f"Number of sources does not match the number of configurations: {len(sources)} != {len(mols)}"
+        assert len(sources) == len(molecules), f"Number of sources does not match the number of configurations: {len(sources)} != {len(molecules)}"
     else:
         sources = None
 
@@ -484,34 +392,31 @@ def main() -> None:
             if isinstance(value, np.ndarray) and value.dtype in (np.float32, np.float64, np.int32, np.int64):
                 print(f"{name} {key}: {value.shape} Min Max: {np.min(value): .1f} {np.max(value): .1f}")
 
-    metrics_collection = create_metrics_collection(ref_data, model_data) 
+    metrics_collection = create_metrics_collection(ref_data, model_data)
 
-    # Use the plot function for each data type
-    if args.energy:
-        plot_data(
-            ref_data,
-            model_data,
-            "energy",
-            sources,
-            "Ref Energy",
-            "Model Energy",
-            ENERGY_UNIT,
-            "model_energy.png",
-        )
+    plot_data(
+        ref_data,
+        model_data,
+        "energy",
+        sources,
+        "Ref Energy",
+        "Model Energy",
+        ENERGY_UNIT,
+        "model_energy.png"
+    )
 
-    if args.forces:
-        plot_data(
-            ref_data,
-            model_data,
-            "forces",
-            sources if sources is not None else ref_data["elements"],
-            "Ref Forces",
-            "Model Forces",
-            FORCES_UNIT,
-            "model_forces.png",
-        )
+    plot_data(
+        ref_data,
+        model_data,
+        "forces",
+        sources if sources is not None else ref_data["elements"],
+        "Ref Forces",
+        "Model Forces",
+        FORCES_UNIT,
+        "model_forces.png"
+    )
 
-    if args.DMA:
+    if "DMA" in ref_data and "DMA" in model_data:
         plot_data(
             ref_data,
             model_data,
@@ -523,7 +428,7 @@ def main() -> None:
             "model_dma.png",
         )
 
-    if args.charges:
+    if "charges" in ref_data and "charges" in model_data:
         plot_data(
             ref_data,
             model_data,
@@ -555,7 +460,7 @@ def main() -> None:
         )
 
     plot_boxplot(
-        mols,
+        molecules,
         property_keys=[
             "elec_energy",
             "e_qmmm",
@@ -567,7 +472,7 @@ def main() -> None:
     )
 
     plot_boxplot(
-        mols,
+        molecules,
         property_keys=[
             PRED_FORCES_KEY,
             "forces_qmmm",
