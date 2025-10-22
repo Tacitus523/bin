@@ -1,9 +1,4 @@
-# Submit the python script to the queue and gives it the name of the current folder in the queue
-# Use the -s flag to keep this process running until it finishes and sync training data to wandb
-# Use the -c flag to submit a python file with a configuration file
-# Use the -p flag to specify the python file to run
-# Use the -e flag to send an email when the job finishes or fails
-
+#!/usr/bin/bash
 EMAIL=$MY_MAIL
 
 queue_script="$HOME/bin/qpython_justus.sh"

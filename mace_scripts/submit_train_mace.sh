@@ -16,9 +16,10 @@ print_usage() {
 }
 
 # Parse arguments
-while getopts "n:e:d:" flag
+while getopts "n:e:d:c:" flag
 do
     case $flag in
+        c) CONFIG_FILE=${OPTARG} ;;
         e) echo "option -e is deprecated, enter number of epochs directly in config file" ;;
         d) DATA_FOLDER=${OPTARG};;
         n) NUM_SUBMISSIONS=$OPTARG ;;
