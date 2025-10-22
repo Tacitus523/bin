@@ -244,6 +244,12 @@ def clean_trials(trials_df: pd.DataFrame) -> pd.DataFrame:
         return data_point
     
     trials_df = trials_df.copy().apply(layer_cleanup, axis=1)
+    
+    # Keep neuron columns as int dtype (convert NaN to nullable Int64)
+    neuron_columns = [col for col in trials_df.columns if "_neurons_" in col]
+    for col in neuron_columns:
+        trials_df[col] = trials_df[col].astype('Int64')
+    
     return trials_df
 
 def categorize_parameters(best_trials_df: pd.DataFrame, all_trials_df: pd.DataFrame) -> pd.DataFrame:
@@ -512,7 +518,7 @@ def plot_hyperband_analysis(trials_df: pd.DataFrame,
                            ) -> None:
     """Create Hyperband-specific analysis plots. These contain multiple paramters per trial."""
 
-    is_standalone = target_param_name is not None
+    do_legend = target_param_name is not None
 
     hyperparam_column_names = [col for col in trials_df.columns if col.startswith('param_')] if target_param_name is None else [target_param_name]
 
@@ -540,39 +546,64 @@ def plot_hyperband_analysis(trials_df: pd.DataFrame,
         param_df = trials_df.copy().dropna(subset=[column_name], axis=0)
         param_df = param_df.sort_values(column_name)
         clean_param_name = column_name.replace('param_', '').replace('_', ' ').title()
-        param_df["param_id"] = pd.factorize(param_df[column_name])[0] # Create parameter ID for grouping
+        
+        # Get all categories including missing ones
+        all_categories = trials_df[column_name].cat.categories if isinstance(trials_df[column_name].dtype, pd.CategoricalDtype) else sorted(trials_df[column_name].dropna().unique())
+               
+        # Create parameter ID mapping for all categories
+        param_id_mapping = {cat: idx for idx, cat in enumerate(all_categories)}
+        column_id_mapping = {idx: cat for idx, cat in enumerate(all_categories)}
+        param_df["param_id"] = param_df[column_name].map(param_id_mapping)
+        
+        # Create order for x-axis to include all categories
+        x_order = list(range(len(all_categories)))
 
-        # Box plot for all parameter types
-        sns.boxplot(x="param_id", y=metric_col, data=param_df, 
-            palette=COLORMAP_NAME_CATEGORICAL, hue=column_name, ax=ax, legend=is_standalone)
-        ax.set_title(clean_param_name if not is_standalone else None)
+        do_label_xticks=False
+        if all([len(str(category))<10 for category in all_categories]):
+            do_label_xticks = True
+
+        # Box plot with swarm plot overlay for all parameter types
+        # sns.boxplot(x=plot_column, y=metric_col, data=param_df, 
+        #     palette=COLORMAP_NAME_CATEGORICAL, hue=column_name, ax=ax, legend=do_legend)
+        sns.swarmplot(x="param_id", y=metric_col, data=param_df, hue="param_id", order=x_order,
+            palette=COLORMAP_NAME_CATEGORICAL, marker="x", linewidth=2, size=8, ax=ax, legend=do_legend)
+        ax.set_title(clean_param_name if not do_legend else None)
         ax.set_xlabel("Parameter ID")
-        ax.set_ylabel(f'Mean {SCORE_LABEL}')
+        ax.set_ylabel(SCORE_LABEL)
+        if do_label_xticks:
+            ax.set_xlabel(clean_param_name)
+            ax.set_xticks(x_order)
+            ax.set_xticklabels([column_id_mapping[idx] for idx in x_order])
 
-        if not is_standalone:
+        if not do_legend:
+            continue
+
+        if do_label_xticks:
             continue
 
         # Modify Legend
         handles, labels = ax.get_legend_handles_labels()
-        value_counts = param_df[column_name].value_counts()
-        value_counts.index = value_counts.index.astype(str)
-        is_present = value_counts[value_counts > 0].index
+        # value_counts = param_df[column_name].value_counts()
+        # value_counts.index = value_counts.index.astype(str)
+        # is_present = value_counts[value_counts > 0].index
 
         new_handles, new_labels = [], []
         
         # First, add present labels in order of appearance
         for handle, label in zip(handles, labels):
-            if label in is_present:
-                new_label = f"{label}: n={value_counts.loc[label]}"
+            #if label in is_present:
+                #new_label = f"{label}: n={value_counts.loc[label]}"
+                new_label = f"{label}: {column_id_mapping[int(label)]}"
+                handle.set_alpha(1)
                 new_handles.append(handle)
                 new_labels.append(new_label)
 
-        # Then add absent labels
-        for handle, label in zip(handles, labels):
-            if label not in is_present:
-                new_label = f"{label}: n={value_counts.loc[label]}"
-                new_handles.append(handle)
-                new_labels.append(new_label)
+        # # Then add absent labels
+        # for handle, label in zip(handles, labels):
+        #     if label not in is_present:
+        #         new_label = f"{label}: n={value_counts.loc[label]}"
+        #         new_handles.append(handle)
+        #         new_labels.append(new_label)
 
         ax.legend(new_handles, new_labels, title=clean_param_name, bbox_to_anchor=(1.05, 1), loc='upper left')
 
@@ -580,7 +611,7 @@ def plot_hyperband_analysis(trials_df: pd.DataFrame,
     for i in range(n_params, len(axes)):
         axes[i].set_visible(False)
 
-    if not is_standalone:
+    if not do_legend:
         plt.tight_layout()
     # Save plot
     filename = f"hyperparameter_analysis_{target_param_name.replace('param_', '')}.png" if target_param_name else "hyperparameter_analysis.png"
@@ -588,6 +619,7 @@ def plot_hyperband_analysis(trials_df: pd.DataFrame,
     plt.savefig(plot_path, dpi=DPI, bbox_inches='tight')
     plt.close()
 
+    # # Obsolete Barplot
     # for i, column_name in enumerate(hyperparam_column_names):
     #     ax = axes[i] if i < len(axes) else None
     #     if ax is None:
