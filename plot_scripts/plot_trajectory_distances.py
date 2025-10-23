@@ -157,18 +157,23 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
     n_bonds = len(unique_edge_indices)
 
     bond_distances_all_timesteps = []
+    times = []  # Store times in picoseconds
     for timestep in universe.trajectory:
         # Calculate the distance matrix
         bond_distances = mda.lib.distances.calc_bonds(qm_atoms.positions[unique_edge_indices[:, 0]],
                                                            qm_atoms.positions[unique_edge_indices[:, 1]],
                                                            box=universe.dimensions) # shape: (n_bonds,
         bond_distances_all_timesteps.append(bond_distances)
+        times.append(timestep.time)  # Time in ps
     
     bond_distances_all_timesteps = np.stack(bond_distances_all_timesteps, axis=0)  # shape: (n_timesteps, n_bonds)
     bond_distance_maxs = bond_distances_all_timesteps.max(axis=0) # shape: (n_bonds,)
     bond_distance_stds = bond_distances_all_timesteps.std(axis=0) # shape: (n_bonds,)
 
+    # Convert times from ps to ns 
+    #times = np.array(times) / 1e4 
 
+    time_values = np.repeat(times, n_bonds)  # Repeat each time value n_bonds times, shape: (n_timesteps * n_bonds,)
     timestep_indices = np.repeat(np.arange(n_timesteps), n_bonds) # Repeat each entry n times, shape: (n_timesteps * n_bonds,)
     bond_indices = np.tile(np.arange(n_bonds), n_timesteps) # Repeat the array n times, shape: (n_timesteps * n_bonds,)
     bond_labels = np.tile(bond_labels, n_timesteps) # shape: (n_timesteps * n_bonds,)
@@ -179,6 +184,7 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
 
     # Create a DataFrame for the bond distances
     data = {
+        "Time (ps)": time_values,
         "Time Step": timestep_indices,
         "Bond Index": bond_indices,
         "Bond Label": bond_labels,
@@ -291,8 +297,8 @@ def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_dist
         n_last_timesteps_filter = bond_distances_df["Time Step"] >= bond_distances_df["Time Step"].nlargest(N_LAST_TIMESTEPS).min()
         bond_distances_df = bond_distances_df[n_last_timesteps_filter]
 
-    sns.lineplot(data=bond_distances_df, palette="tab10", x="Time Step", y="Bond Distance", hue="Bond Label")
-    plt.xlabel("Time Step")
+    sns.lineplot(data=bond_distances_df, palette="tab10", x="Time (ps)", y="Bond Distance", hue="Bond Label")
+    plt.xlabel("Time (ps)")
     plt.ylabel("Bond Distance [Å]")
     plt.legend(title="Bonds", bbox_to_anchor=(1.05, 1))
     plt.tight_layout()
@@ -358,7 +364,7 @@ def plt_subplots(walker_dfs: pd.DataFrame) -> None:
     n_walkers = len(walker_labels)
     
     # Calculate subplot grid dimensions
-    n_cols = min(3, n_walkers)  # Maximum 3 columns
+    n_cols = min(4, n_walkers)  # Maximum 4 columns
     n_rows = (n_walkers + n_cols - 1) // n_cols  # Ceiling division
     
     # Create figure with subplots
@@ -387,7 +393,7 @@ def plt_subplots(walker_dfs: pd.DataFrame) -> None:
         ax = axes[idx]
         sns.lineplot(
             data=walker_df, 
-            x="Time Step", 
+            x="Time (ps)", 
             y="Bond Distance", 
             hue="Bond Label",
             palette="tab10",
@@ -395,7 +401,7 @@ def plt_subplots(walker_dfs: pd.DataFrame) -> None:
         )
         
         ax.set_title(f"{walker_label}")
-        ax.set_xlabel("Time Step")
+        ax.set_xlabel("Time (ps)")
         ax.set_ylabel("Bond Distance [Å]")
         # remove the legend for subplots
         ax.get_legend().remove()
