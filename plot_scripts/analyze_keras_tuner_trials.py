@@ -11,6 +11,7 @@ import seaborn as sns
 import numpy as np
 import json
 from datetime import datetime
+from matplotlib.patches import Patch
 
 # Import Keras Tuner
 try:
@@ -129,7 +130,7 @@ def calculate_trial_duration(trial_id: str, trial_start_times: Dict[str, datetim
         else:
             raise FileNotFoundError(f"Trial file not found: {trial_file}")
 
-def load_tuner_and_extract_data(directory: str, project_name: str) -> pd.DataFrame:
+def load_tuner_and_extract_data(directory: str, project_name: str) -> Optional[pd.DataFrame]:
     """Load trial data using Keras Tuner API."""
     directory_path = Path(directory)
     
@@ -313,6 +314,9 @@ def plot_grid_search_analysis(trials_df: pd.DataFrame,
 
     if target_project_name is not None:
         trials_df = trials_df[trials_df['project_name'] == target_project_name]
+        if len(trials_df) == 0:
+            print(f"Warning: No trials found for project {target_project_name}")
+            return None
 
     trials_df = trials_df.dropna(how='all', axis=1)
     trials_df = trials_df.sort_values(["project_name", "trial_id"])
@@ -340,22 +344,65 @@ def plot_grid_search_analysis(trials_df: pd.DataFrame,
             continue
 
         project_df = trials_df[trials_df["project_name"] == project_name]
+        param_cols = [col for col in project_df.columns if col.startswith("param_")]
+        param_df = project_df[param_cols].dropna(how='all', axis=1)
         clean_project_name = project_name.replace('_', ' ').title()
         #clean_metric_name = metric_col.replace('metric_', '').replace('_', ' ').title()
+
+        # Determine whether to show legend
+        do_legend = False
+        if target_project_name is not None:
+            do_legend = True
         
         # Create colors based on metric values
         colors = get_colors(metric_max, project_df[metric_col])
-        sns.barplot(x="trial_id", y=metric_col, data=project_df, ax=ax, palette=colors, hue="trial_id", legend=False)
+        sns.barplot(x="trial_id", y=metric_col, data=project_df, ax=ax, palette=colors, hue="trial_id", legend=do_legend)
         ax.set_title(clean_project_name if target_project_name is None else None)
         ax.set_xlabel('Trial ID')
         ax.set_ylabel(SCORE_LABEL)
         ax.set_ylim(0, metric_max*1.1)
+
+        if not do_legend:
+            continue
+
+        # Modify Legend
+        handles, labels = ax.get_legend_handles_labels()
+        new_handles, new_labels = [], []
+        
+        # First, add present labels in order of appearance
+        for i, (handle, label) in enumerate(zip(handles, labels)):
+            present_params = param_df.iloc[i].dropna()
+            for column_name in present_params.index:
+                if 'neuron' in column_name:
+                    present_params = present_params.astype('Int64')
+                    
+            clean_parameter_names = [param_name.replace('param_', '').replace('_', ' ').title() for param_name in present_params.index]
+            label_text = "\n".join([f"{present_params.iloc[j]}" for j, name in enumerate(clean_parameter_names)])
+            new_label = rf'$\mathbf{{Trial~{label}:}}$'+f'\n{label_text}'
+            # For shortened layer representation
+            if len(param_df.columns) > 1:
+                label_text = "["+",".join([f"{present_params.iloc[j]}" for j, column in enumerate(present_params.index) if not 'layer' in column])+"]"
+                new_label = rf'$\mathbf{{Trial~{label}:}}$'+f'{label_text}'
+            new_handles.append(Patch(facecolor='none', edgecolor='none'))
+            new_labels.append(new_label)
+
+        ax.legend(
+            new_handles, 
+            new_labels, 
+            title=clean_project_name, 
+            bbox_to_anchor=(1.05, 1), 
+            loc='upper left', 
+            handlelength=0, 
+            handletextpad=0.3, 
+            borderpad=0.5,  
+          )
     
     # Hide unused subplots
     for i in range(n_projects, len(axes)):
         axes[i].set_visible(False)
     
-    plt.tight_layout()
+    if not do_legend:
+        plt.tight_layout()
     
     # Save plot
     filename = f"hyperparameter_analysis_{project_name}.png" if target_project_name else "hyperparameter_analysis.png"
@@ -418,6 +465,13 @@ def plot_duration_analysis(trials_df: pd.DataFrame,
     max_metric = trials_df[metric_col].max()
 
     trials_df = trials_df.copy()
+
+    if target_project_name is not None:
+        trials_df = trials_df[trials_df['project_name'] == target_project_name]
+        if len(trials_df) == 0:
+            print(f"Warning: No duration data found for project {target_project_name}")
+            return
+
     if do_sort:
         trials_df = trials_df.sort_values([metric_col, "project_name", "trial_id"], ascending=[True, True, True])
     else:
@@ -452,14 +506,13 @@ def plot_duration_analysis(trials_df: pd.DataFrame,
     if len(trials_df) == 0:
         print("Warning: No valid duration data found")
         return
-
+  
     project_names = trials_df["project_name"].unique().tolist()
     n_projects = len(project_names)
-
-    verbose = target_project_name is None and n_projects > 1 # Only print project names if not analyzing a specific one
-
-    if target_project_name is not None:
-        trials_df = trials_df[trials_df['project_name'] == target_project_name]
+    
+    do_legend = True
+    if target_project_name is not None or n_projects == 1:
+        do_legend = False
     
     # Create subplots
     n_cols = min(3, n_projects)
@@ -483,12 +536,12 @@ def plot_duration_analysis(trials_df: pd.DataFrame,
         if ax is None:
             continue
 
-        project_df = create_trial_identifiers(project_df, verbose=verbose)
+        project_df = create_trial_identifiers(project_df, verbose=False)
 
         colors = get_colors(max_metric, project_df[metric_col])
         sns.barplot(x='identifier', y=real_time_key, data=project_df, 
             palette=colors, hue='identifier', legend=False, ax=ax)
-        ax.set_title(clean_project_name if verbose else None)
+        ax.set_title(clean_project_name if do_legend else None)
         ax.set_xlabel('Trial ID')
         ax.set_ylabel('Duration (minutes)')
         # ax.set_xticks(ax.get_xticks())
@@ -561,6 +614,7 @@ def plot_hyperband_analysis(trials_df: pd.DataFrame,
         do_label_xticks=False
         if all([len(str(category))<10 for category in all_categories]):
             do_label_xticks = True
+            do_legend = False
 
         # Box plot with swarm plot overlay for all parameter types
         # sns.boxplot(x=plot_column, y=metric_col, data=param_df, 
@@ -682,7 +736,7 @@ def main():
         else:
             project_names = args.project_names
     else:
-        [os.path.basename(project_name) for project_name in os.listdir(args.trial_dir) if os.path.isdir(os.path.join(args.trial_dir, project_name))]
+        project_names = [os.path.basename(project_name) for project_name in os.listdir(args.trial_dir) if os.path.isdir(os.path.join(args.trial_dir, project_name))]
 
     all_trials: List[pd.DataFrame] = []
     best_trials: List[pd.DataFrame] = []
@@ -690,10 +744,12 @@ def main():
         print(f"Project name: {project_name}")
 
         # Load trial data using Keras Tuner API
-        trials_data: pd.DataFrame = load_tuner_and_extract_data(
+        trials_data: Optional[pd.DataFrame] = load_tuner_and_extract_data(
             args.trial_dir, 
             project_name
         )
+        if trials_data is None or len(trials_data) == 0:
+            continue
 
         # Get best trials
         best_project_trials_df: pd.DataFrame = get_best_trials(
@@ -754,9 +810,9 @@ def main():
 
         print("\nCreating parameter-specific visualizations...")
         parameter_cols = [col for col in best_trials_df.columns if col.startswith('param_')]
-        for project_name in parameter_cols:
-            #print(f"\nCreating visualizations for parameter: {project_name}")
-            plot_hyperband_analysis(best_trials_df, metric_col, args.output_dir, target_param_name=project_name)
+        for parameter_col in parameter_cols:
+            #print(f"\nCreating visualizations for parameter: {parameter_col}")
+            plot_hyperband_analysis(best_trials_df, metric_col, args.output_dir, target_param_name=parameter_col)
     
     print("\n" + "="*60)
     print("ANALYSIS COMPLETE")
