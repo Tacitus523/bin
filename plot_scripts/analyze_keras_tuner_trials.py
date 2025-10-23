@@ -574,7 +574,20 @@ def plot_hyperband_analysis(trials_df: pd.DataFrame,
     do_legend = target_param_name is not None
 
     hyperparam_column_names = [col for col in trials_df.columns if col.startswith('param_')] if target_param_name is None else [target_param_name]
-
+    hyperparam_column_names = []
+    for col in trials_df.columns:
+        if target_param_name is not None:
+            hyperparam_column_names = [target_param_name]
+            break
+        if not col.startswith('param_'):
+            continue
+        if isinstance(trials_df[col].dtype, pd.CategoricalDtype):
+            if len(trials_df[col].cat.categories) < 2:
+                continue
+        elif trials_df[col].nunique() < 2:
+            continue
+        hyperparam_column_names.append(col)
+        
     # Create subplots
     n_params = len(hyperparam_column_names)
     n_cols = min(3, n_params)
