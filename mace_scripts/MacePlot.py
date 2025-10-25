@@ -113,7 +113,8 @@ def extract_data(
         if value is not None:
             extra_property: List[float] = []
             [extra_property.extend(m.arrays[value].flatten()) for m in mols if value in m.arrays]
-            result[key] = np.array(extra_property)
+            if len(extra_property) > 0:
+                result[key] = np.array(extra_property)
     return result
 
 def create_metrics_collection(
@@ -342,6 +343,16 @@ def plot_boxplot(
     if is_info:
         for key in property_keys:
             if key not in atoms[0].info:
+                print(f"Warning: Expected property '{key}' in atoms.info not found.")
+                return
+    if is_arrays:
+        for key in property_keys:
+            if key not in atoms[0].arrays:
+                print(f"Warning: Expected property '{key}' in atoms.arrays not found.")
+                return
+    if is_info:
+        for key in property_keys:
+            if key not in atoms[0].info:
                 raise ValueError(f"Property '{key}' not found in atoms.info")
         # Extract properties from atoms.info
         data = pd.DataFrame({
@@ -390,6 +401,7 @@ def main() -> None:
         for key, value in data.items():
             # Skip non-numeric data
             if isinstance(value, np.ndarray) and value.dtype in (np.float32, np.float64, np.int32, np.int64):
+                print(name, key)
                 print(f"{name} {key}: {value.shape} Min Max: {np.min(value): .1f} {np.max(value): .1f}")
 
     metrics_collection = create_metrics_collection(ref_data, model_data)
@@ -440,7 +452,7 @@ def main() -> None:
             "model_charges.png",
         )
 
-    if args.eneg or args.esp or args.eneg_esp:
+    if PRED_ENEG_KEY in model_data or PRED_ESP_KEY in model_data or PRED_ENEG_ESP_KEY in model_data:
         present_keys = []
         present_units = []
         if args.eneg:
@@ -459,17 +471,18 @@ def main() -> None:
             "model_histogram.png",
         )
 
-    plot_boxplot(
-        molecules,
-        property_keys=[
-            "elec_energy",
-            "e_qmmm",
-            "inter_e",
-        ],
-        output_path="boxplot_energies.png",
-        title="Boxplot of Energies",
-        ylabel="Energy (eV)",
-    )
+    if "elec_energy" in molecules[0].info:
+        plot_boxplot(
+            molecules,
+            property_keys=[
+                "elec_energy",
+                "e_qmmm",
+                "inter_e",
+            ],
+            output_path="boxplot_energies.png",
+            title="Boxplot of Energies",
+            ylabel="Energy (eV)",
+        )
 
     plot_boxplot(
         molecules,
