@@ -233,7 +233,7 @@ sourcedir=$PWD
 scratch_dir=$SCRATCH
 
 mkdir -vp $scratch_dir
-cp -r $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
+cp -rL $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
 cd $scratch_dir
 
 # Local pathes to copied files
@@ -259,13 +259,13 @@ fi
 for i in `seq 0 $((N_WALKER-1))`
 do
     mkdir -p WALKER_$i
-    cp $plumed_file WALKER_$i
-    cp $tpr_file WALKER_$i
+    cp -L $plumed_file WALKER_$i
+    cp -L $tpr_file WALKER_$i
     for file in "${additional_files[@]}"
     do
         if [ ! -d $file ] && [[ ! $file == HILLS* ]] && [[ ! $file == *.pt ]] # Exclude folders, HILLS files and pytorch model files
         then
-            cp $file WALKER_$i
+            cp -L $file WALKER_$i
         fi
     done
 
