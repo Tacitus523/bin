@@ -441,6 +441,11 @@ def plot_trial_ranking(trials_df: pd.DataFrame,
     #plt.ylabel(metric_col.replace('metric_', '').replace('_', ' ').title())
     plt.ylabel(SCORE_LABEL)
     #plt.title(f'Best {len(top_rank_df)} Trials - {metric_col}')
+
+    # rotate x-labels for longer names
+    if verbose:
+        ax.set_xticks(ax.get_xticks())
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=30)
     
     # Add value labels on bars
     for i, (idx, row) in enumerate(top_rank_df.iterrows()):
