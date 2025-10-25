@@ -6,34 +6,79 @@
 #SBATCH --time=72:00:00
 #SBATCH --output=eval.out
 #SBATCH --error=eval.err
-#SBATCH --gres=gpu:1
+##SBATCH --gres=gpu:1
 
-DATA_FOLDER="/lustre/work/ws/ws1/ka_he8978-dipeptide/training_data/B3LYP_aug-cc-pVTZ_vacuum"
+DATA_FOLDER=""
 TEST_FILE="test.extxyz"
 MODEL_FILE="QEq_swa.model"
 OUTPUT_FILE="model_geoms.extxyz"
+CONFIG_FILE="config.yaml"
+MAIL="$MY_MAIL"
 
 print_usage() {
-    echo "Usage: $0 [-d data_folder]" >&2
+    echo "Usage: $0 [-d data_folder] [-m model_file] [-c config_file]" >&2
+    echo "  -d: Data folder containing test file" >&2
+    echo "  -m: Model file to use for evaluation" >&2
+    echo "  -c: YAML config file to read test_file path from (used if -d not given)" >&2
 }
 
-while getopts ":d:m:" flag
+while getopts ":d:m:c:" flag
 do
     case "${flag}" in
         d) DATA_FOLDER=${OPTARG};;
         m) MODEL_FILE=${OPTARG};;
+        c) CONFIG_FILE=${OPTARG};;
         *) print_usage; exit 1;;
     esac
 done
 
-test_file=$(readlink -f $DATA_FOLDER/$TEST_FILE)
+# Initialize flag variables
+data_folder_flag=""
+config_file_flag=""
+
+# If DATA_FOLDER not provided, try to read test_file from config
+if [ -z "$DATA_FOLDER" ]; then
+    if [ -z "$CONFIG_FILE" ]; then
+        echo "Error: Either -d (data_folder) or -c (config_file) must be provided" >&2
+        print_usage
+        exit 1
+    fi
+    
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Error: Config file not found: $CONFIG_FILE" >&2
+        exit 1
+    fi
+    
+    # Check if yq is available
+    if ! command -v yq &> /dev/null; then
+        echo "Error: yq command not found. Please install yq to use -c option without -d" >&2
+        echo "  Install with: pip install yq" >&2
+        exit 1
+    fi
+    
+    # Read test_file from YAML config
+    test_file=$(yq eval '.test_file' "$CONFIG_FILE")
+    
+    if [ -z "$test_file" ] || [ "$test_file" = "null" ]; then
+        echo "Error: test_file not found in config file: $CONFIG_FILE" >&2
+        exit 1
+    fi
+    
+    echo "Read test_file from config."
+    config_file_flag="-c $CONFIG_FILE"
+else
+    data_folder_flag="-d $DATA_FOLDER"
+    test_file=$(readlink -f $DATA_FOLDER/$TEST_FILE)
+fi
+
 if [ ! -f "$test_file" ]
 then
-    echo "Test file not found: $test_file" >&2
+    echo "Error: Test file not found: $test_file" >&2
     exit 1
 fi
 
 model_file=$MODEL_FILE
+model_file_flag="-m $model_file"
 if [ ! -f "$model_file" ]
 then
     echo "Model file not found: $model_file" >&2
@@ -54,7 +99,8 @@ echo "Using model file: $model_file"
 # If not, submit it as a job
 if [ -z "$SLURM_JOB_ID" ]
 then
-    eval_output=$(sbatch --parsable $0 -d $DATA_FOLDER -m $model_file)
+    mail_flag="--mail-user=$MAIL --mail-type=END,FAIL"
+    eval_output=$(sbatch --parsable $mail_flag $0 $data_folder_flag $model_file_flag $config_file_flag)
     echo "Submitted evaluation job with ID: $eval_output"
     exit
 fi
@@ -68,7 +114,7 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
         --configs="$test_file" \
         --model="$model_file" \
         --output="$OUTPUT_FILE" \
-        --device="cuda"
+        --device="cpu"
 eval_exit_status=$?
 
 if [ $eval_exit_status -ne 0 ]

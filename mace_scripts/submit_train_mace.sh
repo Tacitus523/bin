@@ -12,7 +12,10 @@ job_name=$(basename $PWD)
 email_flag="--mail-user=$MY_EMAIL --mail-type=END,FAIL"
 
 print_usage() {
-    echo "Usage: $0 [-n number_of_submissions] [-d data_folder]" >&2
+    echo "Usage: $0 [-n number_of_submissions] [-d data_folder] [-c config_file]" >&2
+    echo "  -n number_of_submissions : Number of model training submissions (1-10). Default is 1." >&2
+    echo "  -d data_folder           : Path to data folder. Required if number_of_submissions > 1." >&2
+    echo "  -c config_file           : Path to configuration file. Default is 'config.yaml'." >&2
 }
 
 # Parse arguments
