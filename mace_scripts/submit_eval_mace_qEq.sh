@@ -6,7 +6,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --output=eval.out
 #SBATCH --error=eval.err
-##SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:1
 
 DATA_FOLDER=""
 TEST_FILE="test.extxyz"
@@ -114,7 +114,7 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
         --configs="$test_file" \
         --model="$model_file" \
         --output="$OUTPUT_FILE" \
-        --device="cpu"
+        --device="gpu"
 eval_exit_status=$?
 
 if [ $eval_exit_status -ne 0 ]
