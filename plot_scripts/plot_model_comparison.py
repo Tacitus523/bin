@@ -76,6 +76,13 @@ def main():
     
     print(f"\nAvailable metrics: {available_metrics.tolist()}")
     
+    # Create consistent color mapping for all models
+    all_models = df['model_name'].unique()
+    colors = sns.color_palette('tab10', n_colors=len(all_models))
+    model_colors = {model: colors[i] for i, model in enumerate(all_models)}
+    
+    print(f"Color mapping: {list(model_colors.keys())}")
+    
     # Create subplots
     fig, axes = plt.subplots(1, n_metrics, figsize=(5 * n_metrics, 5))
     if n_metrics == 1:
@@ -88,13 +95,17 @@ def main():
         metric_data = plot_df[plot_df['metric'] == metric]
         unit = metric_data['unit'].iloc[0]
         
+        # Get colors for models present in this metric
+        models_in_metric = metric_data['model_name'].unique()
+        palette = [model_colors[model] for model in models_in_metric]
+        
         ax = axes[idx]
         sns.swarmplot(
             data=metric_data,
             x='model_name',
             y='value',
             hue='model_name',
-            palette='tab10',
+            palette=palette,
             size=8,
             ax=ax,
             legend=False
