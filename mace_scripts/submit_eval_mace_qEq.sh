@@ -114,7 +114,7 @@ python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/
         --configs="$test_file" \
         --model="$model_file" \
         --output="$OUTPUT_FILE" \
-        --device="gpu"
+        --device="cuda"
 eval_exit_status=$?
 
 if [ $eval_exit_status -ne 0 ]
