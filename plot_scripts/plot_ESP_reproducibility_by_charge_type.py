@@ -14,8 +14,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
+from sklearn.metrics import mean_squared_error, r2_score
 
 N_SUBSAMPLE = 10000
+ESP_CUTOFF = 2.5 # Some ESP values got suspiciously positive
 FIGSIZE = (8, 6)
 ALPHA = 0.3
 SIZE = 20
@@ -28,17 +30,29 @@ KEY_LABEL_MAP = {
     "ESP_charge_density": r"$\text{ESP}_\text{Charge density}$",
     "ESP_charges_hirsh": r"$\text{ESP}_\text{Hirshfeld}$",
     "ESP_charges_mull": r"$\text{ESP}_\text{Mulliken}$",
-    "ESP_charges_loew": r"$\text{ESP}_\text{Loewdin}$",
+    "ESP_charges_loew": r"$\text{ESP}_\text{Löwdin}$",
     "ESP_charges_chelpg": r"$\text{ESP}_\text{CHELPG}$",
     "ESP_charges_mk": r"$\text{ESP}_\text{MK}$",
     "ESP_charges_resp": r"$\text{ESP}_\text{RESP}$",
+    "ESP_charges_eem": r"$\text{ESP}_\text{EEM}$",
+    "ESP_charges_mbis": r"$\text{ESP}_\text{MBIS}$",
     "E_elec_charge_density": r"$E_\text{elec, Charge density}$",
     "E_elec_charges_hirsh": r"$E_\text{elec, Hirshfeld}$",
     "E_elec_charges_mull": r"$E_\text{elec, Mulliken}$",
-    "E_elec_charges_loew": r"$E_\text{elec, Loewdin}$",
+    "E_elec_charges_loew": r"$E_\text{elec, Löwdin}$",
     "E_elec_charges_chelpg": r"$E_\text{elec, CHELPG}$",
     "E_elec_charges_mk": r"$E_\text{elec, MK}$",
     "E_elec_charges_resp": r"$E_\text{elec, RESP}$",
+    "E_elec_charges_eem": r"$E_\text{elec, EEM}$",
+    "E_elec_charges_mbis": r"$E_\text{elec, MBIS}$",
+    "hirsh": "Hirshfeld",
+    "mull": "Mulliken",
+    "loew": "Löwdin",
+    "chelpg": "CHELPG",
+    "mk": "MK",
+    "resp": "RESP",
+    "eem": "EEM",
+    "mbis": "MBIS",
 }
 
 def parse_args() -> argparse.Namespace:
@@ -122,10 +136,10 @@ def extract_esp_properties(atoms_list: List[Atoms]) -> pd.DataFrame:
 
     return data
 
-def calculate_metrics(x: np.ndarray, y: np.ndarray) -> tuple:
+def calculate_metrics(x: np.ndarray, y: np.ndarray) -> Tuple:
     """Calculate RMSE and R² metrics."""
-    rmse = np.sqrt(np.mean((x - y) ** 2))
-    r2 = np.corrcoef(x, y)[0, 1] ** 2 if len(x) > 1 else 0.0
+    rmse = mean_squared_error(x, y, squared=False)
+    r2 = r2_score(x, y)
     return rmse, r2
 
 def create_scatter_plot(
@@ -145,6 +159,7 @@ def create_scatter_plot(
         x_key: Key for x-axis data
         y_key: Key for y-axis data
         output_path: Path to save the plot
+        min_max: Optional tuple of (min, max) for axis limits
         unit: Unit for the data
         title: Optional title for the plot
         ax: Optional axes to plot on (if None, creates new figure and saves it)
@@ -249,7 +264,7 @@ def create_scatter_plots(
         y_keys: List[str],
         output_dir: str,
         unit: Optional[str] = None
-    ) -> None:
+    ) -> pd.DataFrame:
 
     n_charge_types = len(y_keys)
     n_cols = 2
@@ -263,9 +278,11 @@ def create_scatter_plots(
     low_quantile = data[[x_key]+y_keys].quantile(0.01).min()
     high_quantile = data[[x_key]+y_keys].quantile(0.99).max()
 
+    metrics_df: pd.DataFrame = pd.DataFrame(columns=['y_key', 'RMSE', 'R2'])
     for i, y_key in enumerate(y_keys):
         output_file = os.path.join(output_dir, f"{x_key}_vs_{y_key.replace('ESP_', '').replace('E_elec_', '')}.png")
-        create_scatter_plot(
+
+        rmse,r2 = create_scatter_plot(
             data,
             x_key,
             y_key,
@@ -282,6 +299,8 @@ def create_scatter_plots(
             unit=unit,
             ax=axes[i]
         )
+        metrics_df.loc[i] = {'y_key': y_key, 'RMSE': rmse, 'R2': r2}
+
     # Hide any unused subplots
     for j in range(i + 1, len(axes)):
         axes[j].set_visible(False)
@@ -291,6 +310,97 @@ def create_scatter_plots(
     plt.savefig(combined_output_file, dpi=DPI, bbox_inches='tight')
     plt.close()
 
+    return metrics_df
+
+def filter_data_by_cutoff(
+    data: pd.DataFrame,
+    key: str,
+    cutoff: float
+) -> pd.DataFrame:
+    """Filter data to exclude entries where the absolute value of key exceeds cutoff."""
+    filtered_data = data[data[key] <= cutoff].copy()
+    n_excluded = len(data) - len(filtered_data)
+    if n_excluded > 0:
+        print(f"Excluded {n_excluded} entries from '{key}' exceeding cutoff of {cutoff}.")
+    return filtered_data
+
+def plot_method_ranking(
+    metrics_df: pd.DataFrame,
+    output_path: str,
+    metric_name: str = "RMSE",
+    y_label: Optional[str] = None,
+    unit: Optional[str] = None
+) -> None:
+    """
+    Create a bar plot showing method rankings based on RMSE.
+    
+    Args:
+        metrics_df: DataFrame containing y_key, RMSE, and R2 columns
+        output_path: Path to save the plot
+        metric_name: Name of the metric to plot (default: "RMSE")
+        unit: Unit for the metric
+    """
+    if metrics_df.empty:
+        print("Warning: Empty metrics dataframe, skipping ranking plot")
+        return
+    
+    # Sort by metric (ascending for RMSE, descending for R2)
+    ascending = metric_name == "RMSE"
+    sorted_df = metrics_df.sort_values(metric_name, ascending=ascending).reset_index(drop=True)
+    
+    # Create clean labels for methods
+    clean_labels = []
+    for y_key in sorted_df['y_key']:
+        # Remove the prefix and extract just the method name
+        if 'ESP' in y_key:
+            method = y_key.replace('ESP_charges_', '').replace('ESP_', '')
+            method = KEY_LABEL_MAP[method]
+        elif 'E_elec' in y_key:
+            method = y_key.replace('E_elec_charges_', '').replace('E_elec_', '')
+            method = KEY_LABEL_MAP[method]
+        else:
+            raise ValueError(f"Unexpected y_key format: {y_key}")
+        clean_labels.append(method)
+
+    sorted_df['method'] = clean_labels
+    
+    # Create color gradient based on metric values
+    metric_max = sorted_df[metric_name].max()
+    norm = plt.Normalize(vmin=0, vmax=metric_max)
+    cmap = sns.color_palette("YlOrRd", as_cmap=True)
+    colors = [cmap(norm(value)) for value in sorted_df[metric_name]]
+    
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+    sns.barplot(
+        x='method',
+        y=metric_name,
+        data=sorted_df,
+        palette=colors,
+        hue='method',
+        legend=False,
+        ax=ax
+    )
+    
+    # Set labels
+    ax.set_xlabel('Method')
+    if unit:
+        y_label += f" ({unit})"
+    ax.set_ylabel(y_label)
+    
+    # Rotate x-labels for better readability
+    ax.set_xticks(ax.get_xticks())
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
+    
+    # Add value labels on bars
+    for i, (idx, row) in enumerate(sorted_df.iterrows()):
+        value = row[metric_name]
+        ax.text(i, value, f'{value:.3f}', ha='center', va='bottom', fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=DPI, bbox_inches='tight')
+    plt.close()
+    print(f"Saved ranking plot to: {output_path}")
 
 def main():
     """Main function."""
@@ -306,6 +416,7 @@ def main():
     
     # Extract properties
     data: pd.DataFrame = extract_esp_properties(atoms_list)
+    data = filter_data_by_cutoff(data, 'ESP_charge_density', ESP_CUTOFF)
 
     # Print data summary
     print("\nData summary:")
@@ -323,7 +434,7 @@ def main():
     
     # Create plots comparing ESP_charge_density to other ESP methods
     esp_keys = [key for key in data.keys() if key.startswith('ESP_') and key != esp_charge_density]
-    create_scatter_plots(
+    esp_metrics = create_scatter_plots(
         data, 
         esp_charge_density, 
         esp_keys, 
@@ -334,13 +445,31 @@ def main():
     # Create plots comparing E_elec_charge_density to other E_elec methods
     e_elec_data = data.groupby('molecule_index').first().reset_index()
     elec_keys = [key for key in data.keys() if key.startswith('E_elec_') and key != elec_charge_density]
-    create_scatter_plots(
+    e_elec_metrics = create_scatter_plots(
         e_elec_data, 
         elec_charge_density, 
         elec_keys, 
         args.output,
         unit=ENERGY_UNIT
     )
+    
+    # Save metrics to CSV
+    esp_csv_path = os.path.join(args.output, "esp_metrics.csv")
+    esp_metrics.to_csv(esp_csv_path, index=False)
+    print(f"\nSaved ESP metrics to: {esp_csv_path}")
+    
+    e_elec_csv_path = os.path.join(args.output, "e_elec_metrics.csv")
+    e_elec_metrics.to_csv(e_elec_csv_path, index=False)
+    print(f"Saved E_elec metrics to: {e_elec_csv_path}")
+    
+    # Create ranking plots
+    esp_ranking_path = os.path.join(args.output, "esp_method_ranking.png")
+    esp_ranking_y_label = f"{KEY_LABEL_MAP[esp_charge_density]} RMSE" 
+    plot_method_ranking(esp_metrics, esp_ranking_path, metric_name="RMSE", y_label=esp_ranking_y_label, unit=ESP_UNIT)
+    
+    e_elec_ranking_path = os.path.join(args.output, "e_elec_method_ranking.png")
+    e_elec_ranking_y_label = f"{KEY_LABEL_MAP[elec_charge_density]} RMSE"
+    plot_method_ranking(e_elec_metrics, e_elec_ranking_path, metric_name="RMSE", y_label=e_elec_ranking_y_label, unit=ENERGY_UNIT)
     
     print(f"\nAll plots saved to: {args.output}")
 
