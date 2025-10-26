@@ -17,32 +17,32 @@ script_folder=$(dirname "$script_path")
 multiwfn_input="7\n17\ng\n2\n$total_charge\n0\ny\n-1\n0\nq"
 
 if [ -z "$input_file" ]; then
-    print_usage
+    print_usage >&2
     exit 1
 fi
 
 if [ -z "$total_charge" ]; then
-    echo "Total charge not provided."
-    print_usage
+    echo "Total charge not provided." >&2
+    print_usage >&2
     exit 1
 fi
 
 if ! [ -f "$input_file" ]; then
-    echo "Input file '$input_file' does not exist."
+    echo "Input file '$input_file' does not exist." >&2
     exit 1
 fi
 
 if ! which Multiwfn > /dev/null; then
-    echo "Multiwfn is not installed or not in PATH."
+    echo "Multiwfn is not installed or not in PATH." >&2
     exit 1
 fi
 
 echo -e "$multiwfn_input" | Multiwfn $input_file > ${output_prefix}.log
 
 if [ $? -ne 0 ]; then
-    echo "Multiwfn execution for $output_prefix charges failed."
+    echo "Multiwfn execution for $output_prefix charges failed." >&2
     exit 1
 fi
 echo "Multiwfn execution for $output_prefix charges completed successfully."
 
-mv $input_base.molden.chg $output_file
+mv $input_base.chg $output_file

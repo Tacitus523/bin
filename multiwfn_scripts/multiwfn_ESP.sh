@@ -6,9 +6,9 @@
 
 
 print_usage() {
-    echo "Usage: $0 <input_molden_input>"
-    echo "Example: $0 your_file.molden.input"
-    echo "This script runs Multiwfn on the specified molden-input('orca_2mkl YOUR_FILE.gbw -molden') file."
+    echo "Usage: $0 <input_molden_input>" >&2
+    echo "Example: $0 your_file.molden.input" >&2
+    echo "This script runs Multiwfn on the specified molden-input('orca_2mkl YOUR_FILE.gbw -molden') file." >&2
 }
 
 input_file="$1"
@@ -30,12 +30,12 @@ if [ -z "$input_file" ]; then
 fi
 
 if ! [ -f "$input_file" ]; then
-    echo "Input file '$input_file' does not exist."
+    echo "Input file '$input_file' does not exist." >&2
     exit 1
 fi
 
 if ! which Multiwfn > /dev/null; then
-    echo "Multiwfn is not installed or not in PATH."
+    echo "Multiwfn is not installed or not in PATH." >&2
     exit 1
 fi
 
@@ -43,7 +43,7 @@ $pc_conversion_script -f $orca_pc_file -n $mm_subsample_size -o $pc_conversion_o
 echo -e "$multiwfn_input" | Multiwfn $input_file > ${output_prefix}.log
 
 if [ $? -ne 0 ]; then
-    echo "Multiwfn execution for $output_prefix failed."
+    echo "Multiwfn execution for $output_prefix failed." >&2
     exit 1
 fi
 echo "Multiwfn execution for $output_prefix completed successfully."
