@@ -38,7 +38,7 @@ def main():
     data_source_file = args.data_source_file
     perplexity = args.perplexity
 
-    u = mda.Universe(file)
+    u = mda.Universe(file, format="XYZ")
     atoms = u.select_atoms('all')
     n_atoms = len(atoms)
     n_time_steps = len(u.trajectory)
