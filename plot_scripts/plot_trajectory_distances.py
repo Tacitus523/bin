@@ -33,6 +33,9 @@ TOPOLOGY_FILE: str = "qm_topol.top" # Path to the topology file (e.g., .gro or .
 N_PLOTS: int = 5 # Number of plots to generate, chosen from the bonds with the largest, smallest values and standard deviation
 N_LAST_TIMESTEPS: int = 0 # Number of last timesteps to plot, 0 for all
 DPI: int = 100 # DPI for saving plots
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3) # Remove red color
+
 
 DEFAULT_COLLECTION_FOLDER_NAME: str = "bond_distance_analysis"
 AMBER_ILDN_PATH: str = "/lustre/home/ka/ka_ipc/ka_he8978/gromacs-orca/share/gromacs/top/amber99sb-ildn.ff"
@@ -42,6 +45,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("-p", "--prefix", default=None, type=str, required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
     ap.add_argument("-t", "--trajectory_file", default=TRAJECTORY_FILE, type=str, required=False, help="Relative path to the trajectory file", metavar="trajectory_file")
     ap.add_argument("-top", "--topology_file", default=TOPOLOGY_FILE, type=str, required=False, help="Relative path to the topology file", metavar="topology_file")
+    ap.add_argument("-s", "--source", default=None, type=str, required=False, dest="data_source", help="Data source file, one source per line", metavar="data_source")
     args = ap.parse_args()
     for key, value in vars(args).items():
         print(f"Argument {key}: {value}")
@@ -66,6 +70,12 @@ def validate_args(args: argparse.Namespace) -> None:
 
     if not os.path.exists(args.topology_file):
         raise FileNotFoundError(f"Topology file '{args.topology_file}' does not exist.")
+
+    if args.data_source is not None:
+        if args.prefix is not None:
+            raise ValueError("Cannot use both --prefix and --source options simultaneously.")
+        if not os.path.exists(args.data_source):
+            raise FileNotFoundError(f"Data source file '{args.data_source}' does not exist.")
         
 def main() -> None:
     args = parse_args()
@@ -113,10 +123,11 @@ def main() -> None:
     else:
         print("No valid walker dataframes found, exiting.")
         sys.exit(0)
-        
+
     if args.collection_folder_name is not None:
         os.chdir(args.collection_folder_name)
 
+    sns.set_context(context="talk", font_scale=1.3)
     print("Analyzing extreme bond distances...")
     plot_extreme_bond_distances(walker_bonds_dfs)
     if len(valid_dirs) > 1:
@@ -153,6 +164,11 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
         print("Warning: Unwrapping atoms failed, continuing without unwrapping.", file=sys.stderr)
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(qm_atoms)
     bond_labels = [f"{elements_bond[0]}{unique_edge_indices[i, 0]}-{elements_bond[1]}{unique_edge_indices[i, 1]}" for i, elements_bond in enumerate(elements_bonds)]
+    bond_type_label = [
+        f"{elements_bond[0]}-{elements_bond[1]}" if atomic_number_bond[0] >= atomic_number_bond[1]
+        else f"{elements_bond[1]}-{elements_bond[0]}"
+        for elements_bond, atomic_number_bond in zip(elements_bonds, atomic_numbers_bonds)
+    ]
     n_timesteps = len(universe.trajectory)
     n_bonds = len(unique_edge_indices)
 
@@ -160,9 +176,11 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
     times = []  # Store times in picoseconds
     for timestep in universe.trajectory:
         # Calculate the distance matrix
-        bond_distances = mda.lib.distances.calc_bonds(qm_atoms.positions[unique_edge_indices[:, 0]],
-                                                           qm_atoms.positions[unique_edge_indices[:, 1]],
-                                                           box=universe.dimensions) # shape: (n_bonds,
+        bond_distances = mda.lib.distances.calc_bonds(
+            qm_atoms.positions[unique_edge_indices[:, 0]],
+            qm_atoms.positions[unique_edge_indices[:, 1]],
+            box=universe.dimensions
+        ) # shape: (n_bonds,)
         bond_distances_all_timesteps.append(bond_distances)
         times.append(timestep.time)  # Time in ps
     
@@ -177,6 +195,7 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
     timestep_indices = np.repeat(np.arange(n_timesteps), n_bonds) # Repeat each entry n times, shape: (n_timesteps * n_bonds,)
     bond_indices = np.tile(np.arange(n_bonds), n_timesteps) # Repeat the array n times, shape: (n_timesteps * n_bonds,)
     bond_labels = np.tile(bond_labels, n_timesteps) # shape: (n_timesteps * n_bonds,)
+    bond_type_labels = np.tile(bond_type_label, n_timesteps) # shape: (n_timesteps * n_bonds,)
     elements_bond_partner1 = np.tile(elements_bonds[:, 0], n_timesteps) # shape: (n_timesteps * n_bonds,)
     elements_bond_partner2 = np.tile(elements_bonds[:, 1], n_timesteps) # shape: (n_timesteps * n_bonds,)
     atomic_numbers_bond_partner1 = np.tile(atomic_numbers_bonds[:, 0], n_timesteps) # shape: (n_timesteps * n_bonds,)
@@ -188,6 +207,7 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
         "Time Step": timestep_indices,
         "Bond Index": bond_indices,
         "Bond Label": bond_labels,
+        "Bond Type": bond_type_labels,
         "Element 1": elements_bond_partner1,
         "Element 2": elements_bond_partner2,
         "Atomic Number 1": atomic_numbers_bond_partner1,
@@ -196,7 +216,10 @@ def create_walker_bonds_df(args: argparse.Namespace) -> pd.DataFrame:
     }
 
     walker_df = pd.DataFrame(data)
-
+    if args.data_source is not None:
+        data_sources = pd.read_csv(args.data_source, header=None, names=["Data Source"]).squeeze()
+        data_sources = np.repeat(data_sources.values, n_bonds)  # shape: (n_timesteps * n_bonds,)
+        walker_df["Data Source"] = data_sources
     return walker_df
 
 def plot_extreme_bond_distances(
@@ -289,21 +312,28 @@ def get_atomic_numbers_and_elements(atoms: mda.AtomGroup) -> Tuple[np.ndarray, n
 
     return unique_edge_indices, elements_bonds, atomic_numbers_bonds
 
-def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_distances_vs_time_steps.png"):
+def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_distances_vs_time_steps.png", ax: Optional[plt.Axes] = None) -> None:
     # Plot the bond distances over time
-    plt.figure(figsize=(10,10))
-    sns.set_context(context="talk", font_scale=1.3)
+
+    is_stand_alone = ax is None
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 6))
+    
     if N_LAST_TIMESTEPS > 0:
         n_last_timesteps_filter = bond_distances_df["Time Step"] >= bond_distances_df["Time Step"].nlargest(N_LAST_TIMESTEPS).min()
         bond_distances_df = bond_distances_df[n_last_timesteps_filter]
 
-    sns.lineplot(data=bond_distances_df, palette="tab10", x="Time (ps)", y="Bond Distance", hue="Bond Label")
-    plt.xlabel("Time (ps)")
-    plt.ylabel("Bond Distance [Å]")
-    plt.legend(title="Bonds", bbox_to_anchor=(1.05, 1))
-    plt.tight_layout()
-    plt.savefig(title, dpi=DPI)
-    plt.close()
+    sns.lineplot(data=bond_distances_df, palette=PALETTE, x="Time (ps)", y="Bond Distance", hue="Bond Type", units="Bond Label", ci=None, estimator=None, ax=ax)
+
+    ax.set_xlabel("Time (ps)")
+    ax.set_ylabel("Bond Distance [Å]")
+    ax.legend(title="Bonds", bbox_to_anchor=(1.05, 1))
+
+    if is_stand_alone:
+        plt.tight_layout()
+        plt.savefig(title, dpi=DPI)
+        plt.close()
+
 
 def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydrogen_bond_length_distribution.png"):
     # Get the bonds involving hydrogen atoms
@@ -317,40 +347,56 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydr
     binrange = (h_bond_df["Bond Distance"].min(), min(h_bond_df["Bond Distance"].max(), 1.3))  # Limit the range to 1.3 Å
 
     # Plot the distribution of hydrogen bond lengths
-    plt.figure(figsize=(10,10))
-    sns.set_context(context="talk", font_scale=1.3)
-    sns.histplot(h_bond_df,
-                 x="Bond Distance", 
-                 hue="Bond Label", 
-                 palette="tab10", 
-                 multiple="stack", 
-                 stat="probability", 
-                 common_norm=True,
-                 binrange=binrange,
-                 bins=100)
-    plt.xlabel("Hydrogen Bond Length [Å]")
-    plt.ylabel("Frequency")
+
+    axes = sns.displot(
+        data=h_bond_df,
+        x="Bond Distance",
+        hue="Data Source" if "Data Source" in walker_dfs.columns else "Bond Type",
+        col="Bond Type" if "Data Source" in walker_dfs.columns else None,
+        multiple="stack",
+        col_wrap=2 if "Data Source" in walker_dfs.columns else None,
+        height=4, 
+        aspect=1.2, 
+        bins=100, 
+        kde=False,
+        binrange=binrange,
+        stat="probability", 
+        common_norm=False if "Data Source" in walker_dfs.columns else True,
+        palette=PALETTE,
+        kind="hist"
+    )
+    axes.set_axis_labels("Hydrogen Bond Length [Å]", "Frequency")
+    sns.move_legend(axes, "upper left", bbox_to_anchor=(1.05, 0.75))
+
     plt.tight_layout()
-    plt.savefig(title, dpi=DPI)
+    plt.savefig(title, dpi=DPI, bbox_inches="tight")
     plt.close()
 
 def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_length_distribution.png"):
     binrange = (walker_dfs["Bond Distance"].min(), min(walker_dfs["Bond Distance"].max(), 2.5))  # Limit the range to 2.5 Å
-    plt.figure(figsize=(10,10))
-    sns.set_context(context="talk", font_scale=1.3)
-    sns.histplot(walker_dfs, 
-                 x="Bond Distance", 
-                 hue="Bond Label", 
-                 palette="tab10", 
-                 multiple="stack", 
-                 stat="probability", 
-                 common_norm=True,
-                 binrange=binrange,
-                 bins=100)
-    plt.xlabel("Bond Length [Å]")
-    plt.ylabel("Frequency")
+
+    axes = sns.displot(
+        data=walker_dfs,
+        x="Bond Distance",
+        hue="Data Source" if "Data Source" in walker_dfs.columns else "Bond Type",
+        col="Bond Type" if "Data Source" in walker_dfs.columns else None,
+        multiple="stack",
+        col_wrap=2 if "Data Source" in walker_dfs.columns else None,
+        height=4, 
+        aspect=1.2, 
+        bins=100, 
+        kde=False,
+        binrange=binrange,
+        stat="probability", 
+        common_norm=True,
+        palette=PALETTE,
+        kind="hist"
+    )
+    axes.set_axis_labels("Bond Length [Å]", "Frequency")
+    sns.move_legend(axes, "upper left", bbox_to_anchor=(1.05, 0.75))
+
     plt.tight_layout()
-    plt.savefig(title, dpi=DPI)
+    plt.savefig(title, dpi=DPI, bbox_inches="tight")
     plt.close()
 
 def plt_subplots(walker_dfs: pd.DataFrame) -> None:
@@ -383,26 +429,13 @@ def plt_subplots(walker_dfs: pd.DataFrame) -> None:
     for idx, walker_label in enumerate(walker_labels):
         walker_df = walker_dfs[walker_dfs["Walker"] == walker_label]
         
-        
-        # Apply time step filter if specified
-        if N_LAST_TIMESTEPS > 0:
-            n_last_timesteps_filter = walker_df["Time Step"] >= walker_df["Time Step"].nlargest(N_LAST_TIMESTEPS).min()
-            walker_df = walker_df[n_last_timesteps_filter]
-        
         # Plot in the corresponding subplot
         ax = axes[idx]
-        sns.lineplot(
-            data=walker_df, 
-            x="Time (ps)", 
-            y="Bond Distance", 
-            hue="Bond Label",
-            palette="tab10",
-            ax=ax
-        )
+
+        plot_bond_distances(walker_df, ax=ax)
         
         ax.set_title(f"{walker_label}")
-        ax.set_xlabel("Time (ps)")
-        ax.set_ylabel("Bond Distance [Å]")
+
         # remove the legend for subplots
         ax.get_legend().remove()
 
