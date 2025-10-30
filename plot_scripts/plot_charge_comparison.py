@@ -51,11 +51,9 @@ MAX_POINTS = 10000 # Subsample points for correlation plots
 TITLE = False
 DPI = 100
 
-PALETTE = []
-for i,color in enumerate(sns.color_palette("tab10")):
-    # Exclude the 4th color (index 3), should be red
-    if i != 3:
-        PALETTE.append(color)
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3) # Remove red color
+
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Plot charge histograms and boxplots for comparison between vacuum and water charges.")
@@ -289,7 +287,7 @@ def plot_histogram(data: pd.DataFrame, env_labels: List[str]):
             ax=current_axis, 
             stat="probability", 
             common_norm=False,
-            palette=PALETTE[:n_elements]
+            palette=PALETTE
             )
 
         current_axis.set_title(f"$Q_{{{env_labels[0]}}}$")
@@ -312,7 +310,7 @@ def plot_histogram(data: pd.DataFrame, env_labels: List[str]):
             ax=current_axis, 
             stat="probability", 
             common_norm=False,
-            palette=PALETTE[:n_elements]
+            palette=PALETTE
         )
 
         current_axis.set_title(f"$Q_{{{env_labels[1]}}}$")
@@ -334,7 +332,7 @@ def plot_histogram(data: pd.DataFrame, env_labels: List[str]):
             ax=current_axis, 
             stat="probability", 
             common_norm=False,
-            palette=PALETTE[:n_elements]
+            palette=PALETTE
         )
 
         current_axis.set_title(f"$Q_{{{env_labels[1]}}} - Q_{{{env_labels[0]}}}$")
@@ -362,7 +360,7 @@ def plot_boxplot(data):
             y="Charge", 
             hue="Element", 
             #order=env_labels_original,
-            palette=PALETTE[:n_elements]
+            palette=PALETTE
         )
         if TITLE:
             fig.axes.set_title("Charges boxplot")
@@ -390,7 +388,7 @@ def plot_simple_boxplot(data_frame: pd.DataFrame, y_label: str = "Charge (e)", s
         hue="Element", 
         y="Charge", 
         x="Charge type",
-        palette=PALETTE[:n_elements],
+        palette=PALETTE,
         showfliers=False,
         ax=ax
     )
@@ -446,7 +444,7 @@ def create_charge_correlation_plot(
         x=env_labels[0], 
         y=env_labels[1], 
         hue="Element",
-        palette=PALETTE[:n_elements],
+        palette=PALETTE,
         alpha=ALPHA,
         s=10,
         ax=ax
