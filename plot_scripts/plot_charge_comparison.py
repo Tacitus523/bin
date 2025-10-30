@@ -6,6 +6,7 @@ import os
 
 from ase import Atoms
 from ase.io import read
+from ase.data import atomic_numbers
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -33,53 +34,146 @@ VAC_CHARGE_FILES = [
 ]
 
 WATER_CHARGE_FILES = [
-    "charges_dft_vac.txt"
+    "charges_dft_vac.txt",
     "charges_dft_env.txt"
 ]
 ENV_LABELS = ["DFT", "DFTB", "Difference"]
 
-GEOMS_FILE = "geoms_vac.extxyz"
+GEOMS_FILE = "geoms.extxyz"
 
 TOTAL_CHARGE = 0 # Just for a warning if the sum of charges differs from this value
 BINS = 30
 ALPHA = 0.7
 
-FIGSIZE = (8, 6)
-FONTSIZE = 24
-LABELSIZE = 20
+FIGSIZE = (16,9)
+CORR_FIGSIZE = (8,6)
+MAX_POINTS = 10000 # Subsample points for correlation plots
 TITLE = False
 DPI = 100
+
+PALETTE = []
+for i,color in enumerate(sns.color_palette("tab10")):
+    # Exclude the 4th color (index 3), should be red
+    if i != 3:
+        PALETTE.append(color)
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Plot charge histograms and boxplots for comparison between vacuum and water charges.")
     ap.add_argument("-v", type=str, dest="vacuum_charge_files", nargs="+", default=VAC_CHARGE_FILES, required=False, help="File(s) with vacuum charge data", metavar="vacuum charge file(s)")
-    ap.add_argument("-e", type=str, dest="env_charge_files", nargs="+", default=WATER_CHARGE_FILES, required=False, help="File(s) with environment charge data", metavar="environment charge file(s)")
+    ap.add_argument("-e", type=str, dest="env_charge_files", nargs="+", default=WATER_CHARGE_FILES, required=False, help="File(s) with environment charge data (optional)", metavar="environment charge file(s)")
     ap.add_argument("-g", type=str, dest="geoms_file", required=False, default=GEOMS_FILE, help="File with geometry data", metavar="geometry file")
     ap.add_argument("-l", type=str, dest="labels", nargs="+", required=False, default=LABELS, help="Labels for the charge types", metavar="labels")
+    ap.add_argument("-n", "--env_names", nargs="+", dest="env_labels", required=False, default=ENV_LABELS, help="Names for the environments (required if -e is used)", metavar="environment labels")
     ap.add_argument("-t", "--total", type=float, dest="total_charge", required=False, default=TOTAL_CHARGE, help="Total charge expected in the system", metavar="total charge")
+    ap.add_argument("-ov", nargs="+", dest="other_vacuum_files", required=False, default=None, help="Additional files with charge data for comparison", metavar="other charge file(s)")
+    ap.add_argument("-oe", nargs="+", dest="other_env_files", required=False, default=None, help="Additional environment files with charge data for comparison", metavar="other charge file(s)")
+    ap.add_argument("-x", "--extra", required=False, default=None, help="Extra label for other charge files", metavar="extra label")
+    ap.add_argument("-f", "--file", type=str, dest="output_file", required=False, default="charges_simple_boxplot.png", help="Output filename for the boxplot", metavar="output file")
+    ap.add_argument("-s", "--suffix", type=str, dest="suffix", required=False, default="", help="Suffix to add to output filenames", metavar="suffix")
+    
     args = ap.parse_args()
+    
     for key, value in vars(args).items():
         print(f"{key}: {value}")
     validate_args(args)
     return args
 
 def validate_args(args: argparse.Namespace) -> None:
-    if len(args.vacuum_charge_files) != len(args.labels):
-        raise ValueError("Number of vacuum charge files must match number of labels.")
-    if len(args.env_charge_files) != len(args.labels):
-        raise ValueError("Number of environment charge files must match number of labels.")
-    if not os.path.exists(args.geoms_file):
-        raise FileNotFoundError(f"Geometry file '{args.geoms_file}' does not exist.")
-    if not isinstance(args.labels, list):
-        raise TypeError("Labels must be provided as a list.")
-    if not isinstance(args.vacuum_charge_files, list):
-        raise TypeError("Vacuum charge files must be provided as a list.")
-    if not isinstance(args.env_charge_files, list):
-        raise TypeError("Environment charge files must be provided as a list.")
-    for file in args.vacuum_charge_files + args.env_charge_files:
+    for file in args.vacuum_charge_files:
         if not os.path.exists(file):
             raise FileNotFoundError(f"Charge file '{file}' does not exist.")
+    if len(args.vacuum_charge_files) != len(args.labels):
+        raise ValueError("Number of charge files must match number of labels.")
+    
+    # Generate default labels if not provided
+    if args.labels is None:
+        args.labels = [f"Charge_{i+1}" for i in range(len(args.vacuum_charge_files))]
+
+    if args.other_vacuum_files is not None:
+        for file in args.other_vacuum_files:
+            if not os.path.exists(file):
+                raise FileNotFoundError(f"Other charge file '{file}' does not exist.")
+        if args.extra is None:
+            args.extra = "Other"
+
+    # Check if environment files are provided
+    if args.env_charge_files is not None:
+        # Full comparison mode with environments
+        if len(args.vacuum_charge_files) != len(args.labels):
+            raise ValueError("Number of vacuum charge files must match number of labels.")
+        if len(args.env_charge_files) != len(args.labels):
+            raise ValueError("Number of environment charge files must match number of labels.")
+        for file in args.vacuum_charge_files + args.env_charge_files:
+            if not os.path.exists(file):
+                raise FileNotFoundError(f"Charge file '{file}' does not exist.")
+        if len(args.env_labels) != 3:
+            raise ValueError("There must be exactly three environment labels (e.g., Vacuum, Water, Difference).")
+        if args.other_vacuum_files is not None:
+            if args.other_env_files is None:
+                raise ValueError("If other vacuum files are provided, other environment files must also be provided.")
+            if len(args.other_vacuum_files) != len(args.other_env_files):
+                raise ValueError("Number of other vacuum files must match number of other environment files.")
+            for file in args.other_vacuum_files + args.other_env_files:
+                if not os.path.exists(file):
+                    raise FileNotFoundError(f"Other charge file '{file}' does not exist.")
+    
+    if not os.path.exists(args.geoms_file):
+        raise FileNotFoundError(f"Geometry file '{args.geoms_file}' does not exist.")
     return
+
+def prepare_data(args: argparse.Namespace) -> pd.DataFrame:
+    # Load vacuum charges and geometry
+    vacuum_charges = [np.loadtxt(file) for file in args.vacuum_charge_files]
+    elements = read_geoms(args.geoms_file)
+    charge_labels = args.labels
+
+    # Validate shapes
+    for data in vacuum_charges:
+        assert data.shape == elements.shape, f"Data shape {data.shape} does not match elements shape {elements.shape}"
+
+    environmental_charges = None
+    env_labels = None
+    if args.env_charge_files is not None:
+        print("Running full comparison mode with environment data...")
+        environmental_charges = [np.loadtxt(file) for file in args.env_charge_files]
+        env_labels = args.env_labels
+
+        for data in environmental_charges:
+            assert data.shape == elements.shape, f"Data shape {data.shape} does not match elements shape {elements.shape}"
+
+    print("Constructing data frame...")
+    dataframe = construct_dataframe(vacuum_charges, elements, charge_labels, env_charges_list=environmental_charges, env_labels=env_labels)
+
+    if args.other_vacuum_files is not None:
+        other_vacuum_charges = [np.loadtxt(file) for file in args.other_vacuum_files]
+        other_charge_labels = [args.extra]*len(other_vacuum_charges)
+        for data in other_vacuum_charges:
+            assert data.shape == elements.shape, f"Data shape {data.shape} does not match elements shape {elements.shape}"
+        vacuum_charges.extend(other_vacuum_charges)
+        charge_labels.extend([args.extra]*len(other_vacuum_charges))
+
+        other_environmental_charges = None
+        if args.other_env_files is not None:
+            other_environmental_charges = [np.loadtxt(file) for file in args.other_env_files]
+            for data in other_environmental_charges:
+                assert data.shape == elements.shape, f"Data shape {data.shape} does not match elements shape {elements.shape}"
+            environmental_charges.extend(other_environmental_charges)
+
+        other_dataframe = construct_dataframe(other_vacuum_charges, elements, other_charge_labels, env_charges_list=other_environmental_charges, env_labels=env_labels)
+        dataframe = pd.concat([dataframe, other_dataframe], ignore_index=True)
+
+
+    for i, charges in enumerate(vacuum_charges):
+        total_charges = np.sum(charges, axis=1)
+        if not np.allclose(total_charges, args.total_charge, atol=2e-2):
+            print(f"WARNING: Total charge for '{charge_labels[i]}' in vacuum does not match expected value {args.total_charge}. Found: {total_charges}")
+    if environmental_charges is not None:
+        for i, charges in enumerate(environmental_charges):
+            total_charges = np.sum(charges, axis=1)
+            if not np.allclose(total_charges, args.total_charge, atol=2e-2):
+                print(f"WARNING: Total charge for '{charge_labels[i]}' in environment does not match expected value {args.total_charge}. Found: {total_charges}")
+
+    return dataframe
 
 def read_geoms(file: str) -> np.ndarray:
     geoms: List[Atoms] = read(file, index=":")
@@ -91,56 +185,100 @@ def read_geoms(file: str) -> np.ndarray:
     elements = np.array(elements, dtype=object)
     return elements
 
-def construct_dataframe(vacs: List[np.ndarray], waters: List[np.ndarray], charge_type_labels: List[str], elements: np.ndarray) -> pd.DataFrame:
-    n_envs = len(ENV_LABELS)
-    n_charge_types = len(charge_type_labels)
-
-    diffs = [(waters[i] - vacs[i]) for i in range(n_charge_types)]
-    charge_type_data_list = [vacs, waters, diffs]
-
-    data_frames = []
-    for env_idx in range(n_envs):
-        for charge_type_idx in range(n_charge_types):
-            env_label = ENV_LABELS[env_idx] # shape: (1,)
-            charge_type_label = charge_type_labels[charge_type_idx] # shape: (1,)
-            charge_type_data = charge_type_data_list[env_idx][charge_type_idx] # shape: (n_molecules, n_atoms)
-            n_molecules = charge_type_data.shape[0]
-            n_atoms = charge_type_data.shape[1]
+def construct_dataframe(
+    charges_list: List[np.ndarray], 
+    elements: np.ndarray, 
+    labels: List[str],
+    env_charges_list: Optional[List[np.ndarray]] = None,
+    env_labels: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Construct a dataframe from charge data.
+    
+    Args:
+        charges_list: List of charge arrays, each with shape (n_molecules, n_atoms)
+        elements: Array of element symbols with shape (n_molecules, n_atoms)
+        labels: List of labels for each charge type
+        env_charges_list: Optional list of environment charge arrays for comparison mode
+        env_labels: Optional list of environment labels (defaults to global ENV_LABELS)
+        
+    Returns:
+        DataFrame with charge data, elements, charge types, and optionally environments
+    """
+    if env_charges_list is not None:
+        # Full comparison mode with environments
+        n_envs = len(env_labels)
+        n_charge_types = len(labels)
+        
+        diffs = [(env_charges_list[i] - charges_list[i]) for i in range(n_charge_types)]
+        charge_type_data_list = [charges_list, env_charges_list, diffs]
+        
+        data_frames = []
+        for env_idx in range(n_envs):
+            for charge_type_idx in range(n_charge_types):
+                env_label = env_labels[env_idx]
+                charge_type_label = labels[charge_type_idx]
+                charge_type_data = charge_type_data_list[env_idx][charge_type_idx]
+                n_molecules = charge_type_data.shape[0]
+                n_atoms = charge_type_data.shape[1]
+                df = pd.DataFrame({
+                    "Charge": charge_type_data.flatten(),
+                    "Charge type": charge_type_label,
+                    "Element": elements.flatten(),
+                    "Atomic number": [atomic_numbers[el] for el in elements.flatten()],
+                    "Environment": env_label,
+                    "Molecule idx": np.repeat(np.arange(n_molecules), n_atoms),
+                    "Atom idx": np.tile(np.arange(n_atoms), n_molecules)
+                })
+                df = df.sort_values(["Charge type", "Environment", "Molecule idx", "Atomic number"])
+                data_frames.append(df)
+    else:
+        # Simple mode without environment comparison
+        data_frames = []
+        for charges, label in zip(charges_list, labels):
+            n_molecules = charges.shape[0]
+            n_atoms = charges.shape[1]
+            
             df = pd.DataFrame({
-                "Charge": charge_type_data.flatten(),
-                "Charge type": charge_type_label,
+                "Charge": charges.flatten(),
                 "Element": elements.flatten(),
-                "Environment": env_label,
-                "Dataset molecule idx": np.repeat(np.arange(n_molecules), n_atoms),
-                "Dataset atom idx": np.tile(np.arange(n_atoms), n_molecules)
+                "Atomic number": [atomic_numbers[el] for el in elements.flatten()],
+                "Charge type": label,
+                "Molecule idx": np.repeat(np.arange(n_molecules), n_atoms),
+                "Atom idx": np.tile(np.arange(n_atoms), n_molecules)
             })
+            df = df.sort_values(["Charge type", "Molecule idx", "Atomic number"])
             data_frames.append(df)
+    
     # Concatenate all dataframes into one
-    data = pd.concat(data_frames, ignore_index=True)
+    combined_df = pd.concat(data_frames, ignore_index=True)
 
-    # Molecule with maximal charge on an atom
-    env_data = data[data["Environment"].isin(ENV_LABELS[:2])]  # Drop Difference environment
-    max_charge_entry = env_data.loc[env_data["Charge"].idxmax()]
-    min_charge_entry = env_data.loc[env_data["Charge"].idxmin()]
-    print(f"Maximum charge entry: {max_charge_entry}, Charge: {max_charge_entry['Charge']:.2f}") 
-    print(f"Minimum charge entry: {min_charge_entry}, Charge: {min_charge_entry['Charge']:.2f}")
-    return data
+    # # Molecule with maximal charge on an atom, for figuring out outliers
+    # if env_charges_list is not None:
+    #     env_data = combined_df[combined_df["Environment"].isin(env_labels[:2])]  # Drop Difference environment
+    #     max_charge_entry = env_data.loc[env_data["Charge"].idxmax()]
+    #     min_charge_entry = env_data.loc[env_data["Charge"].idxmin()]
+    #     print(f"Maximum charge entry: {max_charge_entry}, Charge: {max_charge_entry['Charge']:.2f}") 
+    #     print(f"Minimum charge entry: {min_charge_entry}, Charge: {min_charge_entry['Charge']:.2f}")
+    
+    return combined_df
 
-def plot_histogram(data: pd.DataFrame):
+def plot_histogram(data: pd.DataFrame, env_labels: List[str]):
     charge_labels = data["Charge type"].unique()
 
-    overall_means = data.groupby(["Environment", "Charge type", "Element"]).mean(numeric_only=True).reset_index().sort_values("Element")
-    overall_stds = data.groupby(["Environment", "Charge type", "Element"]).std(numeric_only=True).reset_index().sort_values("Element")
+    overall_means = data.groupby(["Environment", "Charge type", "Element"]).mean(numeric_only=True).reset_index()
+    overall_stds = data.groupby(["Environment", "Charge type", "Element"]).std(numeric_only=True).reset_index()
 
     for label in charge_labels:
-        subset = data[data["Charge type"] == label].sort_values("Element")
+        subset = data[data["Charge type"] == label]
 
         fig, axes = plt.subplots(1, 3, figsize=FIGSIZE, sharey=True)
         if TITLE:
-            fig.suptitle(label + " Charge", fontsize=FONTSIZE)
+            fig.suptitle(label + " Charge")
 
+        n_elements = subset["Element"].nunique()
         current_axis = axes[0]
-        current_env = ENV_LABELS[0]  # Vacuum
+        current_env = env_labels[0]  # First environment (e.g., Vacuum)
         g = sns.histplot(
             data=subset[subset["Environment"] == current_env],
             x="Charge",
@@ -151,22 +289,19 @@ def plot_histogram(data: pd.DataFrame):
             ax=current_axis, 
             stat="probability", 
             common_norm=False,
-            palette="tab10"
+            palette=PALETTE[:n_elements]
             )
 
-        current_axis.set_title(r"$Q_{Vacuum}$", fontsize=LABELSIZE)
-        current_axis.set_xlabel("Charge [e]", fontsize=LABELSIZE)
-        current_axis.set_ylabel("Probability", fontsize=LABELSIZE)
+        current_axis.set_title(f"$Q_{{{env_labels[0]}}}$")
+        current_axis.set_xlabel("Charge (e)")
+        current_axis.set_ylabel("Probability")
         means = overall_means[(overall_means["Environment"] == current_env) & (overall_means["Charge type"] == label)]
         stds = overall_stds[(overall_stds["Environment"] == current_env) & (overall_stds["Charge type"] == label)]
         labels = [f"{means['Element'].iloc[i]: >2}: {means['Charge'].iloc[i]:5.2f}\u00B1{stds['Charge'].iloc[i]:.2f}" for i in range(len(means))]
         [text.set_text(label) for text, label in zip(g.axes.get_legend().texts, labels)]
-        current_axis.tick_params(labelsize=LABELSIZE)
-        plt.setp(current_axis.get_legend().get_texts(), fontsize=LABELSIZE)
-        plt.setp(current_axis.get_legend().get_title(), fontsize=LABELSIZE)
 
         current_axis = axes[1]
-        current_env = ENV_LABELS[1]  # Water
+        current_env = env_labels[1]  # Second environment (e.g., Water)
         g = sns.histplot(
             data=subset[subset["Environment"] == current_env], 
             x="Charge",
@@ -177,21 +312,18 @@ def plot_histogram(data: pd.DataFrame):
             ax=current_axis, 
             stat="probability", 
             common_norm=False,
-            palette="tab10"
+            palette=PALETTE[:n_elements]
         )
 
-        current_axis.set_title(r"$Q_{Water}$", fontsize=LABELSIZE)
-        current_axis.set_xlabel("Charge [e]", fontsize=LABELSIZE)
+        current_axis.set_title(f"$Q_{{{env_labels[1]}}}$")
+        current_axis.set_xlabel("Charge (e)")
         means = overall_means[(overall_means["Environment"] == current_env) & (overall_means["Charge type"] == label)]
         stds = overall_stds[(overall_stds["Environment"] == current_env) & (overall_stds["Charge type"] == label)]
         labels = [f"{means['Element'].iloc[i]: >2}: {means['Charge'].iloc[i]:5.2f}\u00B1{stds['Charge'].iloc[i]:.2f}" for i in range(len(means))]
         [text.set_text(label) for text, label in zip(g.axes.get_legend().texts, labels)]
-        current_axis.tick_params(labelsize=LABELSIZE)
-        plt.setp(current_axis.get_legend().get_texts(), fontsize=LABELSIZE)
-        plt.setp(current_axis.get_legend().get_title(), fontsize=LABELSIZE)
 
         current_axis = axes[2]
-        current_env = ENV_LABELS[2]  # Difference
+        current_env = env_labels[2]  # Difference
         g = sns.histplot(
             data=subset[subset["Environment"] == current_env],
             x="Charge",
@@ -202,18 +334,16 @@ def plot_histogram(data: pd.DataFrame):
             ax=current_axis, 
             stat="probability", 
             common_norm=False,
-            palette="tab10"
+            palette=PALETTE[:n_elements]
         )
 
-        current_axis.set_title(r"$Q_{Water} - Q_{Vacuum}$", fontsize=LABELSIZE)
-        current_axis.set_xlabel(r"$\Delta$Charge [e]", fontsize=LABELSIZE)
+        current_axis.set_title(f"$Q_{{{env_labels[1]}}} - Q_{{{env_labels[0]}}}$")
+        current_axis.set_xlabel(r"$\Delta$Charge (e)")
         means = overall_means[(overall_means["Environment"] == current_env) & (overall_means["Charge type"] == label)]
         stds = overall_stds[(overall_stds["Environment"] == current_env) & (overall_stds["Charge type"] == label)]
         labels = [f"{means['Element'].iloc[i]: >2}: {means['Charge'].iloc[i]:5.2f}\u00B1{stds['Charge'].iloc[i]:.2f}" for i in range(len(means))]
         [text.set_text(label) for text, label in zip(g.axes.get_legend().texts, labels)]
-        current_axis.tick_params(labelsize=LABELSIZE)
-        plt.setp(current_axis.get_legend().get_texts(), fontsize=LABELSIZE)
-        plt.setp(current_axis.get_legend().get_title(), fontsize=LABELSIZE)
+
 
         save_name = f"{'_'.join(label.split()).lower()}_charges_histogram.png"
         plt.savefig(save_name, dpi=DPI)
@@ -223,29 +353,73 @@ def plot_boxplot(data):
     for charge_type in data["Charge type"].unique():
         current_data = data[data["Charge type"]==charge_type]
         #current_data = current_data[data["Environment"].isin(env_labels_original[:2])]
+        n_elements = current_data["Element"].nunique()
+
         plt.figure(figsize=FIGSIZE)
         fig = sns.boxplot(
             data=current_data, 
             x="Environment", 
             y="Charge", 
             hue="Element", 
-            #order=env_labels_original
+            #order=env_labels_original,
+            palette=PALETTE[:n_elements]
         )
         if TITLE:
-            fig.axes.set_title("Charges boxplot", fontsize=FONTSIZE)
-        fig.set_xlabel("Method", fontsize=FONTSIZE)
-        fig.set_ylabel("Charge", fontsize=FONTSIZE)
-        fig.tick_params(labelsize=FONTSIZE, axis="x")
-        fig.tick_params(labelsize=LABELSIZE, axis="y")
-        plt.setp(fig.get_legend().get_title(), fontsize=FONTSIZE) # for legend title
-        plt.setp(fig.get_legend().get_texts(), fontsize=FONTSIZE) # for legend text
+            fig.axes.set_title("Charges boxplot")
+        fig.set_xlabel("Environment")
+        fig.set_ylabel("Charge (e)")
         plt.tight_layout()
         save_name = f"{'_'.join(charge_type.split()).lower()}_charges_boxplot.png"
         plt.savefig(save_name, dpi=DPI)
 
+def plot_simple_boxplot(data_frame: pd.DataFrame, y_label: str = "Charge (e)", save_name="charges_boxplot.png") -> None:
+    """
+    Create a simple boxplot for multiple charge types without environment comparison.
+    
+    Args:
+        charges_list: List of charge arrays, each with shape (n_molecules, n_atoms)
+        elements: Array of element symbols with shape (n_molecules, n_atoms)
+        labels: List of labels for each charge type
+    """
+    n_elements = len(data_frame["Element"].unique())
+
+    # Create boxplot
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+    sns.boxplot(
+        data=data_frame, 
+        hue="Element", 
+        y="Charge", 
+        x="Charge type",
+        palette=PALETTE[:n_elements],
+        showfliers=False,
+        ax=ax
+    )
+    if TITLE:
+        ax.set_title("Charges Comparison")
+    ax.set_xlabel("Method")
+    ax.set_ylabel(y_label)
+
+    # Grid
+    ax.yaxis.grid(True)
+
+    # # Legend outside of plot
+    # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', title="Element")
+    sns.move_legend(ax, "upper left")
+    plt.tight_layout()
+
+    plt.savefig(save_name, dpi=DPI)
+    print(f"Saved boxplot to: {save_name}")
+    
+    # # Print statistics
+    # print("\nCharge statistics by element and charge type:")
+    # stats = data_frame.groupby(["Charge type", "Element"])["Charge"].agg(["mean", "std", "min", "max"])
+    # pd.set_option("display.precision", 3) # set pandas precision for better readability
+    # print(stats)
+
 def create_charge_correlation_plot(
     combined: pd.DataFrame,
     charge_type: str,
+    env_labels: List[str],
     ax: Optional[plt.Axes] = None
 ) -> plt.Axes:
     """
@@ -254,6 +428,7 @@ def create_charge_correlation_plot(
     Args:
         combined: DataFrame with combined charge data
         charge_type: Type of charge being plotted
+        env_labels: List of environment labels
         ax: Optional axes to plot on (if None, creates new figure and saves it)
         
     Returns:
@@ -262,30 +437,35 @@ def create_charge_correlation_plot(
     # Create figure if needed
     standalone = ax is None
     if standalone:
-        sns.set_context("talk")
-        fig, ax = plt.subplots(figsize=FIGSIZE)
-    
+        fig, ax = plt.subplots(figsize=CORR_FIGSIZE)
+
+    n_elements = combined["Element"].nunique()
     # Create the scatter plot
     sns.scatterplot(
         data=combined, 
-        x=ENV_LABELS[0], 
-        y=ENV_LABELS[1], 
+        x=env_labels[0], 
+        y=env_labels[1], 
         hue="Element",
-        palette="tab10",
+        palette=PALETTE[:n_elements],
         alpha=ALPHA,
         s=10,
         ax=ax
     )
 
-    # Add perfect correlation line
-    max_val = max(combined[ENV_LABELS[0]].max(), combined[ENV_LABELS[1]].max())
-    min_val = min(combined[ENV_LABELS[0]].min(), combined[ENV_LABELS[1]].min())
-    ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--", label="Perfect Correlation")
+    for legend_handle in ax.get_legend().legend_handles:
+        legend_handle.set_alpha(1)
+        if hasattr(legend_handle, "set_sizes"):
+            legend_handle.set_sizes([30])
+    ax.legend(markerscale=3, frameon=True, title="Element", loc="upper left")
 
-    ax.set_xlabel(f"{ENV_LABELS[0]} Charge [e]", fontsize=LABELSIZE)
-    ax.set_ylabel(f"{ENV_LABELS[1]} Charge [e]", fontsize=LABELSIZE)
-    ax.tick_params(labelsize=LABELSIZE)
-    
+    # Add perfect correlation line
+    max_val = max(combined[env_labels[0]].max(), combined[env_labels[1]].max())
+    min_val = min(combined[env_labels[0]].min(), combined[env_labels[1]].min())
+    ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--")
+
+    ax.set_xlabel(f"{env_labels[0]} Charge (e)")
+    ax.set_ylabel(f"{env_labels[1]} Charge (e)")
+
     # Save individual plot if it's a standalone
     if standalone:
         plt.tight_layout()
@@ -294,13 +474,13 @@ def create_charge_correlation_plot(
         plt.close()
     else:
         # Calculate correlation coefficient
-        corr = combined[ENV_LABELS[0]].corr(combined[ENV_LABELS[1]])
+        corr = combined[env_labels[0]].corr(combined[env_labels[1]])
         ax_title = f"{charge_type.replace('_', ' ').title()} (r={corr:.3f})" 
-        ax.set_title(ax_title, fontsize=LABELSIZE)
-    
+        ax.set_title(ax_title)
+
     return ax
 
-def plot_correlation(data: pd.DataFrame) -> None:
+def plot_correlation(data: pd.DataFrame, env_labels: List[str]) -> None:
     """
     Plot correlation between different charge types.
     
@@ -309,53 +489,60 @@ def plot_correlation(data: pd.DataFrame) -> None:
     """
     charge_types = data["Charge type"].unique()
     n_charge_types = len(charge_types)
-    n_cols = 4
+    n_cols = 3
     n_rows = (n_charge_types + n_cols - 1) // n_cols  # Round up to the nearest whole number
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * FIGSIZE[0], n_rows * FIGSIZE[1]))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(CORR_FIGSIZE[0] * n_cols, CORR_FIGSIZE[1] * n_rows))
     axes = axes.flatten()  # Flatten the 2D array of axes for easier indexing
     if TITLE:
-        fig.suptitle("Charge Correlation", fontsize=FONTSIZE)
+        fig.suptitle("Charge Correlation")
     
     for i, charge_type in enumerate(charge_types):
         charge_type_subset = data[data["Charge type"] == charge_type]
         
         # Extract data for the specific charge types
-        subset_1 = charge_type_subset[charge_type_subset["Environment"] == ENV_LABELS[0]].copy()
-        subset_2 = charge_type_subset[charge_type_subset["Environment"] == ENV_LABELS[1]].copy()
+        subset_1 = charge_type_subset[charge_type_subset["Environment"] == env_labels[0]].copy()
+        subset_2 = charge_type_subset[charge_type_subset["Environment"] == env_labels[1]].copy()
         if subset_1.empty or subset_2.empty:
-            print(f"WARNING: No data available for charge type '{charge_type}' in environment '{ENV_LABELS[0]}' or '{ENV_LABELS[1]}'. Skipping this charge type.")
+            print(f"WARNING: No data available for charge type '{charge_type}' in environment '{env_labels[0]}' or '{env_labels[1]}'. Skipping this charge type.")
             continue
 
         subset_1["global_id"] = subset_1.index
         subset_2["global_id"] = subset_2.index
         
         # Create pivot tables with frame_atom_id as index and Element as additional column
-        pivot_1 = subset_1.pivot_table(index=["Element", "global_id"], values="Charge").reset_index().sort_values("global_id").reset_index()
-        pivot_2 = subset_2.pivot_table(index=["Element", "global_id"], values="Charge").reset_index().sort_values("global_id").reset_index()
+        pivot_1 = subset_1.pivot_table(index=["global_id", "Element", "Atomic number"], values="Charge").reset_index()#.sort_values("global_id").reset_index()
+        pivot_2 = subset_2.pivot_table(index=["global_id", "Element", "Atomic number"], values="Charge").reset_index()#.sort_values("global_id").reset_index()
 
         # Combine the pivot tables
         combined = pd.DataFrame({
-            ENV_LABELS[0]: pivot_1["Charge"],
-            ENV_LABELS[1]: pivot_2["Charge"],
+            env_labels[0]: pivot_1["Charge"],
+            env_labels[1]: pivot_2["Charge"],
             "Element": pivot_1["Element"],
+            "Atomic number": pivot_1["Atomic number"]
         })
 
         if combined.empty:
-            print(f"WARNING: No data available for charge type '{charge_type}' in environment '{ENV_LABELS[0]}' or '{ENV_LABELS[1]}'. Skipping this charge type.")
+            print(f"WARNING: No data available for charge type '{charge_type}' in environment '{env_labels[0]}' or '{env_labels[1]}'. Skipping this charge type.")
             continue
+
+        # Subsample if too many points
+        combined = combined.sample(n=min(len(combined), MAX_POINTS), random_state=42)
+        combined = combined.sort_values(by="Atomic number")
 
         # Create plot on the subplot axes
         create_charge_correlation_plot(
             combined=combined,
             charge_type=charge_type,
+            env_labels=env_labels,
             ax=axes[i]
         )
         
         # Also create individual plot
         create_charge_correlation_plot(
             combined=combined,
-            charge_type=charge_type
+            charge_type=charge_type,
+            env_labels=env_labels
         )
 
     # Hide any unused axes
@@ -367,33 +554,94 @@ def plot_correlation(data: pd.DataFrame) -> None:
     plt.savefig(f"correlation_charge.png", dpi=DPI)
     plt.close()
 
+    # Plot difference correlations
+    n_charge_combinations = n_charge_types * (n_charge_types - 1) // 2
+    n_rows = (n_charge_combinations + n_cols - 1) // n_cols  # Round up to the nearest whole number
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(CORR_FIGSIZE[0] * n_cols, CORR_FIGSIZE[1] * n_rows))
+    axes = axes.flatten()  # Flatten the 2D array of axes for easier indexing
+    if TITLE:
+        fig.suptitle("Charge Difference Correlation")
+
+    for i, (charge_type_1, charge_type_2) in enumerate(itertools.combinations(charge_types, 2)):
+        subset_1 = data[(data["Charge type"] == charge_type_1) & (data["Environment"] == "Difference")].copy()
+        subset_2 = data[(data["Charge type"] == charge_type_2) & (data["Environment"] == "Difference")].copy()
+        if subset_1.empty or subset_2.empty:
+            print(f"WARNING: No data available for charge types '{charge_type_1}' or '{charge_type_2}' in 'Difference' environment. Skipping this pair.")
+            continue
+
+        subset_1["global_id"] = subset_1.index
+        subset_2["global_id"] = subset_2.index
+
+        # Create pivot tables with frame_atom_id as index and Element as additional column
+        pivot_1 = subset_1.pivot_table(index=["global_id", "Element", "Atomic number"], values="Charge").reset_index()#.sort_values("global_id").reset_index()
+        pivot_2 = subset_2.pivot_table(index=["global_id", "Element", "Atomic number"], values="Charge").reset_index()#.sort_values("global_id").reset_index()
+
+        # Combine the pivot tables
+        combined = pd.DataFrame({
+            charge_type_1: pivot_1["Charge"],
+            charge_type_2: pivot_2["Charge"],
+            "Element": pivot_1["Element"],
+            "Atomic number": pivot_1["Atomic number"]
+        })
+
+        if combined.empty:
+            print(f"WARNING: No data available for charge types '{charge_type_1}' or '{charge_type_2}' in 'Difference' environment. Skipping this pair.")
+            continue
+
+        # Subsample if too many points
+        combined = combined.sample(n=min(len(combined), MAX_POINTS), random_state=42)
+        combined = combined.sort_values(by="Atomic number")
+
+        # Create plot on the subplot axes
+        create_charge_correlation_plot(
+            combined=combined,
+            charge_type=f"{charge_type_1}_vs_{charge_type_2}",
+            env_labels=[charge_type_1, charge_type_2],
+            ax=axes[i]
+        )
+        
+    # Hide any unused axes
+    for j in range(i + 1, len(axes)):
+        axes[j].set_visible(False)
+
+    plt.subplots_adjust(top=0.9)  # Adjust the top to make space for the suptitle
+    plt.tight_layout()
+    plt.savefig(f"correlation_charge_difference.png", dpi=DPI)
+    plt.close()
+
 def main() -> None:
     args = parse_args()
-    vacs = [np.loadtxt(file) for file in args.vacuum_charge_files]
-    waters = [np.loadtxt(file) for file in args.env_charge_files]
-    elements = read_geoms(args.geoms_file)
-    charge_labels = args.labels
-
-    assert len(vacs)==len(waters)
-    assert len(vacs)==len(charge_labels)
-    for data in vacs:
-        assert data.shape == vacs[0].shape
-    for data in waters:
-        assert data.shape == vacs[0].shape
-    total_charges = [np.sum(data, axis=1) for data in vacs + waters]
-    for i, total_charge in enumerate(total_charges):
-        if not np.allclose(total_charge, args.total_charge, atol=1e-5):
-            print(f"WARNING: Total charge for input {i} does not match expected value {args.total_charge}. Found: {total_charge}")
-
-    print("Constructing data frame...")
-    data = construct_dataframe(vacs, waters, charge_labels, elements)
     sns.set_context("talk", font_scale=1.3)
-    print("Plotting histograms...")
-    plot_histogram(data)
-    print("Plotting boxplots...")
-    plot_boxplot(data)
-    print("Plotting correlations...")
-    plot_correlation(data)
+
+    dataframe = prepare_data(args)
+
+    if args.env_charge_files is None:
+        print("Plotting simple boxplot...")
+        save_name = f"charges_simple_boxplot{args.suffix}.png"
+        plot_simple_boxplot(dataframe, save_name=save_name)
+
+    else:
+        # Create individual boxplots for each environment
+        for environment in args.env_labels:
+            subset = dataframe[dataframe["Environment"] == environment]
+            if environment == "Difference":
+                y_label = r"$\Delta$Charge (e)"
+            else:
+                y_label = "Charge (e)"
+            save_name = f"charges_boxplot_{environment.lower()}{args.suffix}.png"
+            plot_simple_boxplot(subset, y_label=y_label, save_name=save_name)
+
+        # Remove additionally given charge files from dataframe for histograms and correlations
+        if hasattr(args, "extra"):
+            dataframe = dataframe[dataframe["Charge type"] != args.extra]
+
+        print("Plotting histograms...")
+        plot_histogram(dataframe, args.env_labels)
+        print("Plotting boxplots...")
+        plot_boxplot(dataframe)
+        print("Plotting correlations...")
+        plot_correlation(dataframe, args.env_labels)
 
 if __name__=="__main__":
     main()
