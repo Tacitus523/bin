@@ -344,7 +344,7 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydr
         print("No hydrogen bonds found, skipping hydrogen bond distribution plot.")
         return
         
-    binrange = (h_bond_df["Bond Distance"].min(), min(h_bond_df["Bond Distance"].max(), 1.3))  # Limit the range to 1.3 Å
+    binrange = (max(h_bond_df["Bond Distance"].min(),0.9), min(h_bond_df["Bond Distance"].max(), 1.3))  # Limit the range to 0.9-1.3 Å
 
     # Plot the distribution of hydrogen bond lengths
 
@@ -365,7 +365,7 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydr
         palette=PALETTE,
         kind="hist"
     )
-    axes.set_axis_labels("Hydrogen Bond Length [Å]", "Frequency")
+    axes.set_axis_labels("Hydrogen Bond Length [Å]", "Probability")
     sns.move_legend(axes, "upper left", bbox_to_anchor=(1.05, 0.75))
 
     plt.tight_layout()
@@ -392,7 +392,7 @@ def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_l
         palette=PALETTE,
         kind="hist"
     )
-    axes.set_axis_labels("Bond Length [Å]", "Frequency")
+    axes.set_axis_labels("Bond Length [Å]", "Probability")
     sns.move_legend(axes, "upper left", bbox_to_anchor=(1.05, 0.75))
 
     plt.tight_layout()
