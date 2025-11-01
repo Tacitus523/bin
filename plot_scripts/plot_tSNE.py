@@ -28,6 +28,9 @@ DEFAULT_DATA_SOURCE = "Original Sampling"
 _adaptive_sampling_prefix = "Adaptive Sampling"
 adaptive_sampling_label = "Adaptive Sampling"
 
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3) # Remove red color
+
 def main():
     ap = argparse.ArgumentParser(description="t-SNE analysis for .xyz-trajectories")
     ap.add_argument("-f", type=str, dest="file", action="store", required=True, help="File with geometry data to plot", metavar="file")
@@ -40,6 +43,8 @@ def main():
 
     u = mda.Universe(file, format="XYZ")
     atoms = u.select_atoms('all')
+    # # mask hydrogens
+    # atoms = atoms.select_atoms('not name H')
     n_atoms = len(atoms)
     n_time_steps = len(u.trajectory)
     self_distances = distances.self_distance_array(atoms.positions)
@@ -80,7 +85,7 @@ def main():
 def PCA_plot(df: pd.DataFrame, features: np.ndarray):
 
     time_start = time.time()
-    pca = PCA(n_components=50)
+    pca = PCA(n_components=min(50, features.shape[1]))
     pca_result = pca.fit_transform(features)
     print('PCA done! Time elapsed: {} seconds'.format(time.time()-time_start))
 
@@ -96,7 +101,7 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
     sns.scatterplot(
     x="PC 1", y="PC 2",
     hue="data_source",
-    palette=None,
+    palette=PALETTE,
     data=df,
     legend="full",
     alpha=ALPHA,
@@ -111,7 +116,7 @@ def PCA_plot(df: pd.DataFrame, features: np.ndarray):
         legend_handle.set_markersize(MARKERSIZE)
     plt.tight_layout()
     plt.savefig("2D_PCA_plot.png", dpi=DPI)
-    #plt.close()
+    plt.close()
     
     # fig = plt.figure(figsize=(16,10))
     # ax = fig.add_subplot(projection='3d')
@@ -162,7 +167,7 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list, per
             pallete[i] = pallete[0]
         markers = ["s","^","o"]
     else:
-        pallete = None
+        pallete = PALETTE
         style = None
         style_order = None
         markers = True
@@ -217,7 +222,7 @@ def tSNE_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list, per
     plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
     plt.tight_layout()
     plt.savefig("2D_tSNE_plot.png", dpi=DPI, bbox_inches = "tight")
-    #plt.close()
+    plt.close()
 
 def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     n_original_labels = len(original_labels)
@@ -241,7 +246,7 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
             pallete[i] = pallete[0]
         markers = ["s","^","o"]
     else:
-        pallete = None
+        pallete = PALETTE
         style = None
         style_order = None
         markers = True
@@ -297,7 +302,7 @@ def UMAP_plot(df: pd.DataFrame, features: np.ndarray, original_labels: list):
     plt.setp(ax.get_legend().get_texts(), fontsize='22') # for legend text
     plt.tight_layout()
     plt.savefig("2D_UMAP_plot.png", dpi=DPI, bbox_inches = "tight")
-    #plt.close()
+    plt.close()
 
 if __name__ == "__main__":
     main()
