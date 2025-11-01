@@ -21,13 +21,18 @@ then
     exit 1
 fi
 
+folder_prefix=$1
+# cut .out suffix from file_prefix
+file_prefix=${2%.out}
+folder_prefix_dirname=$(dirname "$folder_prefix")
+folder_prefix_basename=$(basename "$folder_prefix")
 
-folders=$(find $1* -maxdepth 1 \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folders=$(find "$folder_prefix_dirname" -maxdepth 1 -name "${folder_prefix_basename}*" \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
-	if ! [ -f $folder/$2.out ]
+	if ! [ -f $folder/$file_prefix*.out ]
 	then
-		echo "No file named $folder/$2.out"
+		echo "No file named $folder/$file_prefix*.out"
 		exit 1
 	fi
 	break
@@ -65,8 +70,8 @@ qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V # ESP in Volt
 
 for folder in $folders
 do
-	sed '/^$/d' $folder/$2.pc >> $PC_FILE # concatenate all pc files, remove empty lines
-	sed '/^$/d' $folder/$2.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
+	sed '/^$/d' $folder/$file_prefix.pc >> $PC_FILE # concatenate all pc files, remove empty lines
+	sed '/^$/d' $folder/$file_prefix.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
 done
 
 extract_qm_information.sh $1 $2

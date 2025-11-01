@@ -23,6 +23,8 @@ set -o errexit   # (or set -e) cause batch script to exit immediately when a com
 folder_prefix=$1
 # cut .out suffix from file_prefix
 file_prefix=${2%.out}
+folder_prefix_dirname=$(dirname "$folder_prefix")
+folder_prefix_basename=$(basename "$folder_prefix")
 
 # Check if at least one file exists
 if [ -z "$(ls $folder_prefix*/$file_prefix*.out 2> /dev/null)" ]; then
@@ -33,7 +35,6 @@ fi
 # Define check function
 function check_DFT_folder() {
     local folder="$1"
-    local file_prefix="$2"
     if ! tac ${folder}/${file_prefix}*.out 2> /dev/null | grep -q -m 1 "****ORCA TERMINATED NORMALLY****" 2> /dev/null
     then 
         echo "${folder} failed"
@@ -43,7 +44,6 @@ export -f check_DFT_folder
 
 function check_DFTB_folder() {
     local folder="$1"
-    local file_prefix="$2"
     if ! grep -q -m 1 "SCC converged" ${folder}/${file_prefix}*.out 2> /dev/null
     then 
         echo "${folder} failed"
@@ -52,11 +52,10 @@ function check_DFTB_folder() {
 export -f check_DFTB_folder
 
 # Process all folders in parallel
+# If the file prefix is "detailed", we assume DFTB calculations (since DFTB output files are named "detailed.out")
 if [[ $(basename $file_prefix) == "detailed" ]] 
 then 
-    echo "Checking DFTB folders for convergence..."
-    find "$folder_prefix"* \( -type d -o -type l \) | parallel -j 32 "check_DFTB_folder {} '$file_prefix'"
+    find "$folder_prefix_dirname" -name "${folder_prefix_basename}*" -a \( -type d -o -type l \) | parallel -j 32 --env file_prefix "check_DFTB_folder {}"
 else
-    echo "Checking DFT folders for convergence..."
-    find "$folder_prefix"* \( -type d -o -type l \) | parallel -j 32 "check_DFT_folder {} '$file_prefix'"
+    find "$folder_prefix_dirname" -name "${folder_prefix_basename}*" -a \( -type d -o -type l \) | parallel -j 32 --env file_prefix "check_DFT_folder {}"
 fi
