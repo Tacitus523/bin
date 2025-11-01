@@ -334,7 +334,6 @@ def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_dist
         plt.savefig(title, dpi=DPI)
         plt.close()
 
-
 def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydrogen_bond_length_distribution.png"):
     # Get the bonds involving hydrogen atoms
     is_h_bond_involved = (walker_dfs["Element 1"] == "H") | (walker_dfs["Element 2"] == "H")
@@ -345,23 +344,26 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydr
         return
         
     binrange = (max(h_bond_df["Bond Distance"].min(),0.9), min(h_bond_df["Bond Distance"].max(), 1.3))  # Limit the range to 0.9-1.3 Å
+    hue = "Data Source" if "Data Source" in walker_dfs.columns else "Bond Type"
+    col = "Bond Type" if "Data Source" in walker_dfs.columns else None
+    col_wrap = 2 if (col is not None and h_bond_df["Bond Type"].nunique() > 1) else None
+    common_norm = False if "Data Source" in walker_dfs.columns else True
 
     # Plot the distribution of hydrogen bond lengths
-
     axes = sns.displot(
         data=h_bond_df,
         x="Bond Distance",
-        hue="Data Source" if "Data Source" in walker_dfs.columns else "Bond Type",
-        col="Bond Type" if "Data Source" in walker_dfs.columns else None,
+        hue=hue,
+        col=col,
         multiple="stack",
-        col_wrap=2 if "Data Source" in walker_dfs.columns else None,
+        col_wrap=col_wrap,
         height=4, 
         aspect=1.2, 
         bins=100, 
         kde=False,
         binrange=binrange,
         stat="probability", 
-        common_norm=False if "Data Source" in walker_dfs.columns else True,
+        common_norm=common_norm,
         palette=PALETTE,
         kind="hist"
     )
@@ -374,14 +376,18 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydr
 
 def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_length_distribution.png"):
     binrange = (walker_dfs["Bond Distance"].min(), min(walker_dfs["Bond Distance"].max(), 2.5))  # Limit the range to 2.5 Å
+    hue = "Data Source" if "Data Source" in walker_dfs.columns else "Bond Type"
+    col = "Bond Type" if "Data Source" in walker_dfs.columns else None
+    col_wrap = 2 if (col is not None and walker_dfs["Bond Type"].nunique() > 1) else None
+    common_norm = False if "Data Source" in walker_dfs.columns else True
 
     axes = sns.displot(
         data=walker_dfs,
         x="Bond Distance",
-        hue="Data Source" if "Data Source" in walker_dfs.columns else "Bond Type",
-        col="Bond Type" if "Data Source" in walker_dfs.columns else None,
+        hue=hue,
+        col=col,
         multiple="stack",
-        col_wrap=2 if "Data Source" in walker_dfs.columns else None,
+        col_wrap=col_wrap,
         height=4, 
         aspect=1.2, 
         bins=100, 
