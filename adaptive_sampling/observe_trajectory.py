@@ -16,7 +16,7 @@ import numpy as np
 
 
 MAX_WAIT_TIME_INITIALIZATION = 120 # seconds to wait for initialization
-SLEEP_TIME = 30 # seconds to sleep between checks
+SLEEP_TIME = 300 # seconds to sleep between checks
 EXPLOSION_THRESHOLD = 2.5 # Angstroms, threshold for explosion detection
 DEFAULT_BASENAME = "run"
 DEFAULT_TRAJECTORY = "{}.xtc"
