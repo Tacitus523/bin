@@ -46,8 +46,8 @@ def parse_args():
     split_parser.add_argument("-t", "--train-file", dest="train_file", type=str, default=TRAIN_FILE, required=False, help="Name of the file training set is saved to")
     split_parser.add_argument("-v", "--valid-file", dest="valid_file", type=str, default=VALID_FILE, required=False, help="Name of the file validation set is saved to")
     split_parser.add_argument("-e", "--test-file", dest="test_file", type=str, default=TEST_FILE, required=False, help="Name of the file test set is saved to")
-    split_parser.add_argument("--p_test", type=float, default=0.2, required=False, help="Proportion of the whole dataset used for the test set")
-    split_parser.add_argument("--p_valid", type=float, default=0.2, required=False, help="Proportion of the not-test part of the dataset used for the validation set")
+    split_parser.add_argument("--p_test", type=float, default=0.1, required=False, help="Proportion of the whole dataset used for the test set")
+    split_parser.add_argument("--p_valid", type=float, default=0.1, required=False, help="Proportion of the not-test part of the dataset used for the validation set")
     split_parser.add_argument("--kfold", action="store_true", default=False, required=False, 
         help="Only with --nsplits: Perform K-Fold cross-validation split with overlapping training sets. Default: Overlap validation sets instead of training sets.")
     split_parser.add_argument("--random-seed", type=int, default=42, required=False, help="Random seed for reproducible splitting")
