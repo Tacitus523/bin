@@ -111,9 +111,10 @@ def main():
             legend=False
         )
         
+        ax.set_ylim(bottom=0)
         ax.set_xlabel('')
         ax.set_ylabel(f'{metric} ({unit})')
-        ax.set_title(metric)
+        ax.set_title(metric.replace(" RMSE", ""))
         
         # Rotate x-axis labels if needed
         ax.tick_params(axis='x', rotation=45)
