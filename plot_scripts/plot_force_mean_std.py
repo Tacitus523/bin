@@ -18,11 +18,12 @@ import warnings
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 warnings.filterwarnings("ignore")
 
+import ase
+from ase.io import read
+from ase.data import atomic_numbers
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
-import MDAnalysis as mda
 import seaborn as sns
-from ase.data import atomic_numbers
 
 # DEFAULT VALUES
 MEAN_STD_FILE: str = "qm_mlmm_std.xyz" # Trajectory file at folder location, should only contain qm-atoms
@@ -36,12 +37,24 @@ DEFAULT_COLLECTION_FOLDER_NAME: str = "std_analysis"
 ENERGY_UNIT = "eV"
 FORCE_UNIT = "eV/Å"
 
-MAX_DATA_POINTS = 50000
+MAX_DATA_POINTS = 25000
+
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3)  # Remove red color
+
+# Silence seaborn UserWarning about palette length
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The palette list has more values .* than needed .*",
+)
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Analyze bond distances over time")
     ap.add_argument("-p", "--prefix", default=None, type=str, required=False, help="Prefix of directionaries with trajectories, default: None", metavar="prefix")
     ap.add_argument("-f", "--file", default=MEAN_STD_FILE, type=str, required=False, help=f"Trajectory file to analyze, default: {MEAN_STD_FILE}", metavar="trajectory_file")
+    ap.add_argument("-et", "--energy-threshold", dest="energy_threshold", default=None, type=float, required=False, help="Horizontal indicator for applied energy STD threshold for simulation failure detection")
+    ap.add_argument("-ef", "--force-threshold", dest="force_threshold", default=None, type=float, required=False, help="Horizontal indicator for applied force STD threshold for simulation failure detection")
     args = ap.parse_args()
     for key, value in vars(args).items():
         print(f"Argument {key}: {value}")
@@ -108,52 +121,81 @@ def main() -> None:
 
     sns.set_context("talk", font_scale=1.3)
     sns.set_style("whitegrid")
-    sns.set_palette("tab10")
+    sns.set_palette(PALETTE)
     print("Plotting largest force standard deviations")
-    plot_largest_standard_deviations(walker_force_dfs, key="Std")
-    plot_largest_standard_deviations(walker_force_dfs, key="Weighted Std")
+    plot_largest_standard_deviations(walker_force_dfs, key="Force Std", unit=FORCE_UNIT)
+    plot_largest_standard_deviations(walker_force_dfs, key="Force Weighted Std", unit=FORCE_UNIT, threshold=args.force_threshold)
     if len(valid_dirs) > 1:
         print("Plotting force standard deviations in subplots")
-        plt_subplots(walker_force_dfs, key="Std")
-        plt_subplots(walker_force_dfs, key="Weighted Std")
+        plt_subplots(walker_force_dfs, key="Force Std", unit=FORCE_UNIT, threshold=args.force_threshold)
+        plt_subplots(walker_force_dfs, key="Force Weighted Std", unit=FORCE_UNIT, threshold=args.force_threshold)
+
+    walker_energy_dfs = walker_force_dfs[["Time Step Index", "Time Step", "Walker", "Energy Mean", "Energy Std"]].groupby(["Walker","Time Step Index"]).first().reset_index()
+    print("Plotting energy standard deviations")
+    plot_largest_standard_deviations(walker_energy_dfs, key="Energy Std", unit=ENERGY_UNIT, ylabel_prefix="Energy", threshold=args.energy_threshold)
+    if len(valid_dirs) > 1:
+        print("Plotting energy standard deviations in subplots")
+        plt_subplots(walker_energy_dfs, key="Energy Std", unit=ENERGY_UNIT, ylabel_prefix="Energy", threshold=args.energy_threshold)
 
 def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
     try:
-        universe = mda.Universe(args.file)
+        molecules: List[ase.Atoms] = read(args.file, index=":")
     except Exception as e:
-        print(e, file=sys.stderr)
-        return None
-    n_timesteps = len(universe.trajectory)//2 # Alternating mean and std in trajectory
-    n_atoms = universe.atoms.n_atoms
-    elements = universe.atoms.elements
-    atomic_masses = universe.atoms.masses
+        # Last index might be incomplete
+        try:
+            molecules: List[ase.Atoms] = read(args.file, index=":-1")
+            print(f"Warning: Last index in {os.path.join(os.getcwd(),args.file)} is damaged", file=sys.stderr)
+        except Exception as e:
+            print(e, file=sys.stderr)
+            return None
+    n_timesteps = len(molecules) // 2  # Assumption: Mean and Stds alternate in trajectory
+    n_atoms = len(molecules[0])
+    elements = molecules[0].get_chemical_symbols()
+    atomic_masses = molecules[0].get_masses()  # shape (n_atoms,)
 
     #Assumption: Mean and Stds alternate in trajectory
-    means = np.array([atoms.positions.copy() for atoms in universe.trajectory[::2]]) # shape (n_timesteps, n_atoms, 3)
-    stds = np.array([atoms.positions.copy() for atoms in universe.trajectory[1::2]]) # shape (n_timesteps, n_atoms, 3)
-    weighted_stds = stds / (atomic_masses[np.newaxis, :, np.newaxis])  # shape (n_timesteps, n_atoms, 3)
+
+    try:
+        mean_comments = [list(molecule.info.keys()) for molecule in molecules[::2]]
+        std_comments = [list(molecule.info.keys()) for molecule in molecules[1::2]]
+        assert all("Means"==comments[0] for comments in mean_comments), "Mean entries do not have 'Means' in info"
+        assert all("Stds"==comments[0] for comments in std_comments), "Std entries do not have 'Stds' in info"
+        timesteps = np.array([int(mean_comment[2].replace(":","")) for mean_comment in mean_comments])
+        energy_means = np.array([float(mean_comment[3]) for mean_comment in mean_comments])  # shape (n_timesteps,)
+        energy_stds = np.array([float(std_comment[3]) for std_comment in std_comments])  # shape (n_timesteps,)
+    except AssertionError as e:
+        assert all([molecule.info.get("means") is not None for molecule in molecules[::2]]), "Mean entries do not have 'means' in info"
+        assert all([molecule.info.get("stds") is not None for molecule in molecules[1::2]]), "Std entries do not have 'stds' in info"
+
+        timesteps = np.array([molecule.info["step"] for molecule in molecules[::2]])
+        energy_means = np.array([molecule.info["energy_mean"] for molecule in molecules[::2]])  # shape (n_timesteps,)
+        energy_stds = np.array([molecule.info["energy_std"] for molecule in molecules[1::2]])  # shape (n_timesteps,)
+
+    force_means = np.array([molecule.get_positions().copy() for molecule in molecules[::2]]) # shape (n_timesteps, n_atoms, 3)
+    force_stds = np.array([molecule.get_positions().copy() for molecule in molecules[1::2]]) # shape (n_timesteps, n_atoms, 3)
+    weighted_force_stds = force_stds / (atomic_masses[np.newaxis, :, np.newaxis])  # shape (n_timesteps, n_atoms, 3)
 
     timestep_indices = np.repeat(np.arange(n_timesteps), n_atoms*3)
+    timesteps = np.repeat(timesteps, n_atoms*3)
+    energy_means = np.repeat(energy_means, n_atoms*3)
+    energy_stds = np.repeat(energy_stds, n_atoms*3)
     atom_indices = np.tile(np.repeat(np.arange(n_atoms), 3), n_timesteps)
     coordinate_indices = np.tile(np.array(["x", "y", "z"]), n_timesteps * n_atoms)
     element_indices = np.tile(np.repeat(elements, 3), n_timesteps)
 
     # Create a DataFrame for the bond distances
     data = {
-        "Time Step": timestep_indices,
+        "Time Step Index": timestep_indices,
+        "Time Step": timesteps,
         "Atom Index": atom_indices,
         "Element": element_indices,
         "Coordinate": coordinate_indices,
-        "Mean": means.flatten(),
-        "Std": stds.flatten(),
-        "Weighted Std": weighted_stds.flatten(),
+        "Energy Mean": energy_means,
+        "Energy Std": energy_stds,
+        "Force Mean": force_means.flatten(),
+        "Force Std": force_stds.flatten(),
+        "Force Weighted Std": weighted_force_stds.flatten(),
     }
-
-    # Subsample data if it exceeds MAX_DATA_POINTS
-    if len(data["Time Step"]) > MAX_DATA_POINTS:
-        indices = np.random.choice(len(data["Time Step"]), MAX_DATA_POINTS, replace=False)
-        indices = np.sort(indices)  # Sort indices to maintain order
-        data = {key: np.array(value)[indices] for key, value in data.items()}
 
     walker_df = pd.DataFrame(data)
 
@@ -162,26 +204,30 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
         n_last_timesteps_filter = walker_df["Time Step"] >= walker_df["Time Step"].nlargest(N_LAST_TIMESTEPS).min()
         walker_df = walker_df[n_last_timesteps_filter]
 
+    # Subsample data if it exceeds MAX_DATA_POINTS
+    if len(walker_df) > MAX_DATA_POINTS:
+        walker_df = walker_df.sample(n=MAX_DATA_POINTS, random_state=42).sort_values(by=["Time Step", "Atom Index"]).reset_index(drop=True)
+
     return walker_df
 
-def plot_largest_standard_deviations(walker_dfs: pd.DataFrame, key: str) -> None:
+def plot_largest_standard_deviations(walker_dfs: pd.DataFrame, key: str, **kwargs) -> None:
     walker_names = walker_dfs["Walker"].unique()
     for walker_name in walker_names:
         walker_df = walker_dfs[walker_dfs["Walker"] == walker_name]
         file_suffix = f"_{walker_name}" if walker_name != "current_dir" else ""
         key_savename = key.replace(" ", "_").lower()
-        savename = f"force_{key_savename}_max{file_suffix}.png"
+        savename = f"{key_savename}_max{file_suffix}.png"
         
         max_std_per_timestep = walker_df.groupby("Time Step")[key].max().reset_index()
 
         fig, ax = plt.subplots(figsize=FIG_SIZE)
-        plot_lineplot(max_std_per_timestep, key=key, ax=ax)
+        plot_lineplot(max_std_per_timestep, key=key, ax=ax, **kwargs)
 
         plt.tight_layout()
         plt.savefig(savename, dpi=DPI)
         plt.close()
 
-def plt_subplots(walker_dfs: pd.DataFrame, key: str) -> None:
+def plt_subplots(walker_dfs: pd.DataFrame, key: str, **kwargs) -> None:
     """
     Plot force stds maximum for each walker in subplots.
     Each subplot corresponds to a walker, showing the maximum force standard deviation over time.
@@ -189,6 +235,7 @@ def plt_subplots(walker_dfs: pd.DataFrame, key: str) -> None:
     Parameters:
     walker_dfs (pd.DataFrame): DataFrame containing the force standard deviations for each walker
     """
+
     walker_labels = walker_dfs["Walker"].unique()
     try:
         walker_labels = sorted(walker_labels, key=lambda x: int(x.split("_")[-1]))  # Sort by the last part of the walker label
@@ -197,7 +244,7 @@ def plt_subplots(walker_dfs: pd.DataFrame, key: str) -> None:
     n_walkers = len(walker_labels)
     
     # Calculate subplot grid dimensions
-    n_cols = min(3, n_walkers)  # Maximum 3 columns
+    n_cols = min(4, n_walkers)  # Maximum 3 columns
     n_rows = (n_walkers + n_cols - 1) // n_cols  # Ceiling division
     
     # Create figure with subplots
@@ -219,7 +266,7 @@ def plt_subplots(walker_dfs: pd.DataFrame, key: str) -> None:
 
         # Plot in the corresponding subplot
         ax = axes[idx]
-        plot_lineplot(max_std_per_timestep, key=key, ax=ax)
+        plot_lineplot(max_std_per_timestep, key=key, ax=ax, **kwargs)
         
         ax.set_title(f"{walker_label}")
         if ax.get_legend() is not None:
@@ -231,19 +278,28 @@ def plt_subplots(walker_dfs: pd.DataFrame, key: str) -> None:
     
     plt.tight_layout()
     key_savename = key.replace(" ", "_").lower()
-    savename = f"force_{key_savename}_max_all_walkers.png"
+    savename = f"{key_savename}_max_all_walkers.png"
     plt.savefig(savename, dpi=DPI, bbox_inches='tight')
     plt.close()
 
-def plot_lineplot(data: pd.DataFrame, key, ax=None) -> None:
+def plot_lineplot(data: pd.DataFrame, key, ax=None, **kwargs) -> None:
+    unit = kwargs.get("unit", FORCE_UNIT)
+    ylabel_prefix = kwargs.get("ylabel_prefix", "Max. Force")
+    threshold = kwargs.get("threshold", None)
+
     sns.lineplot(
         data=data, 
         x="Time Step", 
         y=key,
         ax=ax,
     )
+
+    # Add threshold line if specified
+    if threshold is not None:
+        ax.axhline(y=threshold, color="red", linestyle="--", alpha=0.7)
+
     ax.set_xlabel("Time Step")
-    ax.set_ylabel(f"Max. Force {key} Dev [{FORCE_UNIT}]")
+    ax.set_ylabel(f"{ylabel_prefix} Std Dev ({unit})")
     ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
     ax.ticklabel_format(axis="x", style="sci", scilimits=(0, 0))
     
