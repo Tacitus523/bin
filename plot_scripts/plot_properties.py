@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MultipleLocator, ScalarFormatter, FormatStrFormatter
 import seaborn as sns
 import warnings
 import numpy as np
@@ -21,7 +21,7 @@ from ase.io import read
 # Plot styling constants
 MARKERSIZE = 25
 DPI = 100
-FIGSIZE = (16, 9)
+FIGSIZE = (12, 10)
 
 # Units
 UNIT_ENERGY = "eV"
@@ -216,7 +216,6 @@ def build_dataframes(properties: dict, data_source_file: Optional[str]) -> List[
     return dfs
 
 def plot_strip(data: pd.DataFrame, column: str, ylabel: str, out_file: str) -> None:
-    return
     if data.empty or column not in data.columns:
         return
 
@@ -225,8 +224,11 @@ def plot_strip(data: pd.DataFrame, column: str, ylabel: str, out_file: str) -> N
         palette=PALETTE, order=data["Data Source"].cat.categories, size=4, jitter=True, dodge=False, alpha=0.5)
     ax.set_xlabel("Data Source")
     ax.set_ylabel(ylabel)
-    ax.tick_params(axis="x", labelrotation=30)
+    ax.set_xticks(ax.get_xticks())
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
     ax.ticklabel_format(style='scientific', axis='y', scilimits=(-4, 4))
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    
     # legend = ax.legend(bbox_to_anchor=(1.05, 1))
     # for legend_handle in legend.legend_handles:
     #     legend_handle.set_alpha(1)
@@ -245,8 +247,11 @@ def plot_boxplot(data: pd.DataFrame, column: str, ylabel: str, out_file: str) ->
         hue="Data Source", palette=PALETTE, order=data["Data Source"].cat.categories)
     ax.set_xlabel("Data Source")
     ax.set_ylabel(ylabel)
-    ax.tick_params(axis="x", labelrotation=30)
+    ax.set_xticks(ax.get_xticks())
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
     ax.ticklabel_format(style='scientific', axis='y', scilimits=(-4, 4), useOffset=False)
+    # Explicitly limit to 1 decimal place to avoid excessive precision
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
     plt.tick_params(axis="both", which="major")
     plt.tight_layout()
@@ -304,7 +309,7 @@ def main() -> None:
         datasets.append((mol_df2, atom_df2, vector_df2, SUFFIX2))
         datasets.append((mol_df_diff, atom_df_diff, vector_df_diff, SUFFIX3))
 
-    sns.set_context("talk")
+    sns.set_context("talk", font_scale=1.3)
     
     # Generate plots for each dataset
     for mol_df, atom_df, vector_df, suffix in datasets:
