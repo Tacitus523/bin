@@ -15,7 +15,7 @@ SAVE_FILE_NAME = "ramachandran.dat"
 
 DPI = 300
 
-def read_trajectory(traj_file_name: str):
+def read_trajectory(trajectory_file_name: str):
     """
     Read trajectory from a file
     """
@@ -24,13 +24,13 @@ def read_trajectory(traj_file_name: str):
 
 
 def do_ramachandran_analysis(SAVE_FILE_NAME, universe: mda.Universe):
-    atoms = u.select_atoms("backbone") # Only works with .ttr/.xtc files, which have resname info
+    atoms = universe.select_atoms("backbone") # Only works with .ttr/.xtc files, which have resname info
     ram = Ramachandran(atoms)
     ram.run()
     ram.save(SAVE_FILE_NAME)
 
 def do_dihedral_analysis(SAVE_FILE_NAME, universe: mda.Universe, ):
-    atoms = [u.atoms[[4, 6, 8, 14]], u.atoms[[6, 8, 14, 16]]]
+    atoms = [universe.atoms[[4, 6, 8, 14]], universe.atoms[[6, 8, 14, 16]]]
     dih = Dihedral(atoms)
     dih.run()
     np.savetxt(SAVE_FILE_NAME, dih.results.angles, fmt="%.1f")
@@ -46,9 +46,9 @@ if __name__ == "__main__":
     else:
         trajectory_file_name = TRAJECTORY_FILE_NAME
 
-    u: mda.Universe = read_trajectory(trajectory_file_name)
+    universe: mda.Universe = read_trajectory(trajectory_file_name)
     #do_ramachandran_analysis(SAVE_FILE_NAME, u)
-    dih: Dihedral = do_dihedral_analysis(SAVE_FILE_NAME, u)
+    dih: Dihedral = do_dihedral_analysis(SAVE_FILE_NAME, universe)
     phi = dih.results.angles[:,0]
     psi = dih.results.angles[:,1]
 
