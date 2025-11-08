@@ -27,7 +27,7 @@ ENERGY_UNIT = "eV"
 
 FIGSIZE = (10, 8)
 BINS = 150 # Bins might be outside the plotted data range
-ALPHA = 0.3
+ALPHA = 0.4
 MARKER_SIZE = 10
 DPI = 100
 
@@ -125,7 +125,7 @@ def prepare_ala_data(args: argparse.Namespace) -> pd.DataFrame:
     plot_kwargs = {
         "system": args.system,
         "identifier": "_"+args.identifier.replace(" ", "_").lower() if args.identifier is not None else "",
-        "x": r"$\phi$ ($\degree$)",
+        "x": r"$\varphi$ ($\degree$)",
         "y": r"$\psi$ ($\degree$)",
         "xlim": (-180, 120),
         "ylim": (-100, 240),
@@ -341,7 +341,7 @@ def main() -> None:
     energy_plot_kwargs["palette"] = ENERGY_COLORMAP
     energy_plot_kwargs["unit"] = ENERGY_UNIT
 
-    sns.set_context("talk")
+    sns.set_context("talk", font_scale=1.2)
 
     # Sample size independent plots
     plot_2D_histogram(df, plot_kwargs)
