@@ -146,20 +146,20 @@ def plot_single_fes(
 
 	if periodicity_list[0] is True:
 		ax.set_xlim(PERIODIC_LIMITS[0][0], PERIODIC_LIMITS[0][1])
-		ax.set_xlabel(r"$\varphi$ [°]", 
+		ax.set_xlabel(r"$\varphi$ (°)", 
 						fontsize=label_fs, labelpad=labelpad)
 	else:
 		ax.set_xlim(NON_PERIODIC_LIMITS[0][0], NON_PERIODIC_LIMITS[0][1])
-		ax.set_xlabel(r"S$^\mathrm{1}$-S$^\mathrm{2}$" + u" [\u212B]", 
+		ax.set_xlabel(r"S$^\mathrm{1}$-S$^\mathrm{2}$" + u" (\u212B)", 
 						fontsize=label_fs, labelpad=labelpad)
 
 	if periodicity_list[1] is True:
 		ax.set_ylim(PERIODIC_LIMITS[1][0], PERIODIC_LIMITS[1][1])
-		ax.set_ylabel(r"$\psi$ [°]", 
+		ax.set_ylabel(r"$\psi$ (°)", 
 					fontsize=label_fs, labelpad=labelpad)
 	else:
 		ax.set_ylim(NON_PERIODIC_LIMITS[1][0], NON_PERIODIC_LIMITS[1][1])
-		ax.set_ylabel(r"S$^\mathrm{2}$-S$^\mathrm{3}$" + u" [\u212B]", 
+		ax.set_ylabel(r"S$^\mathrm{2}$-S$^\mathrm{3}$" + u" (\u212B)", 
 						fontsize=label_fs, labelpad=labelpad)
 
 	ax.tick_params(axis='x', labelsize=ticks_fs)
