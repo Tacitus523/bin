@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 from typing import List, Tuple, Optional, Dict
 import warnings
 
@@ -18,10 +19,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
+import matplotlib.colors as mcolors
 import seaborn as sns
 
 # GLOBAL CONSTANTS
 GEOM_FILE = "geoms.extxyz"
+ENERGY_KEY = "ref_energy"
+DATA_SOURCE_KEY = "data_source"
 
 ENERGY_UNIT = "eV"
 
@@ -36,7 +40,10 @@ MAX_DATA_POINTS = 35_000
 PALETTE = sns.color_palette("tab10")
 PALETTE.pop(3) # Remove red color
 COLORMAP = "YlOrRd"
+N_COLORS = 10  # Adjust number of discrete colors
 ENERGY_COLORMAP = "coolwarm"
+# ENERGY_COLORMAP = mcolors.ListedColormap(plt.cm.get_cmap(ENERGY_COLORMAP)(np.linspace(0, 1, N_COLORS)))
+ERROR_COLORMAP = mcolors.ListedColormap(plt.cm.get_cmap(COLORMAP)(np.linspace(0, 1, N_COLORS)))
 
 # Silence seaborn UserWarning about palette length
 warnings.filterwarnings(
@@ -52,18 +59,34 @@ warnings.filterwarnings(
 
 IMPLEMENTED_SYSTEMS = ["ala", "tder"]
 
+assert ENERGY_KEY != "energy", "ENERGY_KEY should not be set to 'energy' as ase uses 'energy' internally"
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot location of 2D CV on CV landscape.")
     parser.add_argument(
-        "-g", "--geom", type=str, default=GEOM_FILE, help="Path to .extxyz geometry file"
+        "-g", "--geom", type=str, nargs="+",
+        default=[GEOM_FILE], help="Path to .extxyz geometry file, can provide 2 files for comparison. Difference gets plotted if 2 files are provided. Difference = energy_file2 - energy_file1"
     )
     parser.add_argument(
         "-s", "--system", type=str, default="ala", choices=IMPLEMENTED_SYSTEMS, help="System to analyze"
     )
     parser.add_argument(
-        "-i", "--identifier", type=str, default=None, help="Identifier for the dataset (used for label the save files)"
+        "-e", "--energy_key", type=str, default=ENERGY_KEY, help=f"key for energies in Atoms arrays (default: {ENERGY_KEY})"
+    )
+    parser.add_argument(
+        "-i", "--identifier", type=str, nargs="+",
+        default=[None], help="Identifier for the dataset (used for label the save files)"
     )
     args = parser.parse_args()
+
+    if len(args.geom) > 2:
+        raise ValueError("A maximum of two geometry files can be provided.")
+    if not len(args.geom) == len(args.identifier):
+        raise ValueError("Number of geometry files and identifiers must be the same.")
+    for file in args.geom:
+        if not os.path.isfile(file):
+            raise FileNotFoundError(f"Geometry file {file} not found.")
+
     for key, value in vars(args).items():
         print(f"{key}: {value}")
     return args
@@ -73,8 +96,8 @@ def prepare_basic_data(args: argparse.Namespace) -> pd.DataFrame:
     data_sources = []
     energies = []
     for i, atoms in enumerate(molecules):
-        source = atoms.info.get("data_source", "Unknown")
-        ref_energy = atoms.info.get("ref_energy", None)
+        source = atoms.info.get(DATA_SOURCE_KEY, "Unknown")
+        ref_energy = atoms.info.get(args.energy_key, np.nan)
         data_sources.append(source)
         energies.append(ref_energy)
 
@@ -183,14 +206,13 @@ def plot_location_on_cv(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
     hue = plot_kwargs.get("hue", "Data Source")
     palette = plot_kwargs.get("palette", PALETTE)
     unit = plot_kwargs.get("unit", "")
+    vmin = plot_kwargs.get("vmin", None)
+    vmax = plot_kwargs.get("vmax", None)
     identifier = ""
 
     scatter_kws = {"hue": hue, "palette": palette}
     # Check if hue is numerical data
     if pd.api.types.is_numeric_dtype(df[hue]):
-        # Use colorbar for numerical data with 90th percentile normalization
-        vmin = df[hue].min()
-        vmax = np.percentile(df[hue].dropna(), 90)
         scatter_kws = {'vmin': vmin, 'vmax': vmax, 'c': df[hue], 'cmap': palette}
         identifier = plot_kwargs.get("identifier", "")
 
@@ -218,7 +240,7 @@ def plot_location_on_cv(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
 
         # Force scientific notation with offset for large numbers
         formatter = ScalarFormatter(useOffset=True, useMathText=True)
-        formatter.set_useOffset(round(vmax, 0) if vmax is not None else 0)
+        formatter.set_useOffset(round(vmax, 0) if vmax is not None and abs(vmax) > 1e4 else False)
         cbar.ax.yaxis.set_major_formatter(formatter)
         
         # Remove the legend created by seaborn
@@ -233,10 +255,10 @@ def plot_location_on_cv(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
                 legend_handle.set_markersize(MARKER_SIZE*1.5)
                 legend_handle.set_alpha(1.0)
 
-    output_file = f"cv_location_{hue.replace(' ', '_').lower()}{identifier}.png" 
+    output_file = f"cv_location_{hue.replace(' ', '_').replace('$', '').replace('\\', '').lower()}{identifier}.png" 
     plt.savefig(output_file, dpi=DPI, bbox_inches='tight')
     plt.close()
-    print(f"Plot saved to {output_file}")
+    print(f"Location plot saved to {output_file}")
 
 def plot_2D_histogram(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
     plt.figure(figsize=FIGSIZE)
@@ -264,8 +286,14 @@ def plot_2D_histogram(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
 def plot_2D_energy_bins(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
     """Plot 2D bins colored by the minimum energy in each bin"""
     hue = plot_kwargs.get("hue", None)
+    palette = plot_kwargs.get("palette", ENERGY_COLORMAP)
     unit = plot_kwargs.get("unit", "")
     identifier = plot_kwargs.get("identifier", "")
+    vmin = plot_kwargs.get("vmin", None)
+    vmax = plot_kwargs.get("vmax", None)
+    reduction_method = plot_kwargs.get("reduction_method", "min")
+    implemented_reduction_methods = ["min", "mean", "rms"]
+    assert reduction_method in implemented_reduction_methods, f"reduction_method must be either in {implemented_reduction_methods}"
 
     plt.figure(figsize=FIGSIZE)
     
@@ -289,20 +317,20 @@ def plot_2D_energy_bins(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
             
             if bin_mask.sum() > 0:  # If there are points in this bin
                 bin_energies = df.loc[bin_mask, hue]
-                min_energies[j, i] = bin_energies.min()  # Note: j,i for correct orientation
+                # Note: j,i for correct orientation
+                if reduction_method == "min":
+                    min_energies[j, i] = bin_energies.min()
+                elif reduction_method == "mean":
+                    min_energies[j, i] = bin_energies.mean()
+                elif reduction_method == "rms":
+                    min_energies[j, i] = np.sqrt(np.mean(bin_energies**2))
+                else:
+                    raise ValueError(f"reduction_method must be either in {implemented_reduction_methods}")
     
     # Create the plot
     X, Y = np.meshgrid(x_bins[:-1], y_bins[:-1])
     
-    # Use percentile-based normalization for better contrast
-    valid_energies = min_energies[~np.isnan(min_energies)]
-    if len(valid_energies) > 0:
-        vmin = np.min(valid_energies)
-        vmax = np.percentile(valid_energies, 90)
-    else:
-        vmin, vmax = None, None
-    
-    im = plt.pcolormesh(X, Y, min_energies, cmap=ENERGY_COLORMAP, vmin=vmin, vmax=vmax)
+    im = plt.pcolormesh(X, Y, min_energies, cmap=palette, vmin=vmin, vmax=vmax)
     
     plt.xlabel(plot_kwargs["x"])
     plt.ylabel(plot_kwargs["y"])
@@ -311,11 +339,18 @@ def plot_2D_energy_bins(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
     
     # Add colorbar
     cbar = plt.colorbar(im)
-    cbar.set_label(f"Minimum {hue} ({unit})" if unit else f"Minimum {hue}")
+    if reduction_method == "min":
+        cbar.set_label(f"Minimal {hue} ({unit})" if unit else f"Minimal {hue}")
+    elif reduction_method == "mean":
+        cbar.set_label(f"Mean {hue} ({unit})" if unit else f"Mean {hue}")
+    elif reduction_method == "rms":
+        cbar.set_label(f"RMS {hue} ({unit})" if unit else f"RMS {hue}")
+    else:
+        raise ValueError(f"reduction_method must be either in {implemented_reduction_methods}")
 
     # Force scientific notation with offset for large numbers
     formatter = ScalarFormatter(useOffset=True, useMathText=True)
-    formatter.set_useOffset(round(vmax, 0) if vmax is not None else 0)
+    formatter.set_useOffset(round(vmax, 0) if vmax is not None and abs(vmax) > 1e4 else False)
     cbar.ax.yaxis.set_major_formatter(formatter)
 
     plt.grid(True, alpha=0.3)
@@ -327,32 +362,74 @@ def plot_2D_energy_bins(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
 
 def main() -> None:
     args = parse_args()
-
-    if args.system == "ala":
-        df, plot_kwargs = prepare_ala_data(args)
-    elif args.system == "tder":
-        df, plot_kwargs = prepare_tder_data(args)
-    else:
-        raise ValueError(f"System {args.system} not implemented.")
+    files = args.geom
+    identifiers = args.identifier
     
-
-    energy_plot_kwargs = plot_kwargs.copy()
-    energy_plot_kwargs["hue"] = "Energy"
-    energy_plot_kwargs["palette"] = ENERGY_COLORMAP
-    energy_plot_kwargs["unit"] = ENERGY_UNIT
+    dfs = []
+    plot_kwargs_list = []
+    for file, identifier in zip(files, identifiers):
+        args.geom = file
+        args.identifier = identifier
+        if args.system == "ala":
+            file_df, plot_kwargs = prepare_ala_data(args)
+        elif args.system == "tder":
+            file_df, plot_kwargs = prepare_tder_data(args)
+        else:
+            raise ValueError(f"System {args.system} not implemented.")
+        dfs.append(file_df)
+        plot_kwargs_list.append(plot_kwargs)
+    full_df = pd.concat(dfs, ignore_index=True)
 
     sns.set_context("talk", font_scale=1.2)
+    for idx, (df, plot_kwargs) in enumerate(zip(dfs, plot_kwargs_list)):
+        energy_plot_kwargs = plot_kwargs.copy()
+        energy_plot_kwargs["hue"] = "Energy"
+        energy_plot_kwargs["palette"] = ENERGY_COLORMAP
+        energy_plot_kwargs["unit"] = ENERGY_UNIT
+        # Use colorbar for numerical data with 95th percentile normalization
+        energy_plot_kwargs["vmin"] = np.percentile(full_df["Energy"].dropna(), 5)
+        energy_plot_kwargs["vmax"] = np.percentile(full_df["Energy"].dropna(), 95)
 
-    # Sample size independent plots
-    plot_2D_histogram(df, plot_kwargs)
-    plot_2D_energy_bins(df, energy_plot_kwargs)
+        # Downsample data if too large
+        sub_df = df.sample(n=min(len(df), MAX_DATA_POINTS), random_state=42)
 
-    # Downsample data if too large
-    df = df.sample(n=min(len(df), MAX_DATA_POINTS), random_state=42)
+        # Energy independent plots
+        if idx == 0:
+            plot_2D_histogram(df, plot_kwargs)
+            plot_location_on_cv(sub_df, plot_kwargs)
 
-    # Sample size dependent plots
-    plot_location_on_cv(df, plot_kwargs)
-    plot_location_on_cv(df, energy_plot_kwargs)
+        # Energy dependent plots
+        plot_2D_energy_bins(df, energy_plot_kwargs)
+        plot_location_on_cv(sub_df, energy_plot_kwargs)
+
+    if len(files) == 1:
+        return
+    
+    # If two files are provided, plot the difference
+    df1, df2 = dfs
+    identifier1, identifier2 = plot_kwargs_list[0]["identifier"], plot_kwargs_list[1]["identifier"]
+    difference_df = df2.copy()
+    difference_df[r"$\Delta$Energy"] = df2["Energy"] - df1["Energy"]
+    difference_df = difference_df.drop(columns=["Energy"])
+    difference_plot_kwargs = energy_plot_kwargs.copy()
+    difference_plot_kwargs["identifier"] = f"_Delta{identifier2}{identifier1}"
+    difference_plot_kwargs["hue"] = r"$\Delta$Energy"
+    vmin = np.percentile(difference_df[r"$\Delta$Energy"].dropna(), 5)
+    vmax = np.percentile(difference_df[r"$\Delta$Energy"].dropna(), 95)
+    max_value = max(abs(vmin), abs(vmax)) # Symmetric cbar around zero
+    difference_plot_kwargs["vmin"] = -max_value
+    difference_plot_kwargs["vmax"] = max_value
+
+    sub_df = difference_df.sample(n=min(len(difference_df), MAX_DATA_POINTS), random_state=42)
+    plot_location_on_cv(sub_df, difference_plot_kwargs)
+
+    difference_plot_kwargs["vmin"] = 0
+    difference_plot_kwargs["vmax"] = max_value
+    difference_plot_kwargs["reduction_method"] = "rms"
+    difference_plot_kwargs["palette"] = ERROR_COLORMAP
+
+    plot_2D_energy_bins(difference_df, difference_plot_kwargs)
+
 
 if __name__ == "__main__":
     main()
