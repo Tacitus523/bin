@@ -22,8 +22,8 @@ FORCE_UNIT = "eV/Å"  # Unit for forces
 
 MAX_DATA_POINTS = 25000  # Maximum number of data points to plot
 
-FIGSIZE = (16,9)  # Default figure size for plots
-DPI = 150  # Default DPI for saved figures
+FIGSIZE = (12,10)  # Default figure size for plots
+DPI = 100  # Default DPI for saved figures
 
 dftb_atomic_energies = {
     1: -7.609986074389834,
@@ -451,7 +451,7 @@ def main() -> None:
         #atom_df = atom_df[atom_df['Data Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
 
     print("Plotting correlations...")
-    sns.set_context("talk", font_scale=1.3)
+    sns.set_context("talk", font_scale=1.2)
     sns.set_style("whitegrid")
     plot_correlation(molecule_df, energy_stats, energy_labels, "energy", ENERGY_UNIT, args)
     plot_correlation(atom_df, force_stats, force_labels, "force", FORCE_UNIT, args)
