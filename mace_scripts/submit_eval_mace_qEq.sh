@@ -10,7 +10,6 @@
 
 DATA_FOLDER=""
 TEST_FILE="test.extxyz"
-MODEL_FILE="QEq_swa.model"
 OUTPUT_FILE="model_geoms.extxyz"
 CONFIG_FILE="config.yaml"
 MAIL="$MY_MAIL"
@@ -26,7 +25,7 @@ while getopts ":d:m:c:" flag
 do
     case "${flag}" in
         d) DATA_FOLDER=${OPTARG};;
-        m) MODEL_FILE=${OPTARG};;
+        m) model_file=${OPTARG};;
         c) CONFIG_FILE=${OPTARG};;
         *) print_usage; exit 1;;
     esac
@@ -77,13 +76,24 @@ then
     exit 1
 fi
 
-model_file=$MODEL_FILE
-model_file_flag="-m $model_file"
+if [ -z "$model_file" ]
+then
+    model_name=$(yq e '.name' $CONFIG_FILE)
+    model_file="${model_name}_swa.model"
+    if ! [ -f "$model_file" ]
+    then
+        echo "SWA model file not found: $model_file" >&2
+        echo "Falling back to regular model file." >&2
+        model_file="${model_name}.model"
+    fi
+fi
+
 if [ ! -f "$model_file" ]
 then
     echo "Model file not found: $model_file" >&2
     exit 1
 fi
+model_file_flag="-m $model_file"
 
 PLOT_SCRIPT=$(which MacePlot.py)
 if [ -z "$PLOT_SCRIPT" ]

@@ -19,8 +19,6 @@ TRAIN_FILE="train.extxyz"
 VALID_FILE="valid.extxyz"
 TEST_FILE="test.extxyz"
 
-MODEL_NAME="QEq"
-
 EVAL_SCRIPT="$(which submit_eval_mace_qEq.sh)"
 
 # Atomization energies for the DFT and DFTB methods, deprecated since config.yaml
@@ -49,7 +47,6 @@ do
 done
 
 echo "Starting training: $(date)"
-echo "Model name: $MODEL_NAME"
 if [ -n "$DATA_FOLDER" ]
 then
     data_folder=$(readlink -f $DATA_FOLDER)
@@ -63,13 +60,12 @@ then
     echo "Valid file: $valid_file"
     echo "Test file: $test_file"
 else
-    test_file=$(grep "test_file:" $config_file | awk '{print $2}')
+    test_file=$(yq eval '.test_file' $config_file)
     data_folder=$(dirname $test_file)
 fi
 
 python /lustre/home/ka/ka_ipc/ka_he8978/MACE_QEq_development/mace-tools/scripts/lukas_train.py  \
     --config $config_file \
-    --name=$MODEL_NAME \
     --seed=$RANDOM \
     $file_flags \
     --wandb_name=$WANDB_NAME \
@@ -98,12 +94,13 @@ then
     exit 1
 fi
 
-model_file="${MODEL_NAME}_swa_compiled.pt"
+model_name=$(yq e '.name' $config_file)
+model_file="${model_name}_swa_compiled.pt"
 if ! [ -f "$model_file" ]
 then
     echo "SWA model file not found: $model_file" >&2
     echo "Falling back to regular model file." >&2
-    model_file="${MODEL_NAME}_compiled.pt"
+    model_file="${model_name}_compiled.pt"
 fi
 if ! [ -f "$model_file" ]
 then
