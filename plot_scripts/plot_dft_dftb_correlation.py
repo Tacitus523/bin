@@ -16,6 +16,8 @@ from sklearn.metrics import root_mean_squared_error, r2_score, mean_absolute_err
 
 ENERGY_KEY = "ref_energy"
 FORCES_KEY = "ref_force"
+ESP_KEY: Optional[str] = None # "esp"
+ESP_GRAD_KEY: Optional[str] = None # "esp_gradient"
 
 ENERGY_UNIT = "eV"  # Unit for energies
 FORCE_UNIT = "eV/Å"  # Unit for forces
@@ -41,6 +43,7 @@ dft_atomic_energies = {
     16: -10832.265333248919
 } # eV
 
+IMPLEMENTED_SYSTEMS = [None, 'ala', 'tder']
 H_connectivity_dipeptide = {
     1: 0,
     2: 0,
@@ -56,7 +59,6 @@ H_connectivity_dipeptide = {
     21: 20,
 }
 H_connectivity_thiol = {}
-H_CONNECTIVITY = H_connectivity_thiol
 
 element_specifications_dipeptide = {
     4: "C=O",
@@ -66,7 +68,6 @@ element_specifications_dipeptide = {
     17: "H-N"
 }
 element_specifications_thiol = {}
-ELEMENT_SPECIFICATIONS = element_specifications_thiol
 
 nm_TO_angstrom = 10.0  # Conversion factor from nm to Ångstrom
 eV_TO_kJ_per_mol = 96.485  # Conversion factor from eV to kJ/mol
@@ -74,6 +75,7 @@ kJ_mol_nm_TO_eV_angstrom = (1/eV_TO_kJ_per_mol) / nm_TO_angstrom  # Conversion f
 
 PALETTE = sns.color_palette("tab10")
 PALETTE.pop(3)  # Remove red color
+COLORMAP = "YlOrRd_r"
 
 # Silence seaborn UserWarning about palette length
 warnings.filterwarnings(
@@ -96,12 +98,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--point-size', type=float, help='Point size', default=10)
     parser.add_argument('--mean_energies', type=str, help='Path to mean energies JSON file', default=None)
     parser.add_argument('--ref_files', type=str, nargs=2, help='Paths to vacuum .extxyz files for energy referencing', default=None)
+    parser.add_argument('--system', type=str, help='System name for spefications of elements and connectivity', default=None, choices=IMPLEMENTED_SYSTEMS)
     args = parser.parse_args()
     for key, value in vars(args).items():
         print(f"{key}: {value}")
+
+    if args.system == None:
+        args.h_connectivity = {}
+        args.element_specifications = {}
+    elif args.system == 'ala':
+        args.h_connectivity = H_connectivity_dipeptide
+        args.element_specifications = element_specifications_dipeptide
+    elif args.system == 'tder':
+        args.h_connectivity = H_connectivity_thiol
+        args.element_specifications = element_specifications_thiol
     return args
 
-def read_extxyz_file(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_extxyz_file(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Args:
+        file_path: Path to the .extxyz file
+
+    Returns:
+        Tuple containing:
+            - atomic_numbers: Array of atomic numbers for each configuration
+            - elements: Array of element symbols for each configuration
+            - energies: Array of total energies for each configuration
+            - forces: Array of forces for each configuration (flattened)
+            - esps: Array of ESPs for each configuration, empty if ESP_KEY is None
+            - e_field_magnitudes: Array of electric field magnitudes for each configuration, empty if ESP_GRAD_KEY is None
+    """
+
     try:
         molecules: List[Atoms] = read(file_path, format='extxyz', index=':')
     except Exception as e:
@@ -115,17 +142,27 @@ def read_extxyz_file(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray
     elements = []
     energies = []
     forces = []
+    esps = []
+    e_field_magnitudes = []
     for molecule in molecules:
-            atomic_numbers.append(molecule.get_atomic_numbers())
-            elements.append(molecule.get_chemical_symbols())
-            energies.append(molecule.info[ENERGY_KEY])
-            forces.append(molecule.arrays[FORCES_KEY].flatten())
+        atomic_numbers.append(molecule.get_atomic_numbers())
+        elements.append(molecule.get_chemical_symbols())
+        energies.append(molecule.info[ENERGY_KEY])
+        forces.append(molecule.arrays[FORCES_KEY].flatten())
+        if ESP_KEY is not None and ESP_KEY in molecule.arrays:
+            esps.append(molecule.arrays[ESP_KEY].flatten())
+        if ESP_GRAD_KEY is not None and ESP_GRAD_KEY in molecule.arrays:
+            e_field_magnitude = np.linalg.norm(molecule.arrays[ESP_GRAD_KEY], axis=1).flatten() * -1  # Multiply by -1 to get correct direction
+            e_field_magnitudes.append(e_field_magnitude)
+
     atomic_numbers = np.array(atomic_numbers)
     elements = np.array(elements)
     energies = np.array(energies)
     forces = np.array(forces)
+    esps = np.array(esps)
+    e_field_magnitudes = np.array(e_field_magnitudes)
 
-    return atomic_numbers, elements, energies, forces
+    return atomic_numbers, elements, energies, forces, esps, e_field_magnitudes
 
 def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, float]:
     """
@@ -186,6 +223,7 @@ def plot_correlation(
         unit: str, 
         args: argparse.Namespace,
         hue: Optional[str] = None,
+        color: Optional[str] = None,
         ax: Optional[plt.Axes] = None
     ) -> Tuple[plt.Figure, plt.Axes]:
 
@@ -201,8 +239,12 @@ def plot_correlation(
     n_data_points = min(len(df), MAX_DATA_POINTS)
     df = df.sample(n=n_data_points, random_state=42)
 
+    # Handle hue/color conflict - color takes precedence over hue
+    if color is not None:
+        hue = None  # Disable hue when color is specified
+
     # Fallback for hue
-    if hue is None:
+    if hue is None and color is None:
         hue = "Element" if "Element" in df.columns else "Data Source" if "Data Source" in df.columns else None
     if hue is not None:
         unique_values = df[hue].unique()
@@ -221,16 +263,25 @@ def plot_correlation(
         else:
             hue_order = sorted(unique_values)
 
+    scatter_kwargs = {
+        "data": df,
+        "x": labels[0],
+        "y": labels[1],
+        "alpha": args.alpha,
+        "s": args.point_size,
+        "ax": ax
+    }
+
+    if hue is not None:
+        scatter_kwargs["hue"] = hue
+        scatter_kwargs["hue_order"] = hue_order
+        scatter_kwargs["palette"] = PALETTE
+    if color is not None:
+        scatter_kwargs["c"] = df[color]
+        scatter_kwargs["cmap"] = COLORMAP
+
     plot = sns.scatterplot(
-        data=df, 
-        x=labels[0], 
-        y=labels[1],
-        hue=hue,
-        hue_order=hue_order,
-        palette=PALETTE if hue is not None else None,
-        alpha=args.alpha,
-        s=args.point_size,
-        ax=ax
+        **scatter_kwargs
     )
 
     lim_min = min(df[labels[0]].min(), df[labels[1]].min())
@@ -245,12 +296,13 @@ def plot_correlation(
     ax.plot([lim_min, lim_max], [lim_min, lim_max], 
              color='red', linestyle='--', linewidth=1)#label='Perfect Correlation')
     
-    ax.legend(loc='lower right', title=hue)
-    legend = plot.get_legend()
-    if legend is not None:
-        for legend_handle in legend.legend_handles:
-            legend_handle.set_markersize(args.point_size)  # Set legend point size
-            legend_handle.set_alpha(1.0)  # Set legend point transparency to 1.0
+    if hue is not None:
+        ax.legend(loc='lower right', title=hue)
+        legend = plot.get_legend()
+        if legend is not None:
+            for legend_handle in legend.legend_handles:
+                legend_handle.set_markersize(args.point_size)  # Set legend point size
+                legend_handle.set_alpha(1.0)  # Set legend point transparency to 1.0
 
     # Add annotation with statistics
     annotation_text = (
@@ -294,17 +346,17 @@ def plot_subplots_per_element(
         element_df = atom_df[element_mask].copy()
 
         # Create specify elements from global variable
-        key_indices_df = element_df[element_df["Atom Index"].isin(H_CONNECTIVITY.keys())]
+        key_indices_df = element_df[element_df["Atom Index"].isin(args.h_connectivity.keys())]
         element_df["Element"] = element_df["Element"].astype(str) # Convert to string to avoid categorical issues
         element_df["Element"] = element_df["Element"].mask(
-            element_df["Atom Index"].isin(ELEMENT_SPECIFICATIONS.keys()),
-            element_df["Atom Index"].map(ELEMENT_SPECIFICATIONS)
+            element_df["Atom Index"].isin(args.element_specifications.keys()),
+            element_df["Atom Index"].map(args.element_specifications)
         )
 
         # Confirm if all keys in H_connectivity are Hydrogen atoms
         if key_indices_df["Element"].eq("H").all():
             # Replace all Hydrogen indices with their bond partners to reduce hue clutter
-            element_df["Atom Index"] = element_df["Atom Index"].replace(H_CONNECTIVITY)
+            element_df["Atom Index"] = element_df["Atom Index"].replace(args.h_connectivity)
 
         element_stats = calculate_statistics(
             element_df[force_labels[0]], 
@@ -336,7 +388,6 @@ def plot_subplots_per_element(
                 ax=None
             )
 
-
     # Hide any unused subplots by making them invisible
     for i in range(len(unique_elements), len(axes)):
         axes[i].set_visible(False)
@@ -349,15 +400,15 @@ def main() -> None:
     args = parse_args()
 
     # Read DFT and DFTB data
-    dft_atomic_numbers, dft_elements, dft_total_energies, dft_forces = read_extxyz_file(args.dftfile)
-    dftb_atomic_numbers, dftb_elements, dftb_total_energies, dftb_forces = read_extxyz_file(args.dftbfile)
+    dft_atomic_numbers, dft_elements, dft_total_energies, dft_forces, _, _ = read_extxyz_file(args.dftfile)
+    dftb_atomic_numbers, dftb_elements, dftb_total_energies, dftb_forces, _, _ = read_extxyz_file(args.dftbfile)
     assert np.array_equal(dft_atomic_numbers, dftb_atomic_numbers), "Atomic numbers must match in both datasets."
     assert dft_total_energies.shape == dftb_total_energies.shape, "Both datasets must have the same shape."
     assert dft_forces.shape == dftb_forces.shape, "Both datasets must have the same shape."
 
     if args.ref_files is not None:
-        dft_vac_atomic_numbers, _, dft_vac_total_energies, dft_vac_forces = read_extxyz_file(args.ref_files[0])
-        dftb_vac_atomic_numbers, _, dftb_vac_total_energies, dftb_vac_forces = read_extxyz_file(args.ref_files[1])
+        dft_vac_atomic_numbers, _, dft_vac_total_energies, dft_vac_forces, _, _ = read_extxyz_file(args.ref_files[0])
+        dftb_vac_atomic_numbers, _, dftb_vac_total_energies, dftb_vac_forces, _, _  = read_extxyz_file(args.ref_files[1])
         assert np.array_equal(dft_vac_atomic_numbers, dftb_vac_atomic_numbers), "Vacuum atomic numbers must match in both datasets."
         assert dft_vac_total_energies.shape == dftb_vac_total_energies.shape, "Both vacuum datasets must have the same shape."
         assert dft_vac_total_energies.shape[0] == dft_total_energies.shape[0], "Vacuum datasets must have the same number of entries as the main datasets."
@@ -421,6 +472,7 @@ def main() -> None:
     # Prepare energy data
     energy_labels = [f"{args.labels[0]} Energy", f"{args.labels[1]} Energy"]
     molecule_df = pd.DataFrame({
+        "Molecule Index": np.arange(dft_forces.shape[0]),
         energy_labels[0]: centered_dft_total_energies,
         energy_labels[1]: centered_dftb_total_energies,
     })
@@ -428,8 +480,16 @@ def main() -> None:
         molecule_df['Data Source'] = sources
         molecule_df['Data Source'] = pd.Categorical(molecule_df['Data Source'], categories=molecule_df['Data Source'].unique(), ordered=True)
         #molecule_df = molecule_df[molecule_df['Data Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
+    # if ESP_KEY is not None and dft_esps.size > 0:
+    #     esp_filter = np.any(np.abs(dft_esps) > 5, axis=1)
+    #     molecule_df["High ESP Magnitude"] = esp_filter
+
+    # if ESP_GRAD_KEY is not None and dft_e_field.size > 0:
+    #     e_field_filter = np.any(np.abs(dft_e_field) > 1.8, axis=1)
+    #     molecule_df["High ESP Gradient Magnitude"] = e_field_filter
 
     force_labels = [f"{args.labels[0]} Force", f"{args.labels[1]} Force"]
+    molecule_indices = np.repeat(np.arange(dft_forces.shape[0]), dft_forces.shape[1])
     atom_indices = np.tile(np.repeat(np.arange(dft_forces.shape[1]//3), 3), dft_forces.shape[0])
 
     atom_df = pd.DataFrame({
@@ -437,6 +497,7 @@ def main() -> None:
         force_labels[1]: dftb_forces_flat,
         "Atomic Number": np.repeat(dft_atomic_numbers.flatten(), 3),
         "Element": np.repeat(dft_elements.flatten(), 3),
+        "Molecule Index": molecule_indices,
         "Atom Index": atom_indices,
         "Coordinate": np.repeat(["x", "y", "z"], dft_forces.shape[0] * (dft_forces.shape[1] // 3)),
     })
@@ -449,12 +510,61 @@ def main() -> None:
     if args.source is not None:
         atom_df['Data Source'] = molecule_df['Data Source'].repeat(dft_forces.shape[1]).reset_index(drop=True)
         #atom_df = atom_df[atom_df['Data Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
+    # if ESP_KEY is not None and dft_esps.size > 0:
+    #     atom_df["ESP"] = np.repeat(dft_esps.flatten(), 3)
+    # if ESP_GRAD_KEY is not None and dft_e_field.size > 0:
+    #     atom_df["ESP Gradient Magnitude"] = np.repeat(dft_e_field.flatten(), 3)
 
     print("Plotting correlations...")
     sns.set_context("talk", font_scale=1.2)
     sns.set_style("whitegrid")
     plot_correlation(molecule_df, energy_stats, energy_labels, "energy", ENERGY_UNIT, args)
+    if ESP_KEY is not None:
+        print("Plotting correlations with ESP hue...")
+        plot_correlation(
+            molecule_df, 
+            energy_stats, 
+            energy_labels, 
+            "energy_esp",
+            ENERGY_UNIT, 
+            args,
+            hue="High ESP Magnitude"
+        )
+    if ESP_GRAD_KEY is not None:
+        print("Plotting correlations with ESP Gradient hue...")
+        plot_correlation(
+            molecule_df, 
+            energy_stats, 
+            energy_labels, 
+            "energy_esp_gradient",
+            ENERGY_UNIT, 
+            args,
+            hue="High ESP Gradient Magnitude"
+        )
+
     plot_correlation(atom_df, force_stats, force_labels, "force", FORCE_UNIT, args)
+    if ESP_KEY is not None:
+        print("Plotting force correlations with ESP hue...")
+        plot_correlation(
+            atom_df, 
+            force_stats, 
+            force_labels, 
+            "force_esp",
+            FORCE_UNIT, 
+            args,
+            color="ESP"
+        )
+    if ESP_GRAD_KEY is not None:
+        print("Plotting force correlations with ESP Gradient hue...")
+        plot_correlation(
+            atom_df, 
+            force_stats, 
+            force_labels, 
+            "force_esp_gradient",
+            FORCE_UNIT, 
+            args,
+            color="ESP Gradient Magnitude"
+        )
 
     plot_subplots_per_element(
         atom_df,
