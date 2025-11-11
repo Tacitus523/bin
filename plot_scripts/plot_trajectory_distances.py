@@ -326,7 +326,7 @@ def plot_bond_distances(bond_distances_df: pd.DataFrame, title: str = "bond_dist
     sns.lineplot(data=bond_distances_df, palette=PALETTE, x="Time (ps)", y="Bond Distance", hue="Bond Type", units="Bond Label", ci=None, estimator=None, ax=ax)
 
     ax.set_xlabel("Time (ps)")
-    ax.set_ylabel("Bond Distance [Å]")
+    ax.set_ylabel("Bond Distance (Å)")
     ax.legend(title="Bonds", bbox_to_anchor=(1.05, 1))
 
     if is_stand_alone:
@@ -367,7 +367,7 @@ def plot_h_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "hydr
         palette=PALETTE,
         kind="hist"
     )
-    axes.set_axis_labels("Hydrogen Bond Length [Å]", "Probability")
+    axes.set_axis_labels("Hydrogen Bond Length (Å)", "Probability")
     sns.move_legend(axes, "upper left", bbox_to_anchor=(1.05, 0.75))
 
     plt.tight_layout()
@@ -398,7 +398,7 @@ def plot_bond_length_distribution(walker_dfs: pd.DataFrame, title: str = "bond_l
         palette=PALETTE,
         kind="hist"
     )
-    axes.set_axis_labels("Bond Length [Å]", "Probability")
+    axes.set_axis_labels("Bond Length (Å)", "Probability")
     sns.move_legend(axes, "upper left", bbox_to_anchor=(1.05, 0.75))
 
     plt.tight_layout()
