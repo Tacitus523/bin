@@ -16,8 +16,9 @@ from scipy.spatial.distance import pdist
 
 ENERGY_KEY = "ref_energy"
 FORCES_KEY = "ref_force"
+TOTAL_CHARGE_KEY = "total_charge" # Note: Total charge gets set to 0 in the delta file, charge delta will always be 0
 REQUIERED_KEYS = [] # "Lattice", "pbc" are both used by ase internally, access them directly from atoms objects via atoms.get_cell() and atoms.get_pbc()
-OPTIONAL_KEYS = ["data_source", "esp", "esp_gradient", "total_charge"]
+OPTIONAL_KEYS = ["data_source", "esp", "esp_gradient"]
 
 DELTA_ATOMIZATION_ENERGY_KEY = "delta_atomization_energy"
 DEFAULT_OUTPUT = "geoms_delta.extxyz"
@@ -153,6 +154,8 @@ def create_delta_file(
         dftb_forces = dftb_atoms.arrays[FORCES_KEY]
         delta_forces = dft_forces - dftb_forces
         delta_atoms.arrays[FORCES_KEY] = delta_forces
+
+        delta_atoms.info[TOTAL_CHARGE_KEY] = 0.0  # Set total charge to 0 in delta file
 
         # Copy required metadata
         for key in REQUIERED_KEYS:
