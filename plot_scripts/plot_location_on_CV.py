@@ -355,6 +355,8 @@ def plot_2D_energy_bins(df: pd.DataFrame, plot_kwargs: Dict[str, str]) -> None:
 
     plt.grid(True, alpha=0.3)
     
+    plt.tight_layout()
+
     output_file = f"cv_2D_energy_bins{identifier}.png"
     plt.savefig(output_file, dpi=DPI, bbox_inches='tight')
     plt.close()
