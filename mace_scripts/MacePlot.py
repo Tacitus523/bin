@@ -37,12 +37,12 @@ PRED_ENEG_ESP_KEY: Optional[str] = "pred_eneg_esp"
 
 # Units for plotting
 ENERGY_UNIT: str = "eV"
-FORCES_UNIT: str = r"$\frac{eV}{\AA}$"
+FORCES_UNIT: str = "eV/Å"
 CHARGES_UNIT: str = "e"
-DMA_UNIT: str = r"$\frac{e}{\AA^3}$"
-ENEG_UNIT: str = r"$\frac{eV}{e}$"
-ESP_UNIT: str = r"$\frac{eV}{e}$"
-ENEG_ESP_UNIT: str = r"$\frac{eV}{e}$"
+DMA_UNIT: str = r"e/$Å^3$"
+ENEG_UNIT: str = "eV/e"
+ESP_UNIT: str = "eV/e"
+ENEG_ESP_UNIT: str = "eV/e"
 
 DPI = 100
 

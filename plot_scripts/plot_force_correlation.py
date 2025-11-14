@@ -2,23 +2,36 @@
 # Intended use: comparison of forces from .xvgs from reruns and .extxyz files
 # Expected units: .xvg files in kJ/mol/nm, .extxyz files in eV/Å
 # Conversion to eV/Å is done internally 
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import argparse
-import pandas as pd
 from typing import Dict, List, Optional, Tuple
-from ase import Atoms
+import warnings
+
 from ase.io import read
+from ase import Atoms
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 FORCES_KEY = "gromacs_force"
 
+QM_LABELS = ["B3LYP", "PBE0", "DFTB"]
 SCATTER_SAVENAME = "force_scatter_comparison.png"
 TIMESERIES_SAVENAME = "force_max_difference.png"
 
 FORCE_UNIT = "eV/Å"  # Unit for forces
 
 DPI = 300 # DPI for saving plots
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3)  # Remove red color
+
+# Silence seaborn UserWarning about palette length
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The palette list has more values .* than needed .*",
+)
 
 nm_TO_angstrom = 10.0  # Conversion factor from nm to Ångstrom
 eV_TO_kJ_per_mol = 96.485  # Conversion factor from eV to kJ/mol
@@ -199,7 +212,7 @@ def plot_force_correlation(
         # hue_norm=norm,
         hue="Method",
         style="Method",
-        palette="tab10",
+        palette=PALETTE,
         alpha=args.alpha,
         s=args.point_size,
         edgecolor=None,
@@ -256,8 +269,18 @@ def plot_max_force_difference(
     fig, ax = plt.subplots(figsize=args.fig_size)
 
     # Calculate the maximum force difference for each method
-    max_force_differences: pd.DataFrame = data.groupby(["Method", "Step"]).max("Abs. Force Difference").reset_index()
-    #max_force_differences = max_force_differences.pivot(index="Step", columns="Method", values="Force Difference")
+    max_force_differences: pd.DataFrame = data.groupby(["Method", "Step", "Type"])["Abs. Force Difference"].max().reset_index()
+
+    # Calculate and mark mean of maximum force differences for each method
+    mean_of_max_force_diff = max_force_differences.groupby("Method")["Abs. Force Difference"].mean()
+    mean_of_max_force_diff = mean_of_max_force_diff.sort_values(ascending=False)
+    method_order = mean_of_max_force_diff.index.tolist()
+    max_force_differences["Method"] = pd.Categorical(
+        max_force_differences["Method"],
+        categories=method_order,
+        ordered=True
+    )
+    max_force_differences = max_force_differences.sort_values(by="Method")
 
     # Plot the maximum force differences
     sns.lineplot(
@@ -265,17 +288,13 @@ def plot_max_force_difference(
         x="Step",
         y="Abs. Force Difference",
         hue="Method",
+        style="Type",
         ax=ax,
-        palette="tab10",
+        palette=PALETTE,
+        legend="full"
     )
     ax.set_xlabel("Step")
-    ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" [{FORCE_UNIT}]")
-
-    # Calculate and mark mean of maximum force differences for each method
-    mean_of_max_force_diff = max_force_differences.groupby("Method")["Abs. Force Difference"].mean()
-    
-    # Get the same colors as the lineplot (tab10 palette)
-    palette = sns.color_palette("tab10", n_colors=len(mean_of_max_force_diff))
+    ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
     
     # Add horizontal lines for mean values and y-ticks
     current_yticks = list(ax.get_yticks())
@@ -283,14 +302,40 @@ def plot_max_force_difference(
     
     for i, (method, mean_val) in enumerate(mean_of_max_force_diff.items()):
         # Add horizontal line across the entire plot
-        ax.axhline(y=mean_val, color=palette[i], linestyle='--', alpha=0.7, linewidth=1)
+        ax.axhline(y=mean_val, color=PALETTE[i], linestyle='--', alpha=0.7, linewidth=1)
         # Add the mean value to y-ticks
-        current_yticks.append(mean_val)
-        current_yticklabels.append(f"{mean_val:.3f}")
+        # current_yticks.append(mean_val)
+        # current_yticklabels.append(f"{mean_val:.3f}")
     
     # Update y-ticks to include mean values
     ax.set_yticks(current_yticks)
     ax.set_yticklabels(current_yticklabels)
+    ax.set_ylim(bottom=0)
+
+    # Get unique methods and types with their properties
+    unique_methods = max_force_differences["Method"].unique()
+    unique_types = max_force_differences["Type"].unique()
+    
+    # Map types to linestyles (seaborn default mapping)
+    type_to_linestyle = {t: ls for t, ls in zip(unique_types, ["-", "--", "-.", ":"])}
+    
+    # Create legend handles
+    legend_handles = []
+    legend_labels = []
+    
+    for method in unique_methods:
+        # Get the type for this method
+        method_type = max_force_differences[max_force_differences["Method"] == method]["Type"].iloc[0]
+        method_color = PALETTE[list(unique_methods).index(method)]
+        method_linestyle = type_to_linestyle[method_type]
+        
+        # Create line with both color and style
+        handle = Line2D([0], [0], color=method_color, linestyle=method_linestyle, linewidth=2)
+        legend_handles.append(handle)
+        legend_labels.append(method)
+    
+    # Add legend
+    ax.legend(legend_handles, legend_labels, loc="best")
 
     plt.grid(alpha=0.3)
     plt.tight_layout()
@@ -338,7 +383,8 @@ def main() -> None:
             "Time": np.repeat(first_valid_time, n_entries_per_molecule) if first_valid_time is not None else None,
             "Method Force": flat_force,
             f"{ref_label} Force": flat_ref_force,
-            "Method": label
+            "Method": label,
+            "Type": "QM" if label in QM_LABELS else "MLP",
         })
         df["Abs. Force Difference"] = np.abs(df["Method Force"] - df[f"{ref_label} Force"])
         dfs.append(df)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import warnings
 
 import argparse
 import os
@@ -11,6 +12,16 @@ import numpy as np
 DPI = 150
 FIGURE_SIZE = (12, 5)
 
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3)  # Remove red color
+
+# Silence seaborn UserWarning about palette length
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The palette list has more values .* than needed .*",
+)
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -19,8 +30,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-i", "--input",
         type=str,
+        nargs="+",
         required=True,
-        help="Path to input CSV file"
+        help="Path to input CSV file(s)"
+    )
+    parser.add_argument(
+        "-l", "--labels",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Labels for each input file (optional)"
     )
     parser.add_argument(
         "-o", "--output",
@@ -33,10 +52,25 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
     
-    # Read the CSV file
-    df = pd.read_csv(args.input)
+    # Validate inputs
+    if args.labels is not None and len(args.labels) != len(args.input):
+        raise ValueError(f"Number of labels ({len(args.labels)}) must match number of input files ({len(args.input)})")
     
-    print(f"Loaded data with {len(df)} rows")
+    if args.labels is None:
+        ["Default"] * len(args.input)
+    
+    # Load all input files and add label column
+    dfs = []
+    for input_file, label in zip(args.input, args.labels):
+        df = pd.read_csv(input_file)
+        df['dataset'] = label
+        dfs.append(df)
+        print(f"Loaded {len(df)} rows from {input_file} (label: {label})")
+    
+    # Concatenate all dataframes
+    df = pd.concat(dfs, ignore_index=True)
+    
+    print(f"\nTotal data: {len(df)} rows")
     print(f"Models: {df['model_name'].unique().tolist()}")
     
     # Prepare data for plotting
@@ -44,28 +78,28 @@ def main():
     
     # Energy RMSE
     if 'test_rmse_energy' in df.columns:
-        energy_data = df[['model_name', 'model_idx', 'test_rmse_energy']].copy()
+        energy_data = df[['model_name', 'model_idx', 'dataset', 'test_rmse_energy']].copy()
         energy_data['metric'] = 'Energy RMSE'
         energy_data['value'] = energy_data['test_rmse_energy']
         energy_data['unit'] = 'eV'
-        metrics.append(energy_data[['model_name', 'model_idx', 'metric', 'value', 'unit']])
+        metrics.append(energy_data[['model_name', 'model_idx', 'dataset', 'metric', 'value', 'unit']])
     
     # Force RMSE
     if 'test_rmse_force' in df.columns:
-        force_data = df[['model_name', 'model_idx', 'test_rmse_force']].copy()
+        force_data = df[['model_name', 'model_idx', 'dataset', 'test_rmse_force']].copy()
         force_data['metric'] = 'Force RMSE'
         force_data['value'] = force_data['test_rmse_force']
         force_data['unit'] = 'eV/Å'
-        metrics.append(force_data[['model_name', 'model_idx', 'metric', 'value', 'unit']])
+        metrics.append(force_data[['model_name', 'model_idx', 'dataset', 'metric', 'value', 'unit']])
     
     # Charge RMSE
     if 'test_rmse_charge' in df.columns:
-        charge_data = df[['model_name', 'model_idx', 'test_rmse_charge']].dropna().copy()
+        charge_data = df[['model_name', 'model_idx', 'dataset', 'test_rmse_charge']].dropna().copy()
         if len(charge_data) > 0:
             charge_data['metric'] = 'Charge RMSE'
             charge_data['value'] = charge_data['test_rmse_charge']
             charge_data['unit'] = 'e'
-            metrics.append(charge_data[['model_name', 'model_idx', 'metric', 'value', 'unit']])
+            metrics.append(charge_data[['model_name', 'model_idx', 'dataset', 'metric', 'value', 'unit']])
     
     # Combine all metrics
     plot_df = pd.concat(metrics, ignore_index=True)
@@ -78,10 +112,16 @@ def main():
     
     # Create consistent color mapping for all models
     all_models = df['model_name'].unique()
-    colors = sns.color_palette('tab10', n_colors=len(all_models))
-    model_colors = {model: colors[i] for i, model in enumerate(all_models)}
+    model_colors = {model: PALETTE[i % len(PALETTE)] for i, model in enumerate(all_models)}
+    
+    # Create marker mapping for datasets
+    all_datasets = df['dataset'].unique()
+    n_datasets = len(all_datasets)
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+    dataset_markers = {dataset: markers[i % len(markers)] for i, dataset in enumerate(all_datasets)}
     
     print(f"Color mapping: {list(model_colors.keys())}")
+    print(f"Marker mapping: {list(dataset_markers.keys())}")
     
     # Create subplots
     fig, axes = plt.subplots(1, n_metrics, figsize=(5 * n_metrics, 5))
@@ -95,21 +135,28 @@ def main():
         metric_data = plot_df[plot_df['metric'] == metric]
         unit = metric_data['unit'].iloc[0]
         
-        # Get colors for models present in this metric
-        models_in_metric = metric_data['model_name'].unique()
-        palette = [model_colors[model] for model in models_in_metric]
-        
         ax = axes[idx]
-        sns.swarmplot(
-            data=metric_data,
-            x='model_name',
-            y='value',
-            hue='model_name',
-            palette=palette,
-            size=8,
-            ax=ax,
-            legend=False
-        )
+        
+        # Plot each dataset separately to apply different markers
+        for dataset in metric_data['dataset'].unique():
+            dataset_data = metric_data[metric_data['dataset'] == dataset]
+            
+            # Get colors for models present in this dataset
+            models_in_data = dataset_data['model_name'].unique()
+            palette = [model_colors[model] for model in models_in_data]
+            
+            sns.swarmplot(
+                data=dataset_data,
+                x='model_name',
+                y='value',
+                hue='model_name',
+                palette=palette,
+                marker=dataset_markers[dataset] if n_datasets > 1 else None,
+                size=8,
+                ax=ax,
+                legend=False,
+                dodge=True
+            )
         
         ax.set_ylim(bottom=0)
         ax.set_xlabel('')
@@ -129,6 +176,16 @@ def main():
             print(f"  {model}: mean={model_values.mean():.6f}, std={model_values.std():.6f}")
     
     plt.tight_layout()
+    
+    # Add legend for datasets if multiple datasets are present
+    if len(all_datasets) > 1:
+        from matplotlib.lines import Line2D
+        legend_elements = [Line2D([0], [0], marker=dataset_markers[dataset], color='gray', 
+                                  label=dataset, linestyle='None', markersize=8)
+                          for dataset in all_datasets]
+        fig.legend(handles=legend_elements, title='Dataset', loc='center left', 
+                  bbox_to_anchor=(1.02, 0.5))
+    
     plt.savefig(args.output, dpi=DPI, bbox_inches='tight')
     print(f"\nSaved plot to: {args.output}")
     plt.close()
