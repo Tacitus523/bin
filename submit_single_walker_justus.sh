@@ -92,7 +92,8 @@ then
         if [[ $file == *".ORCAINFO" ]]; then
             found_orcainfo=true
             export GMX_QM_ORCA_BASENAME=$(basename "$file" .ORCAINFO)
-            echo "Using ORCAINFO file: $file. Basename set to: $GMX_QM_ORCA_BASENAME"
+            echo "Using ORCAINFO file: $file."
+            echo "Basename set to: $GMX_QM_ORCA_BASENAME"
             break
         fi
     done

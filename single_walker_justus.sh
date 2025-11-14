@@ -63,7 +63,7 @@ case "$simulation_type" in
             echo "Unknown PyTorch simulation type: $simulation_type"
             exit 1
         fi
-        parallel_flag="-ntomp 1 -ntmpi 1"
+        parallel_flag=""
         module load lib/cudnn/9.0.0_cuda-12.3
         export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
         export GMX_N_MODELS=3 # Number of neural network models
