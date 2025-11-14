@@ -171,6 +171,17 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
         energy_means = np.array([molecule.info["energy_mean"] for molecule in molecules[::2]])  # shape (n_timesteps,)
         energy_stds = np.array([molecule.info["energy_std"] for molecule in molecules[1::2]])  # shape (n_timesteps,)
 
+    # Detect and correct for restarts (when timestep decreases)
+    corrected_timesteps = timesteps.copy()
+    cumulative_offset = 0
+    for i in range(1, len(timesteps)):
+        if timesteps[i] < timesteps[i-1]:  # Restart detected
+            cumulative_offset += timesteps[i-1]
+            print(f"Restart detected at index {i}: timestep jumped from {timesteps[i-1]} to {timesteps[i]}")
+        corrected_timesteps[i] += cumulative_offset
+    
+    timesteps = corrected_timesteps
+
     force_means = np.array([molecule.get_positions().copy() for molecule in molecules[::2]]) # shape (n_timesteps, n_atoms, 3)
     force_stds = np.array([molecule.get_positions().copy() for molecule in molecules[1::2]]) # shape (n_timesteps, n_atoms, 3)
     weighted_force_stds = force_stds / (atomic_masses[np.newaxis, :, np.newaxis])  # shape (n_timesteps, n_atoms, 3)
