@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
+from typing import Optional
 import warnings
 
 import argparse
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import seaborn as sns
 import numpy as np
 
 # Constants
 DPI = 150
-FIGURE_SIZE = (12, 5)
+FIGURE_SIZE = (8, 6)
 
 PALETTE = sns.color_palette("tab10")
 PALETTE.pop(3)  # Remove red color
@@ -49,16 +51,7 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-def main():
-    args = parse_args()
-    
-    # Validate inputs
-    if args.labels is not None and len(args.labels) != len(args.input):
-        raise ValueError(f"Number of labels ({len(args.labels)}) must match number of input files ({len(args.input)})")
-    
-    if args.labels is None:
-        ["Default"] * len(args.input)
-    
+def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
     # Load all input files and add label column
     dfs = []
     for input_file, label in zip(args.input, args.labels):
@@ -103,36 +96,38 @@ def main():
     
     # Combine all metrics
     plot_df = pd.concat(metrics, ignore_index=True)
-    
+    return plot_df
+
+def plot_swarm_plots(
+        args: argparse.Namespace,
+        data: pd.DataFrame
+    ) -> None:
     # Count available metrics
-    available_metrics = plot_df['metric'].unique()
+    available_metrics = data['metric'].unique()
     n_metrics = len(available_metrics)
     
-    print(f"\nAvailable metrics: {available_metrics.tolist()}")
-    
     # Create consistent color mapping for all models
-    all_models = df['model_name'].unique()
+    all_models = data['model_name'].unique()
     model_colors = {model: PALETTE[i % len(PALETTE)] for i, model in enumerate(all_models)}
     
     # Create marker mapping for datasets
-    all_datasets = df['dataset'].unique()
+    all_datasets = data['dataset'].unique()
     n_datasets = len(all_datasets)
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
     dataset_markers = {dataset: markers[i % len(markers)] for i, dataset in enumerate(all_datasets)}
     
+    print(f"\nAvailable metrics: {available_metrics.tolist()}")
     print(f"Color mapping: {list(model_colors.keys())}")
     print(f"Marker mapping: {list(dataset_markers.keys())}")
     
     # Create subplots
-    fig, axes = plt.subplots(1, n_metrics, figsize=(5 * n_metrics, 5))
+    fig, axes = plt.subplots(1, n_metrics, figsize=(FIGURE_SIZE[0]*n_metrics, FIGURE_SIZE[1]), dpi=DPI)
     if n_metrics == 1:
         axes = [axes]
     
-    sns.set_context("talk")
-    
     # Plot each metric
     for idx, metric in enumerate(available_metrics):
-        metric_data = plot_df[plot_df['metric'] == metric]
+        metric_data = data[data['metric'] == metric]
         unit = metric_data['unit'].iloc[0]
         
         ax = axes[idx]
@@ -144,27 +139,33 @@ def main():
             # Get colors for models present in this dataset
             models_in_data = dataset_data['model_name'].unique()
             palette = [model_colors[model] for model in models_in_data]
+
+            swarm_plot_kwargs = {
+                'data': dataset_data,
+                'x': 'model_name',
+                'y': 'value',
+                'hue': 'model_name',
+                'palette': palette,
+                'size': 8,
+                'ax': ax,
+                'legend': False,
+                'dodge': True
+            }
+            if n_datasets > 1:
+                swarm_plot_kwargs['marker'] = dataset_markers[dataset]
             
             sns.swarmplot(
-                data=dataset_data,
-                x='model_name',
-                y='value',
-                hue='model_name',
-                palette=palette,
-                marker=dataset_markers[dataset] if n_datasets > 1 else None,
-                size=8,
-                ax=ax,
-                legend=False,
-                dodge=True
+                **swarm_plot_kwargs
             )
         
         ax.set_ylim(bottom=0)
         ax.set_xlabel('')
         ax.set_ylabel(f'{metric} ({unit})')
-        ax.set_title(metric.replace(" RMSE", ""))
+        if n_metrics > 1:
+            ax.set_title(metric.replace(" RMSE", ""))
         
         # Rotate x-axis labels if needed
-        ax.tick_params(axis='x', rotation=45)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
         
         # Add horizontal grid for readability
         ax.grid(axis='y', alpha=0.3, linestyle='--')
@@ -179,7 +180,6 @@ def main():
     
     # Add legend for datasets if multiple datasets are present
     if len(all_datasets) > 1:
-        from matplotlib.lines import Line2D
         legend_elements = [Line2D([0], [0], marker=dataset_markers[dataset], color='gray', 
                                   label=dataset, linestyle='None', markersize=8)
                           for dataset in all_datasets]
@@ -189,6 +189,87 @@ def main():
     plt.savefig(args.output, dpi=DPI, bbox_inches='tight')
     print(f"\nSaved plot to: {args.output}")
     plt.close()
+
+def plot_method_ranking(
+    data: pd.DataFrame,
+    output_path: str = "charge_method_ranking.png",
+    y_label: Optional[str] = None,
+    unit: Optional[str] = None
+) -> None:
+    """
+    Create a bar plot showing method rankings based on RMSE.
+    
+    Args:
+        data: DataFrame containing 'model_name' and metric columns
+        output_path: Path to save the plot
+        unit: Unit for the metric
+    """
+    
+    # Sort by metric (ascending for RMSE, descending for R2)
+    data = data.sort_values('value', ascending=True).reset_index(drop=True)
+    
+    # Create color gradient based on metric values
+    metric_max = data['value'].max()
+    norm = plt.Normalize(vmin=0, vmax=metric_max)
+    cmap = sns.color_palette("YlOrRd", as_cmap=True)
+    colors = [cmap(norm(value)) for value in data['value']]
+    
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    sns.barplot(
+        x='model_name',
+        y='value',
+        data=data,
+        palette=colors,
+        hue='model_name',
+        legend=False,
+        ax=ax
+    )
+    
+    # Set labels
+    ax.set_xlabel('')
+    if unit:
+        y_label += f" ({unit})"
+    ax.set_ylabel(y_label)
+    
+    # Rotate x-labels for better readability
+    ax.set_xticks(ax.get_xticks())
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
+    
+    # Add value labels on bars
+    for i, (idx, row) in enumerate(data.iterrows()):
+        value = row['value']
+        ax.text(i, value, f'{value:.3f}', ha='center', va='bottom', fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=DPI, bbox_inches='tight')
+    plt.close()
+    print(f"Saved ranking plot to: {output_path}")
+
+def main():
+    args = parse_args()
+    
+    # Validate inputs
+    if args.labels is not None and len(args.labels) != len(args.input):
+        raise ValueError(f"Number of labels ({len(args.labels)}) must match number of input files ({len(args.input)})")
+    
+    if args.labels is None:
+        ["Default"] * len(args.input)
+    
+    plot_df = create_dataframe(args)
+    
+    sns.set_context("talk")
+    plot_swarm_plots(args, plot_df)
+    for metric in plot_df['metric'].unique():
+        metric_df = plot_df[plot_df['metric'] == metric]
+        unit = metric_df['unit'].iloc[0]
+        plot_method_ranking(
+            data=metric_df,
+            output_path=f"method_ranking_{metric.replace(' ', '_').lower()}.png",
+            y_label=metric,
+            unit=unit
+        )
+
 
 if __name__ == "__main__":
     main()
