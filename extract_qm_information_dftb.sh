@@ -28,7 +28,10 @@ fi
 folder_prefix=$1
 xyz_file=$2
 
-folders=$(find $folder_prefix* -maxdepth 1 \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folder_prefix_dirname=$(dirname "$folder_prefix")
+folder_prefix_basename=$(basename "$folder_prefix")
+
+folders=$(find "$folder_prefix_dirname" -maxdepth 1 -name "${folder_prefix_basename}*" \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
 	if ! [ -f $folder/$DETAIL_FILE ]
@@ -36,8 +39,6 @@ do
 		echo "No file named $folder/$DETAIL_FILE"
 		exit 1
 	fi
-
-
 	break
 done
 
@@ -108,14 +109,27 @@ remove_if_exists "forces.xyz" # Previously used file, renamed to gradients.xyz
 counter=0
 for folder in $folders
 do
+	is_converged="True"
+    if ! grep -q -m 1 "SCC converged" $folder/$DETAIL_FILE 2> /dev/null
+    then 
+        is_converged="False"
+    fi
+
+	echo "$counter,$folder,$is_converged" >> $FOLDER_FILE
+	counter=$((counter + 1))
+
+	if [ $is_converged == "False" ]
+	then
+		continue
+	fi
+
 	num_atoms=$(count_atoms $folder/$DETAIL_FILE)
 
-	echo $folder >> $FOLDER_FILE
 	grep -A $(($num_atoms+1)) -m 1 'Atomic gross charges (e)' $folder/$DETAIL_FILE | awk 'FNR > 2 {print $2}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
 
 	echo '' >> $CHARGES_MULL_FILE # basicially makes a \n, because I just replaced the \n with a space
 
-	grep -m 1 'Total energy:' $folder/$DETAIL_FILE | awk '{print $3}' >> $ENERGIES_FILE
+	grep -m 1 'Total Mermin free energy:' $folder/$DETAIL_FILE | awk '{print $5}' >> $ENERGIES_FILE
 
 	comment=$(realpath $folder)
 	cat $folder/$xyz_file >> $GEOMS_FILE
@@ -124,7 +138,6 @@ do
 	cat $folder/$TMP_GRADIENTS_FILE >> $GRADIENTS_FILE
 	rm $folder/$TMP_GRADIENTS_FILE
 
-	counter=$((counter + 1))
 	if ((counter % 1000 == 0)) 
 	then
 		echo "Processed $counter folders"

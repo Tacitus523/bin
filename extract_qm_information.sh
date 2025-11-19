@@ -99,9 +99,22 @@ remove_if_exists $ESPS_BY_QM_FILE
 counter=0
 for folder in $folders
 do
+	is_converged="True"
+	if ! tac $folder/$file_prefix*.out 2> /dev/null | grep -q -m 1 "****ORCA TERMINATED NORMALLY****" 2> /dev/null
+    then 
+        is_converged="False"
+    fi
+
+	echo "$counter,$folder,$is_converged" >> $FOLDER_FILE	
+	counter=$((counter + 1))
+
+	if [ $is_converged == "False" ]
+	then
+		continue
+	fi
+
 	num_atoms=$(grep -m 1 "Number of atoms" $folder/$file_prefix*.out | awk '{print $NF}')
 
-	echo $folder >> $FOLDER_FILE
 	# works with multip steps Orca .outs, only greps last occurence, tac = reverse cat, -m 1 = maximal 1 occurence 
 	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
 	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
@@ -136,8 +149,7 @@ do
 
 	cat_if_exists $folder/$MULTIWFN_INPUTS $MULTIWFN_INPUTS
 	cat_if_exists $folder/$ESPS_BY_QM_FILE $ESPS_BY_QM_FILE
-	
-	counter=$((counter + 1))
+
 	if ((counter % 1000 == 0)) 
 	then
 		echo "Processed $counter folders"
