@@ -22,10 +22,10 @@ ESP_GRAD_KEY: Optional[str] = None # "esp_gradient"
 ENERGY_UNIT = "eV"  # Unit for energies
 FORCE_UNIT = "eV/Å"  # Unit for forces
 
-MAX_DATA_POINTS = 25000  # Maximum number of data points to plot
+MAX_DATA_POINTS = 15000  # Maximum number of data points to plot
 
-FIGSIZE = (12,10)  # Default figure size for plots
-DPI = 100  # Default DPI for saved figures
+FIGSIZE = (12,9)  # Default figure size for plots
+DPI = 150  # Default DPI for saved figures
 
 dftb_atomic_energies = {
     1: -7.609986074389834,
@@ -94,10 +94,10 @@ def parse_args() -> argparse.Namespace:
                         default=['DFT', 'DFTB'])
     parser.add_argument('--fig-size', type=float, nargs=2, help='Figure size (width, height)', 
                         default=FIGSIZE)
-    parser.add_argument('--alpha', type=float, help='Point transparency', default=0.3)
-    parser.add_argument('--point-size', type=float, help='Point size', default=10)
+    parser.add_argument('--alpha', type=float, help='Point transparency', default=0.5)
     parser.add_argument('--mean_energies', type=str, help='Path to mean energies JSON file', default=None)
     parser.add_argument('--ref_files', type=str, nargs=2, help='Paths to vacuum .extxyz files for energy referencing', default=None)
+    parser.add_argument('--index_files', type=str, nargs="*", help='Paths to index files for selecting geometries(folder_index.txt)', default=None)
     parser.add_argument('--system', type=str, help='System name for spefications of elements and connectivity', default=None, choices=IMPLEMENTED_SYSTEMS)
     args = parser.parse_args()
     for key, value in vars(args).items():
@@ -112,12 +112,18 @@ def parse_args() -> argparse.Namespace:
     elif args.system == 'tder':
         args.h_connectivity = H_connectivity_thiol
         args.element_specifications = element_specifications_thiol
+
+    if args.index_files is not None:
+        if not len(args.index_files) == (2 if args.ref_files is None else 4):
+            raise ValueError("Number of index files must match number of data files (2 or 4).")
+    
     return args
 
-def read_extxyz_file(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_extxyz_file(file_path: str, indices: Optional[np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Args:
         file_path: Path to the .extxyz file
+        indices: Indices of geometries to read from the file
 
     Returns:
         Tuple containing:
@@ -144,7 +150,18 @@ def read_extxyz_file(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray
     forces = []
     esps = []
     e_field_magnitudes = []
-    for molecule in molecules:
+    next_index = 0 if indices is not None else None
+    for i, molecule in enumerate(molecules):
+        if next_index is not None:
+            if next_index >= len(indices):
+                break
+            if i < indices[next_index]:
+                continue
+            elif i == indices[next_index]:
+                next_index += 1
+            else:
+                raise ValueError(f"Index {indices[next_index]} not found in file {file_path}")
+
         atomic_numbers.append(molecule.get_atomic_numbers())
         elements.append(molecule.get_chemical_symbols())
         energies.append(molecule.info[ENERGY_KEY])
@@ -164,6 +181,69 @@ def read_extxyz_file(file_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray
 
     return atomic_numbers, elements, energies, forces, esps, e_field_magnitudes
 
+def compare_folder_orders(
+        folder_order_files: Optional[List[str]]
+    ) -> List[Optional[np.ndarray]]:
+    """Compare folder order files and return lists of shared indices."""
+
+    if folder_order_files is None:
+        return [None] * 4
+
+    indices_list = []
+    for folder_order_file in folder_order_files:
+        # Read file - each row is a unique measurement
+        indices = pd.read_csv(
+            folder_order_file, 
+            header=None, 
+            names=["method_idx", "folder", "convergence"],
+            converters={"convergence": lambda x: x.strip() == "True"} # Used to be " True" instead of "True"
+        ).reset_index(names=["total_idx"])
+        indices_list.append(indices)
+
+    # Find total_idx values that converged in all files
+    all_converged_filter = np.all([indices["convergence"] for indices in indices_list], axis=0)
+    all_converged_total_idx = indices_list[0][all_converged_filter]["total_idx"].to_numpy()
+
+    # Get positions in converged-only arrays (these are the indices for property arrays)
+    converged_list = []
+    not_converged_list = []
+    converged_indices_list = []
+    for indices in indices_list:
+        # Filter to only converged measurements
+        converged = indices[indices["convergence"] == True].reset_index(drop=True).reset_index(names=["relative_idx"]).set_index("total_idx")
+        # Filter to only not converged measurements
+        not_converged = indices[indices["convergence"] == False]
+
+        converged_indices = converged.loc[all_converged_total_idx,:]["relative_idx"].to_numpy()
+        converged_list.append(converged)
+        not_converged_list.append(not_converged)
+        converged_indices_list.append(converged_indices)
+    
+    # Print statistics
+    for i, (indices, converged, not_converged) in enumerate(zip(indices_list, converged_list, not_converged_list), start=1):
+        print(f"Dataset {i}:")
+        print(f"  Total measurements: {len(indices)}, converged: {len(converged)}, not converged: {len(not_converged)}")
+    print
+    print(f"Shared converged measurements: {len(all_converged_total_idx)}")
+   
+    # Save indices delta
+    indices_delta = indices_list[0].copy()
+    indices_delta["convergence"] = all_converged_filter.astype(bool)
+    delta_folder_order_file = "folder_order_delta.txt"
+    indices_delta.to_csv(
+        delta_folder_order_file, 
+        header=False, 
+        index=False,
+        sep=","
+    )
+
+    return converged_indices_list
+
+def relative_root_mean_squared_error(data1: np.ndarray, data2: np.ndarray) -> float:
+    target_rms = np.sqrt(np.mean(np.square(data1)))
+    delta_rms = np.sqrt(np.mean(np.square(data1 - data2)))
+    return delta_rms / (target_rms+1e-8) * 100
+
 def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, float]:
     """
     Calculate statistical measures between two datasets.
@@ -179,12 +259,14 @@ def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, floa
     rmse = root_mean_squared_error(data1, data2)
     mae = mean_absolute_error(data1, data2)
     r_squared = r2_score(data1, data2)
+    rel_rmse = relative_root_mean_squared_error(data1, data2)
     
     return {
         'correlation': corr,
         'rmse': rmse,
         'mae': mae,
-        'r_squared': r_squared
+        'r_squared': r_squared,
+        'rel_rmse': rel_rmse
     }
 
 def calculate_atomization_energies(
@@ -214,6 +296,17 @@ def calculate_atomization_energies(
         atomization_energies.append(bond_energy)
     
     return np.array(atomization_energies)
+
+def add_perfect_correlation_line(ax: plt.Axes, lim_min: float, lim_max: float) -> None:
+    """Add a perfect correlation line (y=x) to the plot."""
+    ax.plot(
+        [lim_min, lim_max],
+        [lim_min, lim_max],
+        color='red',
+        linestyle='--',
+        linewidth=1,
+        #label='Perfect Correlation'
+    )
 
 def plot_correlation(
         df: pd.DataFrame, 
@@ -268,8 +361,8 @@ def plot_correlation(
         "x": labels[0],
         "y": labels[1],
         "alpha": args.alpha,
-        "s": args.point_size,
-        "ax": ax
+        "ax": ax,
+        "s": 10
     }
 
     if hue is not None:
@@ -284,30 +377,28 @@ def plot_correlation(
         **scatter_kwargs
     )
 
-    lim_min = min(df[labels[0]].min(), df[labels[1]].min())
-    lim_max = max(df[labels[0]].max(), df[labels[1]].max())
-    ax.set_xlim(lim_min, lim_max)
-    ax.set_ylim(lim_min, lim_max)         
+    if is_standalone is True:
+        lim_min = min(df[labels[0]].min(), df[labels[1]].min())
+        lim_max = max(df[labels[0]].max(), df[labels[1]].max())
+        ax.set_xlim(lim_min, lim_max)
+        ax.set_ylim(lim_min, lim_max)         
+        add_perfect_correlation_line(ax, lim_min, lim_max)
     
     ax.set_xlabel(f"{labels[0]} ({unit})")
     ax.set_ylabel(f"{labels[1]} ({unit})")
     
-    # Add perfect correlation line
-    ax.plot([lim_min, lim_max], [lim_min, lim_max], 
-             color='red', linestyle='--', linewidth=1)#label='Perfect Correlation')
-    
     if hue is not None:
-        ax.legend(loc='lower right', title=hue)
-        legend = plot.get_legend()
-        if legend is not None:
-            for legend_handle in legend.legend_handles:
-                legend_handle.set_markersize(args.point_size)  # Set legend point size
-                legend_handle.set_alpha(1.0)  # Set legend point transparency to 1.0
+        legend = ax.legend(loc='lower right', title=hue, markerscale=3, frameon=True)
+        for legend_handle in legend.legend_handles:
+            legend_handle.set_alpha(1.0)  # Set legend point transparency to 1.0
+            if hasattr(legend_handle, "set_sizes"):
+                legend_handle.set_sizes([30])
 
+    ax.grid(True, alpha=0.3)
     # Add annotation with statistics
     annotation_text = (
-        f'RMSE: {stats["rmse"]:.3f} {unit}\n'
-        f'R²: {stats["r_squared"]:.4f}'
+        f'RMSE: {stats["rmse"]:.2f} {unit}\n'
+        f'Rel. RMSE: {stats["rel_rmse"]:.1f} %'
     )
     
     ax.annotate(
@@ -336,6 +427,8 @@ def plot_subplots_per_element(
      # Create subplot for each element
     unique_elements = atom_df['Element'].unique().sort_values()
     n_unique_elements = atom_df['Element'].nunique()
+    max_force = max(atom_df[force_labels[0]].max(), atom_df[force_labels[1]].max())
+    min_force = min(atom_df[force_labels[0]].min(), atom_df[force_labels[1]].min())
     n_cols = 2
     n_rows = (n_unique_elements + n_cols - 1) // n_cols
 
@@ -374,6 +467,9 @@ def plot_subplots_per_element(
         )
         if hue != "Element":
             ax.set_title(f"Element: {element}")
+        ax.set_xlim(min_force, max_force)
+        ax.set_ylim(min_force, max_force)
+        add_perfect_correlation_line(ax, min_force, max_force)
 
         # Do individual plots for each element
         if hue == "Element":
@@ -399,16 +495,20 @@ def plot_subplots_per_element(
 def main() -> None:
     args = parse_args()
 
+    # Read index files if provided
+    converged_indices_list: List[Optional[np.ndarray]] = compare_folder_orders(args.index_files)
+
     # Read DFT and DFTB data
-    dft_atomic_numbers, dft_elements, dft_total_energies, dft_forces, _, _ = read_extxyz_file(args.dftfile)
-    dftb_atomic_numbers, dftb_elements, dftb_total_energies, dftb_forces, _, _ = read_extxyz_file(args.dftbfile)
+    dft_atomic_numbers, dft_elements, dft_total_energies, dft_forces, _, _ = read_extxyz_file(args.dftfile, converged_indices_list[0])
+    dftb_atomic_numbers, dftb_elements, dftb_total_energies, dftb_forces, _, _ = read_extxyz_file(args.dftbfile, converged_indices_list[1])
     assert np.array_equal(dft_atomic_numbers, dftb_atomic_numbers), "Atomic numbers must match in both datasets."
     assert dft_total_energies.shape == dftb_total_energies.shape, "Both datasets must have the same shape."
     assert dft_forces.shape == dftb_forces.shape, "Both datasets must have the same shape."
 
+
     if args.ref_files is not None:
-        dft_vac_atomic_numbers, _, dft_vac_total_energies, dft_vac_forces, _, _ = read_extxyz_file(args.ref_files[0])
-        dftb_vac_atomic_numbers, _, dftb_vac_total_energies, dftb_vac_forces, _, _  = read_extxyz_file(args.ref_files[1])
+        dft_vac_atomic_numbers, _, dft_vac_total_energies, dft_vac_forces, _, _ = read_extxyz_file(args.ref_files[0], converged_indices_list[2])
+        dftb_vac_atomic_numbers, _, dftb_vac_total_energies, dftb_vac_forces, _, _  = read_extxyz_file(args.ref_files[1], converged_indices_list[3])
         assert np.array_equal(dft_vac_atomic_numbers, dftb_vac_atomic_numbers), "Vacuum atomic numbers must match in both datasets."
         assert dft_vac_total_energies.shape == dftb_vac_total_energies.shape, "Both vacuum datasets must have the same shape."
         assert dft_vac_total_energies.shape[0] == dft_total_energies.shape[0], "Vacuum datasets must have the same number of entries as the main datasets."
@@ -422,6 +522,7 @@ def main() -> None:
 
     if args.source is not None:
         sources = np.loadtxt(args.source, dtype=str, delimiter=',')
+        sources = sources[converged_indices_list[0]] if converged_indices_list[0] is not None else sources
         assert len(sources) == dft_forces.shape[0], "Source file must have the same number of entries as the datasets."
 
     if args.ref_files is not None and args.mean_energies is not None:
@@ -478,8 +579,11 @@ def main() -> None:
     })
     if args.source is not None:
         molecule_df['Data Source'] = sources
+        molecule_df['Data Source'] = molecule_df['Data Source'].str.replace(" Constant Simulation", " Constant")
         molecule_df['Data Source'] = pd.Categorical(molecule_df['Data Source'], categories=molecule_df['Data Source'].unique(), ordered=True)
         #molecule_df = molecule_df[molecule_df['Data Source'].isin(["300K Simulation", "500K Simulation", "Halved H-bond Constant Simulation"])]
+        # Remove "Simulation" from source names for better legend display
+
     # if ESP_KEY is not None and dft_esps.size > 0:
     #     esp_filter = np.any(np.abs(dft_esps) > 5, axis=1)
     #     molecule_df["High ESP Magnitude"] = esp_filter
@@ -487,6 +591,7 @@ def main() -> None:
     # if ESP_GRAD_KEY is not None and dft_e_field.size > 0:
     #     e_field_filter = np.any(np.abs(dft_e_field) > 1.8, axis=1)
     #     molecule_df["High ESP Gradient Magnitude"] = e_field_filter
+
 
     force_labels = [f"{args.labels[0]} Force", f"{args.labels[1]} Force"]
     molecule_indices = np.repeat(np.arange(dft_forces.shape[0]), dft_forces.shape[1])
@@ -516,7 +621,7 @@ def main() -> None:
     #     atom_df["ESP Gradient Magnitude"] = np.repeat(dft_e_field.flatten(), 3)
 
     print("Plotting correlations...")
-    sns.set_context("talk", font_scale=1.2)
+    sns.set_context("talk", font_scale=1.3)
     sns.set_style("whitegrid")
     plot_correlation(molecule_df, energy_stats, energy_labels, "energy", ENERGY_UNIT, args)
     if ESP_KEY is not None:

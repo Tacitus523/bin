@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import itertools
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
+import warnings
 
 from ase import Atoms
 from ase.io import read
@@ -10,6 +11,7 @@ from ase.data import atomic_numbers
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error
 import pandas as pd
 
 # LABELS = ["Mulliken", "Löwdin", "Hirshfeld", "ESP"]
@@ -46,7 +48,7 @@ BINS = 30
 ALPHA = 0.7
 
 FIGSIZE = (16,9)
-CORR_FIGSIZE = (8,6)
+CORR_FIGSIZE = (10,8)
 MAX_POINTS = 10000 # Subsample points for correlation plots
 TITLE = False
 DPI = 100
@@ -54,6 +56,12 @@ DPI = 100
 PALETTE = sns.color_palette("tab10")
 PALETTE.pop(3) # Remove red color
 
+# Silence seaborn UserWarning about palette length
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The palette list has more values .* than needed .*",
+)
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Plot charge histograms and boxplots for comparison between vacuum and water charges.")
@@ -68,6 +76,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("-x", "--extra", required=False, default=None, help="Extra label for other charge files", metavar="extra label")
     ap.add_argument("-f", "--file", type=str, dest="output_file", required=False, default="charges_simple_boxplot.png", help="Output filename for the boxplot", metavar="output file")
     ap.add_argument("-s", "--suffix", type=str, dest="suffix", required=False, default="", help="Suffix to add to output filenames", metavar="suffix")
+    ap.add_argument('--index_files', type=str, nargs="*", help='Paths to index files for selecting geometries(folder_index.txt)', default=None)
     
     args = ap.parse_args()
     
@@ -81,7 +90,7 @@ def validate_args(args: argparse.Namespace) -> None:
         if not os.path.exists(file):
             raise FileNotFoundError(f"Charge file '{file}' does not exist.")
     if len(args.vacuum_charge_files) != len(args.labels):
-        raise ValueError("Number of charge files must match number of labels.")
+        raise ValueError(f"Number of charge files must match number of labels. Got {len(args.vacuum_charge_files)} files and {len(args.labels)} labels.")
     
     # Generate default labels if not provided
     if args.labels is None:
@@ -114,15 +123,39 @@ def validate_args(args: argparse.Namespace) -> None:
             for file in args.other_vacuum_files + args.other_env_files:
                 if not os.path.exists(file):
                     raise FileNotFoundError(f"Other charge file '{file}' does not exist.")
-    
+
+    if args.index_files is not None:
+        target = 0
+        if args.vacuum_charge_files is not None:
+            target += len(args.vacuum_charge_files)
+        if args.env_charge_files is not None:
+            target += len(args.env_charge_files)
+        if args.other_vacuum_files is not None:
+            target += len(args.other_vacuum_files)
+        if args.other_env_files is not None:
+            target += len(args.other_env_files)
+        if len(args.index_files) != target:
+            raise ValueError("If index files are provided, there must be exactly one file per charge file (vacuum files and environment files).")
+        else:
+            for file in args.index_files:
+                if not os.path.exists(file):
+                    raise FileNotFoundError(f"Index file '{file}' does not exist.")
+
     if not os.path.exists(args.geoms_file):
         raise FileNotFoundError(f"Geometry file '{args.geoms_file}' does not exist.")
     return
 
 def prepare_data(args: argparse.Namespace) -> pd.DataFrame:
+    indices = None # Used for filtering geometries to those where all methods converged
+    if args.index_files is not None:
+        print("Applying index files to filter geometries...")
+        indices = compare_folder_orders(args.index_files)
+
     # Load vacuum charges and geometry
     vacuum_charges = [np.loadtxt(file) for file in args.vacuum_charge_files]
-    elements = read_geoms(args.geoms_file)
+    if args.index_files is not None:
+        vacuum_charges = [data[indices[idx]] for idx, data in enumerate(vacuum_charges)]
+    elements = read_geoms(args.geoms_file, indices=indices[0] if args.index_files is not None else None)
     charge_labels = args.labels
 
     # Validate shapes
@@ -133,7 +166,11 @@ def prepare_data(args: argparse.Namespace) -> pd.DataFrame:
     env_labels = None
     if args.env_charge_files is not None:
         print("Running full comparison mode with environment data...")
+
         environmental_charges = [np.loadtxt(file) for file in args.env_charge_files]
+        if args.index_files is not None:
+            index_offset = len(args.vacuum_charge_files)
+            environmental_charges = [data[indices[idx + index_offset]] for idx, data in enumerate(environmental_charges)]
         env_labels = args.env_labels
 
         for data in environmental_charges:
@@ -144,6 +181,9 @@ def prepare_data(args: argparse.Namespace) -> pd.DataFrame:
 
     if args.other_vacuum_files is not None:
         other_vacuum_charges = [np.loadtxt(file) for file in args.other_vacuum_files]
+        if args.index_files is not None:
+            index_offset = len(args.vacuum_charge_files) + (len(args.env_charge_files) if args.env_charge_files is not None else 0)
+            other_vacuum_charges = [data[indices[idx + index_offset]] for idx, data in enumerate(other_vacuum_charges)]
         other_charge_labels = [args.extra]*len(other_vacuum_charges)
         for data in other_vacuum_charges:
             assert data.shape == elements.shape, f"Data shape {data.shape} does not match elements shape {elements.shape}"
@@ -153,6 +193,9 @@ def prepare_data(args: argparse.Namespace) -> pd.DataFrame:
         other_environmental_charges = None
         if args.other_env_files is not None:
             other_environmental_charges = [np.loadtxt(file) for file in args.other_env_files]
+            if args.index_files is not None:
+                index_offset += len(args.other_vacuum_files)
+                other_environmental_charges = [data[indices[idx + index_offset]] for idx, data in enumerate(other_environmental_charges)]
             for data in other_environmental_charges:
                 assert data.shape == elements.shape, f"Data shape {data.shape} does not match elements shape {elements.shape}"
             environmental_charges.extend(other_environmental_charges)
@@ -173,15 +216,84 @@ def prepare_data(args: argparse.Namespace) -> pd.DataFrame:
 
     return dataframe
 
-def read_geoms(file: str) -> np.ndarray:
-    geoms: List[Atoms] = read(file, index=":")
+def read_geoms(file: str, indices: Optional[np.ndarray] = None) -> np.ndarray:
+    """Read geometries from extxyz file and return array of element symbols."""
+    molecules: List[Atoms] = read(file, index=":")
 
     elements = []
-    for geom in geoms:
-        elements.append(geom.get_chemical_symbols())
+    next_index = 0 if indices is not None else None
+    for i, molecule in enumerate(molecules):
+        if next_index is not None:
+            if next_index >= len(indices):
+                break
+            if i < indices[next_index]:
+                continue
+            elif i == indices[next_index]:
+                next_index += 1
+            else:
+                raise ValueError(f"Index {indices[next_index]} not found in file {file}")
+        elements.append(molecule.get_chemical_symbols())
     
     elements = np.array(elements, dtype=object)
     return elements
+
+def compare_folder_orders(
+        folder_order_files: Optional[List[str]]
+    ) -> Optional[List[np.ndarray]]:
+    """Compare folder order files and return lists of shared indices."""
+
+    if folder_order_files is None:
+        return None
+
+    indices_list = []
+    for folder_order_file in folder_order_files:
+        # Read file - each row is a unique measurement
+        indices = pd.read_csv(
+            folder_order_file, 
+            header=None, 
+            names=["method_idx", "folder", "convergence"],
+            converters={"convergence": lambda x: x.strip() == "True"} # Used to be " True" instead of "True"
+        ).reset_index(names=["total_idx"])
+        indices_list.append(indices)
+
+    # Find total_idx values that converged in all files
+    all_converged_filter = np.all([indices["convergence"] for indices in indices_list], axis=0)
+    all_converged_total_idx = indices_list[0][all_converged_filter]["total_idx"].to_numpy()
+
+    # Get positions in converged-only arrays (these are the indices for property arrays)
+    converged_list = []
+    not_converged_list = []
+    converged_indices_list = []
+    for indices in indices_list:
+        # Filter to only converged measurements
+        converged = indices[indices["convergence"] == True].reset_index(drop=True).reset_index(names=["relative_idx"]).set_index("total_idx")
+        # Filter to only not converged measurements
+        not_converged = indices[indices["convergence"] == False]
+
+        converged_indices = converged.loc[all_converged_total_idx,:]["relative_idx"].to_numpy()
+        converged_list.append(converged)
+        not_converged_list.append(not_converged)
+        converged_indices_list.append(converged_indices)
+    
+    # Print statistics
+    for i, (indices, converged, not_converged) in enumerate(zip(indices_list, converged_list, not_converged_list), start=1):
+        print(f"Dataset {i}:")
+        print(f"  Total measurements: {len(indices)}, converged: {len(converged)}, not converged: {len(not_converged)}")
+    print
+    print(f"Shared converged measurements: {len(all_converged_total_idx)}")
+   
+    # Save indices delta
+    indices_delta = indices_list[0].copy()
+    indices_delta["convergence"] = all_converged_filter.astype(bool)
+    delta_folder_order_file = "folder_order_delta.txt"
+    indices_delta.to_csv(
+        delta_folder_order_file, 
+        header=False, 
+        index=False,
+        sep=","
+    )
+
+    return converged_indices_list
 
 def construct_dataframe(
     charges_list: List[np.ndarray], 
@@ -360,7 +472,8 @@ def plot_boxplot(data):
             y="Charge", 
             hue="Element", 
             #order=env_labels_original,
-            palette=PALETTE
+            palette=PALETTE,
+            showfliers=False
         )
         if TITLE:
             fig.axes.set_title("Charges boxplot")
@@ -390,7 +503,7 @@ def plot_simple_boxplot(data_frame: pd.DataFrame, y_label: str = "Charge (e)", s
         x="Charge type",
         palette=PALETTE,
         showfliers=False,
-        ax=ax
+        ax=ax,
     )
     if TITLE:
         ax.set_title("Charges Comparison")
@@ -450,19 +563,37 @@ def create_charge_correlation_plot(
         ax=ax
     )
 
+    ax.legend(markerscale=3, frameon=True, title="Element", loc="lower right")
     for legend_handle in ax.get_legend().legend_handles:
         legend_handle.set_alpha(1)
         if hasattr(legend_handle, "set_sizes"):
             legend_handle.set_sizes([30])
-    ax.legend(markerscale=3, frameon=True, title="Element", loc="upper left")
 
     # Add perfect correlation line
     max_val = max(combined[env_labels[0]].max(), combined[env_labels[1]].max())
     min_val = min(combined[env_labels[0]].min(), combined[env_labels[1]].min())
-    ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--")
+    ax.plot([min_val, max_val], [min_val, max_val], color="red", linestyle="--")
 
     ax.set_xlabel(f"{env_labels[0]} Charge (e)")
     ax.set_ylabel(f"{env_labels[1]} Charge (e)")
+
+    ax.grid(True, alpha=0.3)
+
+    # Calculate and display statistics
+    stats = calculate_statistics(data1=combined[env_labels[0]], data2=combined[env_labels[1]])
+    # Add annotation with statistics
+    annotation_text = (
+        f'RMSE: {stats["rmse"]:.2f} e\n'
+        f'R²: {stats["r_squared"]:.3f}'
+    )
+    
+    ax.annotate(
+        annotation_text,
+        xy=(0.05, 0.95),
+        xycoords='axes fraction',
+        bbox=dict(boxstyle='round', facecolor='white', edgecolor='black', linewidth=1, alpha=0.7),
+        va='top'
+    )
 
     # Save individual plot if it's a standalone
     if standalone:
@@ -471,9 +602,7 @@ def create_charge_correlation_plot(
         plt.savefig(save_name, dpi=DPI)
         plt.close()
     else:
-        # Calculate correlation coefficient
-        corr = combined[env_labels[0]].corr(combined[env_labels[1]])
-        ax_title = f"{charge_type.replace('_', ' ').title()} (r={corr:.3f})" 
+        ax_title = f"{charge_type.replace('_', ' ').title()}" 
         ax.set_title(ax_title)
 
     return ax
@@ -607,6 +736,29 @@ def plot_correlation(data: pd.DataFrame, env_labels: List[str]) -> None:
     plt.tight_layout()
     plt.savefig(f"correlation_charge_difference.png", dpi=DPI)
     plt.close()
+
+def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, float]:
+    """
+    Calculate statistical measures between two datasets.
+    
+    Args:
+        data1: First dataset
+        data2: Second dataset
+        
+    Returns:
+        Dictionary containing correlation coefficient, RMSE, and R²
+    """
+    corr = np.corrcoef(data1, data2)[0, 1]
+    rmse = root_mean_squared_error(data1, data2)
+    mae = mean_absolute_error(data1, data2)
+    r_squared = r2_score(data1, data2)
+    
+    return {
+        'correlation': corr,
+        'rmse': rmse,
+        'mae': mae,
+        'r_squared': r_squared
+    }
 
 def main() -> None:
     args = parse_args()

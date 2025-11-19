@@ -6,14 +6,27 @@
 
 
 print_usage() {
-    echo "Usage: $0 <input_molden_input>" >&2
-    echo "Example: $0 your_file.molden.input" >&2
+    echo "Usage: $0 <input_molden_input> [<mm_subsample_size>]" >&2
+    echo "Example: $0 your_file.molden.input 100" >&2
     echo "This script runs Multiwfn on the specified molden-input('orca_2mkl YOUR_FILE.gbw -molden') file." >&2
 }
 
 input_file="$1"
 input_base=$(basename "$input_file" .molden.input)
 output_prefix="ESP_multiwfn"
+mm_subsample_size="$2"
+if [ -n "$mm_subsample_size" ]; then
+    if [ $mm_subsample_size -le 0 ]; then
+        echo "Supplied MM subsample size '$mm_subsample_size' is smaller than or equal to zero. No subsampling will be performed."
+        subsample_flag=""
+    else
+        echo "Using MM subsample size of $mm_subsample_size."
+        subsample_flag="-n $mm_subsample_size"
+    fi
+else
+    echo "No MM subsample size supplied. No subsampling will be performed."
+    subsample_flag=""
+fi
 
 script_path=$(readlink -f "$0")
 script_folder=$(dirname "$script_path")
@@ -39,7 +52,7 @@ if ! which Multiwfn > /dev/null; then
     exit 1
 fi
 
-$pc_conversion_script -f $orca_pc_file -n $mm_subsample_size -o $pc_conversion_out
+$pc_conversion_script -f $orca_pc_file -o $pc_conversion_out $subsample_flag
 echo -e "$multiwfn_input" | Multiwfn $input_file > ${output_prefix}.log
 
 if [ $? -ne 0 ]; then
