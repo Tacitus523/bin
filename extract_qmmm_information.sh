@@ -70,6 +70,11 @@ qsub $(which $esp_calculation_script) --dir $1 --input $2 --unit V # ESP in Volt
 
 for folder in $folders
 do
+	if ! tac $folder/$file_prefix*.out 2> /dev/null | grep -q -m 1 "****ORCA TERMINATED NORMALLY****" 2> /dev/null
+    then 
+        continue
+    fi
+
 	sed '/^$/d' $folder/$file_prefix.pc >> $PC_FILE # concatenate all pc files, remove empty lines
 	sed '/^$/d' $folder/$file_prefix.pcgrad >> $PCGRAD_FILE # concatenate all pcgrad files, remove empty lines
 done

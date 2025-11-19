@@ -28,7 +28,10 @@ folder_prefix=$1
 gro_file=$2.gro
 xyz_file=$2.xyz
 
-folders=$(find $folder_prefix* -maxdepth 1 \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
+folder_prefix_dirname=$(dirname "$folder_prefix")
+folder_prefix_basename=$(basename "$folder_prefix")
+
+folders=$(find "$folder_prefix_dirname" -maxdepth 1 -name "${folder_prefix_basename}*" \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ... 
 for folder in $folders
 do
 	if ! [ -f $folder/$DETAIL_FILE ]
@@ -115,13 +118,18 @@ remove_if_exists $PCGRAD_FILE
 counter=0
 for folder in $folders
 do
+	counter=$((counter + 1))
+    if ! grep -q -m 1 "SCC converged" $folder/$DETAIL_FILE 2> /dev/null
+    then 
+        continue
+    fi
+
 	n_mm_atoms=$(grep 'forces_ext_charges' $folder/results.tag | awk -F, '{print $2}')
 	echo $n_mm_atoms >> $PC_FILE
 	sed -e 's/^[ \t]*//' -e '/^$/d' $folder/field.dat | awk '{print $4, $1, $2, $3}' >> $PC_FILE # Remove leading spaces, empty lines, and reorder columns to match orca format (charge, x, y, z)
 	echo $n_mm_atoms >> $PCGRAD_FILE
 	grep -A $n_mm_atoms 'forces_ext_charges' $folder/results.tag | tail -n +2 >> $PCGRAD_FILE
 
-	counter=$((counter + 1))
 	if (( $counter % 1000 == 0 ))
 	then
 		echo "Processed $counter folders"

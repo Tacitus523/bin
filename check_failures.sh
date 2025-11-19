@@ -51,11 +51,14 @@ function check_DFTB_folder() {
 }
 export -f check_DFTB_folder
 
+folders=$(find "$folder_prefix_dirname" -maxdepth 1 -name "${folder_prefix_basename}*" \( -type d -o -type l \) | sort -V) # Ensures numerical ordering without padded folders --> folder_0, folder_1, folder_2, ... instead of folder_0, folder_1, folder_10, ...
+
 # Process all folders in parallel
 # If the file prefix is "detailed", we assume DFTB calculations (since DFTB output files are named "detailed.out")
+export file_prefix
 if [[ $(basename $file_prefix) == "detailed" ]] 
 then 
-    find "$folder_prefix_dirname" -name "${folder_prefix_basename}*" -a \( -type d -o -type l \) | parallel -j 32 --env file_prefix "check_DFTB_folder {}"
+    parallel -j 32 --env file_prefix "check_DFTB_folder {}" ::: $folders
 else
-    find "$folder_prefix_dirname" -name "${folder_prefix_basename}*" -a \( -type d -o -type l \) | parallel -j 32 --env file_prefix "check_DFT_folder {}"
+    parallel -j 32 --env file_prefix "check_DFT_folder {}" ::: $folders
 fi
