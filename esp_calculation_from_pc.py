@@ -89,6 +89,20 @@ def write_files(
         esp_grad_file.write(grad_string)
     esp_grad_file.close()
 
+def check_convergence_orca(output_file: str) -> bool:
+    with open(output_file, "r") as f:
+        for line in reversed(f.readlines()):
+            if "****ORCA TERMINATED NORMALLY****" in line:
+                return True
+    return False
+
+def check_convergence_dftb(output_file: str) -> bool:
+    with open(output_file, "r") as f:
+        for line in f.readlines():
+            if "SCC converged" in line:
+                return True
+    return False
+
 def extract_orca_inputs(input_file: str, point_charge_file: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # Find the start of the QM coordinates in the input file
     num_header_lines = 0
@@ -139,9 +153,11 @@ def main():
     if input_format == "orca":
         input_file = input_prefix + ".inp"
         point_charge_file = input_prefix + ".pc"
+        out_file = input_prefix + ".out"
     elif input_format == "dftb":
         input_file = input_prefix + ".xyz"
         point_charge_file = "field.dat"
+        out_file = "detailed.out"
 
     if folder_prefix is not None:
         sp_calculation_location = os.path.dirname(folder_prefix)
@@ -176,6 +192,17 @@ def main():
 
         assert os.path.isfile(input_file), f"Input file {input_file} does not exist."
         assert os.path.isfile(point_charge_file), f"Point charge file {point_charge_file}"
+        assert os.path.isfile(out_file), f"Output file {out_file} does not exist."
+
+        if input_format == "orca":
+            converged = check_convergence_orca(out_file)
+        elif input_format == "dftb":
+            converged = check_convergence_dftb(out_file)
+
+        if not converged:
+            print(f"WARNING: Calculation in folder {folder} did not converge. Skipping ESP calculation for this folder.", file=os.sys.stderr)
+            os.chdir(original_folder)
+            continue
 
         if input_format == "orca":
             atomic_numbers, qm_coords, mm_coords, mm_charges = extract_orca_inputs(input_file, point_charge_file)
@@ -202,10 +229,10 @@ def main():
             try:
                 write_files([folder], [n_qm_atoms], [esps], [gradients], [gradients])
             except PermissionError:
-                print("WARNING: Was not able to write into", folder, ". No write permissions.")
+                print("WARNING: Was not able to write into", folder, ". No write permissions.", file=os.sys.stderr)
                 write_in_folder = False
             except Exception as e:
-                print("ERROR: Was not able to write into", folder, ". Error:", e)
+                print("ERROR: Was not able to write into", folder, ". Error:", e, file=os.sys.stderr)
                 write_in_folder = False
         
         os.chdir(original_folder)
