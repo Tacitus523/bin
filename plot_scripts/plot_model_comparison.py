@@ -49,7 +49,9 @@ def parse_args() -> argparse.Namespace:
         default="model_comparison_rmse.png",
         help="Output filename (default: model_comparison_rmse.png)"
     )
-    return parser.parse_args()
+
+    args = parser.parse_args()
+    return args
 
 def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
     # Load all input files and add label column
@@ -103,7 +105,7 @@ def plot_swarm_plots(
         data: pd.DataFrame
     ) -> None:
     # Count available metrics
-    available_metrics = data['metric'].unique()
+    available_metrics = ['Energy RMSE', 'Force RMSE']
     n_metrics = len(available_metrics)
     
     # Create consistent color mapping for all models
@@ -115,10 +117,6 @@ def plot_swarm_plots(
     n_datasets = len(all_datasets)
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
     dataset_markers = {dataset: markers[i % len(markers)] for i, dataset in enumerate(all_datasets)}
-    
-    print(f"\nAvailable metrics: {available_metrics.tolist()}")
-    print(f"Color mapping: {list(model_colors.keys())}")
-    print(f"Marker mapping: {list(dataset_markers.keys())}")
     
     # Create subplots
     fig, axes = plt.subplots(1, n_metrics, figsize=(FIGURE_SIZE[0]*n_metrics, FIGURE_SIZE[1]), dpi=DPI)
@@ -149,7 +147,7 @@ def plot_swarm_plots(
                 'size': 8,
                 'ax': ax,
                 'legend': False,
-                'dodge': True
+                'dodge': False
             }
             if n_datasets > 1:
                 swarm_plot_kwargs['marker'] = dataset_markers[dataset]
@@ -165,16 +163,11 @@ def plot_swarm_plots(
             ax.set_title(metric.replace(" RMSE", ""))
         
         # Rotate x-axis labels if needed
+        ax.set_xticks(ax.get_xticks())
         ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
         
         # Add horizontal grid for readability
         ax.grid(axis='y', alpha=0.3, linestyle='--')
-        
-        # Print statistics
-        print(f"\n{metric}:")
-        for model in metric_data['model_name'].unique():
-            model_values = metric_data[metric_data['model_name'] == model]['value']
-            print(f"  {model}: mean={model_values.mean():.6f}, std={model_values.std():.6f}")
     
     plt.tight_layout()
     
@@ -204,15 +197,22 @@ def plot_method_ranking(
         output_path: Path to save the plot
         unit: Unit for the metric
     """
-    
-    # Sort by metric (ascending for RMSE, descending for R2)
-    data = data.sort_values('value', ascending=True).reset_index(drop=True)
+
+    # Sort data by the order of the data means
+    data = data.copy()
+    data_means = data.groupby('model_name')['value'].mean().reset_index().sort_values('value', ascending=True) 
+    data['model_name'] = pd.Categorical(
+        data['model_name'],
+        categories=data_means['model_name'], 
+        ordered=True
+    )
+    data = data.sort_values('model_name').reset_index(drop=True)
     
     # Create color gradient based on metric values
-    metric_max = data['value'].max()
+    metric_max = data_means['value'].max()
     norm = plt.Normalize(vmin=0, vmax=metric_max)
     cmap = sns.color_palette("YlOrRd", as_cmap=True)
-    colors = [cmap(norm(value)) for value in data['value']]
+    colors = [cmap(norm(value)) for value in data_means['value']]
     
     # Create bar plot
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
@@ -227,7 +227,7 @@ def plot_method_ranking(
     )
     
     # Set labels
-    ax.set_xlabel('')
+    ax.set_xlabel('Method')
     if unit:
         y_label += f" ({unit})"
     ax.set_ylabel(y_label)
@@ -237,7 +237,7 @@ def plot_method_ranking(
     ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
     
     # Add value labels on bars
-    for i, (idx, row) in enumerate(data.iterrows()):
+    for i, (idx, row) in enumerate(data_means.iterrows()):
         value = row['value']
         ax.text(i, value, f'{value:.3f}', ha='center', va='bottom', fontsize=10)
     
@@ -254,14 +254,21 @@ def main():
         raise ValueError(f"Number of labels ({len(args.labels)}) must match number of input files ({len(args.input)})")
     
     if args.labels is None:
-        ["Default"] * len(args.input)
+        args.labels = ["Default"] * len(args.input)
     
     plot_df = create_dataframe(args)
+
+    # Only keep entries with values for the final label, e.g. drop values drop 2G-HDNNP from plot_df if it only has Vacuum label, when Vacuum and Water labels are present
+    has_final_label_filter = plot_df['dataset'] == args.labels[-1]
+    entries_with_final_label = plot_df[has_final_label_filter]['model_name'].unique()
+    plot_df_filter = plot_df['model_name'].isin(entries_with_final_label)
+    plot_df = plot_df[plot_df_filter].reset_index(drop=True)
     
     sns.set_context("talk")
     plot_swarm_plots(args, plot_df)
     for metric in plot_df['metric'].unique():
-        metric_df = plot_df[plot_df['metric'] == metric]
+        df_filter = ((plot_df['metric'] == metric) & (plot_df['dataset'] == args.labels[-1])) # Filter to last dataset only
+        metric_df = plot_df[df_filter]
         unit = metric_df['unit'].iloc[0]
         plot_method_ranking(
             data=metric_df,
