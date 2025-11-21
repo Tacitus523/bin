@@ -116,9 +116,9 @@ do
 	num_atoms=$(grep -m 1 "Number of atoms" $folder/$file_prefix*.out | awk '{print $NF}')
 
 	# works with multip steps Orca .outs, only greps last occurence, tac = reverse cat, -m 1 = maximal 1 occurence 
-	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
+	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+1)) -m 1 'MULLIKEN ATOMIC CHARGES' | tac | awk 'FNR > 2 && NF >= 3 {print $NF}' | tr '\n' ' ' >> $CHARGES_MULL_FILE
 	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+6)) -m 1 'HIRSHFELD ANALYSIS' | tac | awk 'FNR > 7 {print $3}' | tr '\n' ' ' >> $CHARGES_HIRSH_FILE
-	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 {print $4}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
+	tac $folder/$file_prefix*.out | grep -B $(($num_atoms+1)) -m 1 'LOEWDIN ATOMIC CHARGES' | tac | awk 'FNR > 2 && NF >= 3 {print $NF}' | tr '\n' ' ' >> $CHARGES_LOEW_FILE
 
 	echo '' >> $CHARGES_MULL_FILE # basicially makes a \n
 	echo '' >> $CHARGES_HIRSH_FILE # basicially makes a \n 
