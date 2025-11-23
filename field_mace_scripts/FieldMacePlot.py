@@ -26,8 +26,8 @@ DATA_SOURCES_FILE: Optional[str] = None  # File containing the data source of ea
 REF_ENERGY_KEY: Optional[str] = "ref_energy"
 REF_FORCES_KEY: Optional[str] = "ref_force"
 REF_CHARGES_KEY: Optional[str] = None
-PRED_ENERGY_KEY: Optional[str] = "MACE_energy"
-PRED_FORCES_KEY: Optional[str] = "MACE_forces"
+PRED_ENERGY_KEY: Optional[str] = "pred_energy"
+PRED_FORCES_KEY: Optional[str] = "pred_forces"
 PRED_CHARGES_KEY: Optional[str] = None
 
 # Units for plotting
