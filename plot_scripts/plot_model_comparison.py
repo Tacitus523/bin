@@ -14,6 +14,10 @@ import numpy as np
 DPI = 150
 FIGURE_SIZE = (8, 6)
 
+ENERGY_UNIT = "eV"
+FORCE_UNIT = "eV/Å"
+CHARGE_UNIT = "e"
+
 PALETTE = sns.color_palette("tab10")
 PALETTE.pop(3)  # Remove red color
 
@@ -58,7 +62,8 @@ def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
     dfs = []
     for input_file, label in zip(args.input, args.labels):
         df = pd.read_csv(input_file)
-        df['dataset'] = label
+        if not 'dataset' in df.columns:
+            df['dataset'] = label
         dfs.append(df)
         print(f"Loaded {len(df)} rows from {input_file} (label: {label})")
     
@@ -76,7 +81,7 @@ def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
         energy_data = df[['model_name', 'model_idx', 'dataset', 'test_rmse_energy']].copy()
         energy_data['metric'] = 'Energy RMSE'
         energy_data['value'] = energy_data['test_rmse_energy']
-        energy_data['unit'] = 'eV'
+        energy_data['unit'] = ENERGY_UNIT
         metrics.append(energy_data[['model_name', 'model_idx', 'dataset', 'metric', 'value', 'unit']])
     
     # Force RMSE
@@ -84,7 +89,7 @@ def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
         force_data = df[['model_name', 'model_idx', 'dataset', 'test_rmse_force']].copy()
         force_data['metric'] = 'Force RMSE'
         force_data['value'] = force_data['test_rmse_force']
-        force_data['unit'] = 'eV/Å'
+        force_data['unit'] = FORCE_UNIT
         metrics.append(force_data[['model_name', 'model_idx', 'dataset', 'metric', 'value', 'unit']])
     
     # Charge RMSE
@@ -93,7 +98,7 @@ def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
         if len(charge_data) > 0:
             charge_data['metric'] = 'Charge RMSE'
             charge_data['value'] = charge_data['test_rmse_charge']
-            charge_data['unit'] = 'e'
+            charge_data['unit'] = CHARGE_UNIT
             metrics.append(charge_data[['model_name', 'model_idx', 'dataset', 'metric', 'value', 'unit']])
     
     # Combine all metrics
@@ -168,6 +173,11 @@ def plot_swarm_plots(
         
         # Add horizontal grid for readability
         ax.grid(axis='y', alpha=0.3, linestyle='--')
+
+        # Add hline at 1 kcal/mol if Energy RMSE
+        if unit == ENERGY_UNIT:
+            kcal_per_mol_to_ev = 1/23.0609 
+            ax.axhline(y=kcal_per_mol_to_ev, color='red', linestyle=':', linewidth=1, label='1 kcal/mol')
     
     plt.tight_layout()
     
@@ -263,6 +273,7 @@ def main():
     entries_with_final_label = plot_df[has_final_label_filter]['model_name'].unique()
     plot_df_filter = plot_df['model_name'].isin(entries_with_final_label)
     plot_df = plot_df[plot_df_filter].reset_index(drop=True)
+    assert len(plot_df) > 0, "No data available for plotting after filtering to models with final label"
     
     sns.set_context("talk")
     plot_swarm_plots(args, plot_df)
