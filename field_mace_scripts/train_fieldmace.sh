@@ -17,11 +17,7 @@ module load lib/cudnn/9.0.0_cuda-12.3
 TRAIN_FILE="train.xyz"
 VALID_FILE="valid.xyz"
 TEST_FILE="test.xyz"
-# Default value, gets overwritten by the command line argument from submit_train_mace.sh
-EPOCHS=100
-
-MODEL_NAME="FieldMace"
-
+EVAL_SCRIPT="$(which submit_eval_fieldmace.sh)"
 # Atomization energies for the DFT and DFTB methods, deprecated since config.yaml
 DFT_E0s='{1: -13.575035506869515, 6: -1029.6173622986487, 7: -1485.1410643783852, 8: -2042.617308911902, 16: -10832.265333248919}'
 DFTB_E0s='{1: -7.192493802609272, 6: -42.8033008522276, 7: -65.55164277599535, 8: -94.82677849249036}'
@@ -34,48 +30,63 @@ else
 fi
 
 print_usage() {
-    echo "Usage: $0 [-e number_of_epochs] [-d data_folder]" >&2
+    echo "Usage: $0 [-c config_file]" >&2
+    echo "  -c config_file : Path to configuration file. Default is 'config.yaml'." >&2
 }
 
-# Parse command line arguments for epochs and data folder
-while getopts e:d: flag
+while getopts c: flag
 do
     case "${flag}" in
-        e) EPOCHS=${OPTARG};;
-        d) DATA_FOLDER=${OPTARG};;
+        c) config_file=${OPTARG};;
         *) print_usage; exit 1;;
     esac
 done
 
-data_folder=$(readlink -f $DATA_FOLDER)
-train_file="$data_folder/$TRAIN_FILE"
-valid_file="$data_folder/$VALID_FILE"
-test_file="$data_folder/$TEST_FILE"
-
 echo "Starting training: $(date)"
-echo "Data folder: $data_folder"
-echo "Train file: $train_file"
-echo "Valid file: $valid_file"
-echo "Test file: $test_file"
-echo "Number of epochs: $EPOCHS"
 
-# conda activate fieldmace
 mace_run_train \
-    --config config.yaml \
-    --name $MODEL_NAME \
-    --train_file $train_file \
-    --valid_file $valid_file \
-    --test_file $test_file \
-    --max_num_epochs $EPOCHS \
-    --wandb_name $WANDB_NAME \
-    --num_workers 4 \
+    --config $config_file \
+    --seed=$RANDOM \
+    --wandb_name=$WANDB_NAME
 
 training_exit_status=$?
 
-echo "Finished training: $(date)"
-
-# Convert the model to a scripted model
-if [ $training_exit_status -eq 0 ]
+if [ $training_exit_status -ne 0 ]
 then
-    convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
+    echo "Training failed with exit status $training_exit_status" >&2
+    exit $training_exit_status
+else
+    echo "Training completed successfully: $(date)"
 fi
+
+# # Convert the model to a scripted model
+# if [ $training_exit_status -eq 0 ]
+# then
+#     convert_model_to_scripted_model.py --model_prefix $MODEL_NAME
+# fi
+
+# Evaluate the trained model
+if ! [ -x "$EVAL_SCRIPT" ]
+then
+    echo "Evaluation script not found or not executable: $EVAL_SCRIPT" >&2
+    exit 1
+fi
+
+model_name=$(yq e '.name' $config_file)
+model_file="${model_name}_stagetwo_compiled.model"
+if ! [ -f "$model_file" ]
+then
+    echo "SWA model file not found: $model_file" >&2
+    echo "Falling back to regular model file." >&2
+    model_file="${model_name}_compiled.model"
+fi
+if ! [ -f "$model_file" ]
+then
+    echo "Model file not found: $model_file" >&2
+    echo "Skipping evaluation." >&2
+    exit 1
+fi
+
+test_file=$(yq eval '.test_file' $config_file)
+data_folder=$(dirname $test_file)
+$EVAL_SCRIPT -m $model_file -d $data_folder
