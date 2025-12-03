@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 EMAIL=$MY_MAIL
 
-queue_script="$HOME/bin/qpython_justus.sh"
+queue_script=$(dirname "$0")/qpython_justus.sh
 
 print_usage() {
   echo "Usage: submit_python_file_justus.sh [-e] python_file.py [-- additional_args]"
