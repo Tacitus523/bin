@@ -10,6 +10,8 @@
 import argparse
 import json
 from typing import Dict, List, Optional, Union
+import warnings
+
 from ase.atoms import Atoms
 from ase.io import read
 import numpy as np
@@ -45,6 +47,15 @@ ESP_UNIT: str = "eV/e"
 ENEG_ESP_UNIT: str = "eV/e"
 
 DPI = 100
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3)  # Remove red color
+
+# Silence seaborn UserWarning about palette length
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The palette list has more values .* than needed .*",
+)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plotting script for model data")
@@ -220,7 +231,7 @@ def plot_data(
         x=x_label,
         y=y_label,
         hue="source" if sources is not None else None,
-        palette="tab10" if sources is not None else None,
+        palette=PALETTE if sources is not None else None,
         alpha=0.6,
         edgecolor=None,
         s=20,
@@ -265,12 +276,13 @@ def plot_histogram(
     sns.histplot(
         data=df,
         bins=100,
-        pthresh=0.05,
+        palette=PALETTE,
+        stat="percent",
     )
     plt.xlabel(f"Values {'(' + '/'.join(units) + ')'}")
-    plt.ylabel("Frequency")
+    plt.ylabel("Frequency (%)")
     plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.savefig(filename, dpi=DPI)
     plt.close()
 
     for key, unit in zip(keys, units):
@@ -279,13 +291,14 @@ def plot_histogram(
             x=key,
             hue="Elements" if "Elements" in df else None,
             bins=100,
-            pthresh=0.05,
+            palette=PALETTE,
+            stat="percent",
         )
         plt.xlabel(f"Values ({unit})")
-        plt.ylabel("Frequency")
-        filename_key = os.path.splitext(filename)[0] + f"_{key}.png"
+        plt.ylabel("Frequency (%)")
+        filename_key = os.path.splitext(filename)[0] + f"_{key}.png" if len(keys) > 1 else filename
         plt.tight_layout()
-        plt.savefig(filename_key, dpi=300)
+        plt.savefig(filename_key, dpi=DPI)
         plt.close()
 
 def create_dataframe(
@@ -450,6 +463,13 @@ def main() -> None:
             "Model Charges",
             CHARGES_UNIT,
             "model_charges.png",
+        )
+    elif "charges" in model_data:
+        plot_histogram(
+            model_data,
+            ["charges"],
+            [CHARGES_UNIT],
+            "model_charges_histogram.png",
         )
 
     if PRED_ENEG_KEY in model_data or PRED_ESP_KEY in model_data or PRED_ENEG_ESP_KEY in model_data:

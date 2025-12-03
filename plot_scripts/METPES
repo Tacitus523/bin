@@ -1,4 +1,4 @@
-#!/home/lpetersen/miniconda3/envs/mda/bin/python
+#!/lustre/home/ka/ka_ipc/ka_he8978/miniconda3/envs/kgcnn_new/bin/python
 """
   Script creates metad pes from hills
 """
@@ -12,7 +12,7 @@ import numpy as np
 
 
 PERIODIC_LIMITS = ((-180, 120), (-100, 240))  # for periodic CVs, in degrees
-NON_PERIODIC_LIMITS = ((1.8, 11), (1.8, 11))  # for non-periodic CVs, in Angstrom
+NON_PERIODIC_LIMITS = ((1.8, 6), (1.8, 6))  # for non-periodic CVs, in Angstrom
 FIGSIZE = (7, 6)
 DPI = 100
 
@@ -126,7 +126,7 @@ def plot_multiple_fes(args: argparse.Namespace) -> None:
 
 	plt.tight_layout()
 	output_file = os.path.join(args.directory, "PMFs.png")
-	plt.savefig(output_file, dpi=DPI)
+	plt.savefig(output_file, dpi=DPI, bbox_inches='tight')
 	print(f"PES figure saved to {output_file}")
 
 def plot_single_fes(
@@ -177,13 +177,13 @@ def plot_single_fes(
 	# Modified colorbar to match actual plot height
 	cb = plt.colorbar(fig1, ticks=cbticks, ax=ax, pad=0.02, 
 					fraction=0.053, aspect=20)  # Adjust aspect to control height
-	cb.set_label(r"$\Delta$G [kcal/mol]", fontsize=label_fs, labelpad=5, rotation=90)
+	cb.set_label(r"$\Delta$G (kcal/mol)", fontsize=label_fs, labelpad=5, rotation=90)
 	cb.ax.tick_params(labelsize=ticks_fs)
 
 
 	if standalone is True:
 		fig.tight_layout()
-		plt.savefig("PMFs.png", dpi=DPI)
+		plt.savefig("PMFs.png", dpi=DPI, bbox_inches='tight')
 		print("PES figure saved to PMFs.png")
 	else:
 		title = os.path.basename(args.fes_file).replace("fes_", "").replace(".dat", "")
