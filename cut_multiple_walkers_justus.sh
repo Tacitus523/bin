@@ -72,21 +72,22 @@ cut_traj() {
     if [ -z "$ndx_file" ]
     then
         if $debug_cut_traj; then
-            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file
+            echo "$idx_in_ndx_file" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file
         else
-            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file > /dev/null 2>&1
+            echo "$idx_in_ndx_file" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -o $output_xtc_file > /dev/null 2>&1
         fi
     else
         if $debug_cut_traj; then
-            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -n $ndx_file -o $output_xtc_file
+            echo "$idx_in_ndx_file" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -n $ndx_file -o $output_xtc_file
         else
-            echo "$idx_in_ndx_file\n" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -n $ndx_file -o $output_xtc_file > /dev/null 2>&1
+            echo "$idx_in_ndx_file" | gmx -quiet trjconv -f $input_xtc_file -s $tpr_file -n $ndx_file -o $output_xtc_file > /dev/null 2>&1
         fi
     fi
 }
 
 export -f cut_traj
 export debug_cut_traj=$DEBUG
+tpr_file=$(realpath $tpr_file)
 parallel -j $n_walker "cut_traj {} $input_xtc_file $tpr_file $idx_in_ndx_file $output_xtc_file $ndx_file " ::: $PREFIX* &
 
 wait
