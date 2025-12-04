@@ -5,20 +5,20 @@
 #SBATCH --output=metadynamics.out
 #SBATCH --error=metadynamics.err
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
-##SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:1
+##SBATCH --account=bw15b001
 
 function print_usage() {
     echo "Usage: $0 -t TPR_FILE.tpr [-p PLUMED_FILE.dat] [additional_files...]"
     exit 1
 }
 
-#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-nn/bin/GMXRC"
-#GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
-GROMACS_PATH=/lustre/home/ka/ka_ipc/ka_he8978/gromacs-tensorflow/bin/GMXRC
+GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
+#GROMACS_PATH=/lustre/home/ka/ka_ipc/ka_he8978/gromacs-tensorflow/bin/GMXRC
 PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas-release/bin"
 PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
 
-OBSERVATION_SCRIPT=$(which observe_trajectory.py)
+OBSERVATION_SCRIPT=observe_trajectory.py
 
 source $GROMACS_PATH
 module load system/parallel
@@ -27,6 +27,10 @@ export PATH="$PLUMED_PATH:$PATH"
 export LD_LIBRARY_PATH="$PYTORCH_ENV/lib:$PYTORCH_ENV/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH"
 export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/tensorflow_prebuilt/lib:$LD_LIBRARY_PATH"
 export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/jsoncpp_exe/lib64:$LD_LIBRARY_PATH"
+
+BLAS_dir="/lustre/home/ka/ka_ipc/ka_dk5684/sw/OpenBLAS-0.3.20-release"
+ARPACK_dir="/lustre/home/ka/ka_ipc/ka_dk5684/sw/arpack-ng-3.9.0-release"
+export LD_LIBRARY_PATH="$ARPACK_dir/lib:$BLAS_dir/lib64:$LD_LIBRARY_PATH"
 
 export GMX_QMMM_VARIANT=2 # 1 for PME, 2 for cutoff
 export OMP_NUM_THREADS=1
@@ -37,8 +41,8 @@ export OMP_NUM_THREADS=1
 #export GMX_DFTB_MM_COORD_FULL=100
 export GMX_N_MODELS=3 # Number of neural network models
 export GMX_MODEL_PATH_PREFIX="model_energy_force" # Prefix of the path to the neural network models
-export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.1  # Threshold for the energy standard deviation between models for a structure to be considered relevant
-export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, energy std threshold has priority
+export GMX_ENERGY_PREDICTION_STD_THRESHOLD=0.1  # Threshold for the energy standard deviation between models for a structure to be considered relevant, in units of output of model
+export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard deviation between models for a structure to be considered relevant, in units of output of model, energy std threshold has priority
 export GMX_NN_EVAL_FREQ=1 # Frequency of evaluation of the neural network, 1 means every step
 export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp2nd, hdnnp4th, schnet or painn for tensorflow, or mace, maceqeq, amp for pytorch
 export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
@@ -93,8 +97,7 @@ fi
 
 # Remaining arguments are additional files
 additional_files=("$@")
-for file in "${additional_files[@]}"
-do
+for file in "${additional_files[@]}"; do
     echo "Additional file: $file"
 done
 
@@ -194,7 +197,7 @@ function observe_trajectory {
     local basename_tpr=$1
     local gmx_pid=$2
 
-    if ! [ -f "$OBSERVATION_SCRIPT" ]
+    if ! command -v "$OBSERVATION_SCRIPT" &> /dev/null
     then
         echo "Observation script $OBSERVATION_SCRIPT not found!" 1>&2
         return 1
@@ -202,7 +205,7 @@ function observe_trajectory {
 
     while true
     do
-        sleep 60 # Check every minute
+        sleep 600 # Check every 10 minutes
         $OBSERVATION_SCRIPT --basename "$basename_tpr" --once 1> /dev/null
         observation_exit_code=$?
         if [ $observation_exit_code -ne 0 ]
@@ -229,11 +232,18 @@ function track_fes_progress {
 # Call finalize_job function as soon as we receive USR1 signal
 trap 'finalize_job' USR1
 
+if [ -n "$GMX_MODEL_PATH_PREFIX" ]; then
+    export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
+fi
+if [ -n "$GMX_NN_SCALER" ]; then
+    export GMX_NN_SCALER=$(readlink -f $GMX_NN_SCALER) # Convert to absolute path
+fi
+
 sourcedir=$PWD
 scratch_dir=$SCRATCH
 
 mkdir -vp $scratch_dir
-cp -rL $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
+cp -r $tpr_file $plumed_file "${additional_files[@]}" $scratch_dir
 cd $scratch_dir
 
 # Local pathes to copied files
@@ -245,7 +255,6 @@ do
     local_additional_files+=("$(basename $file)")
 done
 additional_files=("${local_additional_files[@]}")
-export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path in scratch directory
 
 # Append to existing simulation?
 append_command=$(generate_append_command "${additional_files[@]}")

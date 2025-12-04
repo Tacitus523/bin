@@ -75,7 +75,7 @@ case "$simulation_type" in
         export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
         export GMX_NN_EXTXYZ=1000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
 
-        #OBSERVATION_SCRIPT=$(which observe_trajectory.py) # Used to recognize explosions in the simulation
+        #OBSERVATION_SCRIPT=observe_trajectory.py # Used to recognize explosions in the simulation
         ;;
     "orca")
         export HWLOC_HIDE_ERRORS=1 # Hide errors from hwloc, which is used by ORCA
@@ -130,7 +130,7 @@ if [ -z "${plumed_file}" ]; then
     plumed_command=""
 else
     echo "plumed_file: $plumed_file"
-    plumed_command="-plumed $plumed_file"
+    plumed_command="-plumed $(basename $plumed_file)"
 fi
 
 # Remaining arguments are additional files
@@ -172,41 +172,38 @@ generate_rerun_command() {
     echo $rerun_command
 }
 
-mexican_standoff() {
-    # receive two process IDs. Waits for one of them to finish, then kills the other.
-    local pid1=$1 # mdrun process ID
-    local pid2=$2 # observation script process ID
+function observe_trajectory {
+    local basename_tpr=$1
+    local gmx_pid=$2
+
+    if ! command -v "$OBSERVATION_SCRIPT" &> /dev/null
+    then
+        echo "Observation script $OBSERVATION_SCRIPT not found!" 1>&2
+        return 1
+    fi
+
     while true
     do
-        if ! kill -0 "$pid1" > /dev/null 2>&1
+        sleep 600 # Check every 10 minutes
+        $OBSERVATION_SCRIPT --basename "$basename_tpr" --once 1> /dev/null
+        observation_exit_code=$?
+        if [ $observation_exit_code -ne 0 ]
         then
-            kill "$pid2" > /dev/null 2>&1
-            break
-        elif ! kill -0 "$pid2" > /dev/null 2>&1
-        then
-            # First try SIGTERM
-            kill "$pid1" > /dev/null 2>&1
-            sleep 60
-            # If process still exists, use SIGKILL
-            if kill -0 "$pid1" 2>/dev/null
-            then
-                echo "Process $pid1 did not terminate, sending SIGKILL"
-                kill -9 "$pid1" > /dev/null 2>&1
-            fi
-            break
+            echo "Observation script detected an explosion. Stopping mdrun."
+            kill $gmx_pid 2>/dev/null || true # Stop mdrun if still running
+            exit $observation_exit_code
         fi
-        sleep 10 # Sleep for 120 seconds before checking again
     done
 }
 
 # Call finalize_job function as soon as we receive USR1 signal
 trap 'finalize_job' USR1
 
-rerun_command=$(generate_rerun_command "${additional_files[@]}")
-if [ -n "$rerun_command" ]
-then
-    echo "Reruning existing simulation!"
-    echo "Rerun command: $rerun_command"
+if [ -n "$GMX_MODEL_PATH_PREFIX" ]; then
+    export GMX_MODEL_PATH_PREFIX=$(readlink -f $GMX_MODEL_PATH_PREFIX) # Convert to absolute path
+fi
+if [ -n "$GMX_NN_SCALER" ]; then
+    export GMX_NN_SCALER=$(readlink -f $GMX_NN_SCALER) # Convert to absolute path
 fi
 
 sourcedir=$PWD
@@ -216,23 +213,39 @@ mkdir -vp $workdir
 cp -r -v $tpr_file $plumed_file "${additional_files[@]}" $workdir
 cd $workdir
 
+# Local pathes to copied files
+tpr_file=$(basename $tpr_file)
+if [ -n "$plumed_file" ]; then
+    plumed_file=$(basename $plumed_file)
+fi
+local_additional_files=()
+for file in "${additional_files[@]}"
+do
+    local_additional_files+=("$(basename $file)")
+done
+additional_files=("${local_additional_files[@]}")
+
+# Rerun existing simulation?
+rerun_command=$(generate_rerun_command "${additional_files[@]}")
+if [ -n "$rerun_command" ]
+then
+    echo "Reruning existing simulation!"
+    echo "Rerun command: $rerun_command"
+fi
 basename_tpr=$(basename $tpr_file .tpr)
 
 $gmx_command -quiet mdrun $parallel_flag -deffnm $basename_tpr $rerun_command $plumed_command &
 mdrun_pid=$!
 
-if [ -f "$OBSERVATION_SCRIPT" ]
-then
-    $OBSERVATION_SCRIPT --basename "$basename_tpr" &
-    observation_pid=$!
-    mexican_standoff $mdrun_pid $observation_pid &
-else
-    echo "Observation script not found, running mdrun without observation."
-fi
+observe_trajectory $basename_tpr $mdrun_pid &
+observation_pid=$!
+
 
 wait $mdrun_pid
 simulation_exit_code=$?
 # Wait for all parallel processes to finish, also allows trap finalize_job to be called
+
+kill $observation_pid 2>/dev/null || true # Stop observation script if still running
 
 cd $sourcedir
 rsync -a $workdir/ .

@@ -49,7 +49,7 @@ if [ -f "train.err" ]; then
     rm train.err
 fi
 
-output=$($submission_script -p $amp_test -c $results_dir)
+output=$($submission_script $amp_test -- -c $results_dir)
 echo "$output"
 job_id=$(echo "$output" | tail -n 1)
 

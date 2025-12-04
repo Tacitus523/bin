@@ -10,8 +10,11 @@
 import argparse
 import json
 from typing import Dict, List, Optional, Union
+import warnings
+
 from ase.atoms import Atoms
 from ase.io import read
+from ase.data import atomic_numbers
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -45,6 +48,15 @@ ESP_UNIT: str = "eV/e"
 ENEG_ESP_UNIT: str = "eV/e"
 
 DPI = 100
+PALETTE = sns.color_palette("tab10")
+PALETTE.pop(3)  # Remove red color
+
+# Silence seaborn UserWarning about palette length
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The palette list has more values .* than needed .*",
+)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plotting script for model data")
@@ -215,12 +227,17 @@ def plot_data(
 
     sns.set_context("talk")
     fig, ax = plt.subplots(figsize=(8, 6))
+    hue = None
+    if "Source" in df.columns:
+        hue = "Source"
+    elif "Element" in df.columns:
+        hue = "Element"
     sns.scatterplot(
         data=df,
         x=x_label,
         y=y_label,
-        hue="source" if sources is not None else None,
-        palette="tab10" if sources is not None else None,
+        hue=hue,
+        palette=PALETTE if hue is not None else None,
         alpha=0.6,
         edgecolor=None,
         s=20,
@@ -239,7 +256,7 @@ def plot_data(
     )
 
     # Improve legend if available
-    if "source" in df.columns:
+    if ax.get_legend() is not None:
         plt.legend(title=None, loc="upper left", fontsize="small")
         for legend_handle in ax.get_legend().legend_handles:
             legend_handle.set_alpha(1.0)
@@ -265,12 +282,13 @@ def plot_histogram(
     sns.histplot(
         data=df,
         bins=100,
-        pthresh=0.05,
+        palette=PALETTE,
+        stat="percent",
     )
     plt.xlabel(f"Values {'(' + '/'.join(units) + ')'}")
-    plt.ylabel("Frequency")
+    plt.ylabel("Frequency (%)")
     plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.savefig(filename, dpi=DPI)
     plt.close()
 
     for key, unit in zip(keys, units):
@@ -279,13 +297,14 @@ def plot_histogram(
             x=key,
             hue="Elements" if "Elements" in df else None,
             bins=100,
-            pthresh=0.05,
+            palette=PALETTE,
+            stat="percent",
         )
         plt.xlabel(f"Values ({unit})")
-        plt.ylabel("Frequency")
-        filename_key = os.path.splitext(filename)[0] + f"_{key}.png"
+        plt.ylabel("Frequency (%)")
+        filename_key = os.path.splitext(filename)[0] + f"_{key}.png" if len(keys) > 1 else filename
         plt.tight_layout()
-        plt.savefig(filename_key, dpi=300)
+        plt.savefig(filename_key, dpi=DPI)
         plt.close()
 
 def create_dataframe(
@@ -316,15 +335,33 @@ def create_dataframe(
         }
     )
 
-    if "elements" in ref_data and len(ref_data["elements"]) == len(df):
-        df["elements"] = ref_data["elements"]
-    elif "elements" in pred_data and len(pred_data["elements"]) == len(df):
-        df["elements"] = pred_data["elements"]
+    if "elements" in ref_data and len(df) >= len(ref_data["elements"]):
+        unique_elements = np.unique(ref_data["elements"])
+        element_order = sorted(unique_elements, key=lambda el: atomic_numbers[el])
+        repetitions = len(df) // len(ref_data["elements"])
+        df["Element"] = pd.Categorical(
+            np.repeat(ref_data["elements"], repetitions), 
+            ordered=True, 
+            categories=element_order
+        )
+    elif "elements" in pred_data and len(df) >= len(pred_data["elements"]):
+        unique_elements = np.unique(pred_data["elements"])
+        element_order = sorted(unique_elements, key=lambda el: atomic_numbers[el])
+        repetitions = len(df) // len(pred_data["elements"])
+        df["Element"] = pd.Categorical(
+            np.repeat(pred_data["elements"], repetitions), 
+            ordered=True, 
+            categories=element_order
+        )
 
     if sources is not None:
         assert len(ref_data[key]) % len(sources) == 0, "Number of sources does not match the number of data points"
         repetitions = len(ref_data[key]) // len(sources)
-        df["source"] = np.repeat(sources, repetitions)
+        df["Source"] = pd.Categorical(
+            np.repeat(sources, repetitions),
+            ordered=True,
+            categories=np.unique(sources),
+        )
     return df
 
 def plot_boxplot(
@@ -421,7 +458,7 @@ def main() -> None:
         ref_data,
         model_data,
         "forces",
-        sources if sources is not None else ref_data["elements"],
+        sources,
         "Ref Forces",
         "Model Forces",
         FORCES_UNIT,
@@ -445,11 +482,18 @@ def main() -> None:
             ref_data,
             model_data,
             "charges",
-            sources if sources is not None else ref_data["elements"],
+            sources,
             "Ref Charges",
             "Model Charges",
             CHARGES_UNIT,
             "model_charges.png",
+        )
+    elif "charges" in model_data:
+        plot_histogram(
+            model_data,
+            ["charges"],
+            [CHARGES_UNIT],
+            "model_charges_histogram.png",
         )
 
     if PRED_ENEG_KEY in model_data or PRED_ESP_KEY in model_data or PRED_ENEG_ESP_KEY in model_data:

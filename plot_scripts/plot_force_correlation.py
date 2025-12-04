@@ -13,12 +13,14 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
 
 FORCES_KEY = "gromacs_force"
 
 QM_LABELS = ["B3LYP", "PBE0", "DFTB"]
 SCATTER_SAVENAME = "force_scatter_comparison.png"
 TIMESERIES_SAVENAME = "force_max_difference.png"
+BOXPLOT_SAVENAME = "force_difference_boxplot.png"
 
 FORCE_UNIT = "eV/Å"  # Unit for forces
 
@@ -166,18 +168,17 @@ def calculate_statistics(data1: np.ndarray, data2: np.ndarray) -> Dict[str, floa
         data2: Second dataset
         
     Returns:
-        Dictionary containing correlation coefficient, RMSE, and R²
+        Dictionary containing correlation coefficient, RMSE, MAE, and R-squared value
     """
     corr = np.corrcoef(data1, data2)[0, 1]
-    rmse = np.sqrt(np.mean((data1 - data2)**2))
-    # R² calculation
-    ss_tot = np.sum((data2 - np.mean(data2))**2)
-    ss_res = np.sum((data2 - data1)**2)
-    r_squared = 1 - (ss_res / ss_tot)
+    rmse = root_mean_squared_error(data1, data2)
+    mae = mean_absolute_error(data1, data2)
+    r_squared = r2_score(data1, data2)
     
     return {
         'correlation': corr,
         'rmse': rmse,
+        'mae': mae,
         'r_squared': r_squared
     }
 
@@ -198,7 +199,6 @@ def plot_force_correlation(
         UNIT: String representing the force unit.
         DPI: Dots per inch for saved figure.
     """
-    sns.set_context("talk")
     fig, ax = plt.subplots(figsize=args.fig_size)
 
     #norm = plt.Normalize(combined_df["Step"].min(), combined_df["Step"].max())
@@ -259,32 +259,16 @@ def plot_force_correlation(
 
 def plot_max_force_difference(
         data: pd.DataFrame,
-        ref_label: str,
         args: argparse.Namespace
 ) -> None:
     """
     Plot the maximum force difference for each method compared to the reference method.
     """
-    sns.set_context("talk")
     fig, ax = plt.subplots(figsize=args.fig_size)
-
-    # Calculate the maximum force difference for each method
-    max_force_differences: pd.DataFrame = data.groupby(["Method", "Step", "Type"])["Abs. Force Difference"].max().reset_index()
-
-    # Calculate and mark mean of maximum force differences for each method
-    mean_of_max_force_diff = max_force_differences.groupby("Method")["Abs. Force Difference"].mean()
-    mean_of_max_force_diff = mean_of_max_force_diff.sort_values(ascending=False)
-    method_order = mean_of_max_force_diff.index.tolist()
-    max_force_differences["Method"] = pd.Categorical(
-        max_force_differences["Method"],
-        categories=method_order,
-        ordered=True
-    )
-    max_force_differences = max_force_differences.sort_values(by="Method")
 
     # Plot the maximum force differences
     sns.lineplot(
-        data=max_force_differences,
+        data=data,
         x="Step",
         y="Abs. Force Difference",
         hue="Method",
@@ -300,7 +284,8 @@ def plot_max_force_difference(
     current_yticks = list(ax.get_yticks())
     current_yticklabels = [f"{tick:.2f}" for tick in current_yticks]
     
-    for i, (method, mean_val) in enumerate(mean_of_max_force_diff.items()):
+    data_means = data.groupby("Method", observed=True)["Abs. Force Difference"].mean()
+    for i, (method, mean_val) in enumerate(data_means.items()):
         # Add horizontal line across the entire plot
         ax.axhline(y=mean_val, color=PALETTE[i], linestyle='--', alpha=0.7, linewidth=1)
         # Add the mean value to y-ticks
@@ -313,8 +298,8 @@ def plot_max_force_difference(
     ax.set_ylim(bottom=0)
 
     # Get unique methods and types with their properties
-    unique_methods = max_force_differences["Method"].unique()
-    unique_types = max_force_differences["Type"].unique()
+    unique_methods = data["Method"].unique()
+    unique_types = data["Type"].unique()
     
     # Map types to linestyles (seaborn default mapping)
     type_to_linestyle = {t: ls for t, ls in zip(unique_types, ["-", "--", "-.", ":"])}
@@ -325,7 +310,7 @@ def plot_max_force_difference(
     
     for method in unique_methods:
         # Get the type for this method
-        method_type = max_force_differences[max_force_differences["Method"] == method]["Type"].iloc[0]
+        method_type = data[data["Method"] == method]["Type"].iloc[0]
         method_color = PALETTE[list(unique_methods).index(method)]
         method_linestyle = type_to_linestyle[method_type]
         
@@ -340,7 +325,36 @@ def plot_max_force_difference(
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(TIMESERIES_SAVENAME, dpi=DPI, bbox_inches='tight')
-    plt.close() 
+    plt.close()
+
+def plot_max_force_difference_boxplot(
+        data: pd.DataFrame,
+        args: argparse.Namespace
+) -> None:
+    """
+    Plot the maximum absolute force difference as a boxplot for each method.
+    """
+    fig, ax = plt.subplots(figsize=args.fig_size)
+
+    # Create boxplot
+    sns.boxplot(
+        data=data,
+        x="Method",
+        y="Abs. Force Difference",
+        hue="Method",
+        palette=PALETTE,
+        ax=ax
+    )
+    
+    ax.set_xlabel("Method")
+    ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
+    ax.tick_params(axis='x', rotation=45)
+    ax.set_ylim(bottom=0)
+
+    plt.grid(alpha=0.3, axis='y')
+    plt.tight_layout()
+    plt.savefig(BOXPLOT_SAVENAME, dpi=DPI, bbox_inches='tight')
+    plt.close()
 
 def main() -> None:
     args = parse_args()
@@ -390,6 +404,24 @@ def main() -> None:
         dfs.append(df)
     combined_df = pd.concat(dfs, ignore_index=True)
 
+    # Calculate the maximum force difference for each method per step
+    max_force_differences: pd.DataFrame = combined_df.groupby(["Method", "Step", "Type"])["Abs. Force Difference"].max().reset_index()
+
+    # Calculate mean values for sorting
+    mean_of_max_force_diff = max_force_differences.groupby("Method")["Abs. Force Difference"].mean()
+    mean_of_max_force_diff = mean_of_max_force_diff.sort_values(ascending=False)
+    method_order = mean_of_max_force_diff.index.tolist()
+    
+    # Sort data by method order
+    max_force_differences["Method"] = pd.Categorical(
+        max_force_differences["Method"],
+        categories=method_order,
+        ordered=True
+    )
+    max_force_differences = max_force_differences.sort_values(by="Method")
+
+    sns.set_context("talk")
+
     plot_force_correlation(
         combined_df=combined_df,
         ref_label=ref_label,
@@ -397,11 +429,13 @@ def main() -> None:
         args=args,
     )
     plot_max_force_difference(
-        data=combined_df,
-        ref_label=ref_label,
+        data=max_force_differences,
         args=args
     )
-
+    plot_max_force_difference_boxplot(
+        data=max_force_differences,
+        args=args
+    )
 
 if __name__ == '__main__':
     main()
