@@ -15,16 +15,16 @@ DPI = 150
 def prepare_data(filepath: str) -> pd.DataFrame:
     """Load and prepare parallelization timing data from CSV file."""
     df = pd.read_csv(filepath)
-    print(df.head())
     df["Run"] = df["Run"].astype(int)
-    # Calculate mean and std for each number of walkers and device
-    df_grouped = df.groupby(["Run", "Device"]).agg(
-        ns_per_day_mean=("ns_per_day", "mean"),
-        ns_per_day_std=("ns_per_day", "std"),
-        hour_per_ns_mean=("hour_per_ns", "mean"),
-        hour_per_ns_std=("hour_per_ns", "std"),
-    ).reset_index()
-    return df_grouped
+    # # Calculate mean and std for each number of walkers and device
+    # df_grouped = df.groupby(["Run", "Device"]).agg(
+    #     ns_per_day_mean=("ns_per_day", "mean"),
+    #     ns_per_day_std=("ns_per_day", "std"),
+    #     hour_per_ns_mean=("hour_per_ns", "mean"),
+    #     hour_per_ns_std=("hour_per_ns", "std"),
+    # ).reset_index()
+    df["Device"] = pd.Categorical(df["Device"], categories=["CPU","GPU"], ordered=True)
+    return df
 
 
 def create_plot(df: pd.DataFrame, output_file: str) -> None:
@@ -33,29 +33,27 @@ def create_plot(df: pd.DataFrame, output_file: str) -> None:
     fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE, dpi=DPI)
 
     # Get color palette
-    colors = sns.color_palette("tab10")
-    device_colors = {"GPU": colors[0], "CPU": colors[1]}
+    palette = "tab10"
     
-    # Plot each device separately
-    for i, (device, device_df) in enumerate(df.groupby("Device")):
-        ax.errorbar(
-            device_df["Run"],
-            device_df["ns_per_day_mean"],
-            yerr=device_df["ns_per_day_std"],
-            marker="o",
-            markersize=8,
-            linewidth=2,
-            capsize=5,
-            capthick=2,
-            color=device_colors[device],
-            label=device,
-        )
+    # Use seaborn pointplot with hue for Device
+    sns.pointplot(
+        data=df,
+        x="Run",
+        y="ns_per_day",
+        hue="Device",
+        palette=palette,
+        markers=["o", "s"],
+        linestyles=["-", "-"],
+        linewidth=2,
+        capsize=0.1,
+        markersize=8,
+        err_kws={'linewidth': 2},
+        ax=ax
+    )
     
     ax.set_xlabel("Number of Walkers")
     ax.set_ylabel("Performance (ns/day)")
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(df["Run"].unique())
-    ax.set_xticklabels(df["Run"].unique())
+    #ax.set_xscale("log", base=2)
     ax.grid(True, alpha=0.3)
     ax.legend()
 
