@@ -15,6 +15,8 @@ DPI = 150
 def prepare_data(filepath: str) -> pd.DataFrame:
     """Load and prepare parallelization timing data from CSV file."""
     df = pd.read_csv(filepath)
+    print(df.head())
+    df["Run"] = df["Run"].astype(int)
     # Calculate mean and std for each number of walkers and device
     df_grouped = df.groupby(["Run", "Device"]).agg(
         ns_per_day_mean=("ns_per_day", "mean"),
