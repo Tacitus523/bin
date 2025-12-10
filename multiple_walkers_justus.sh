@@ -5,7 +5,6 @@
 #SBATCH --output=metadynamics.out
 #SBATCH --error=metadynamics.err
 #SBATCH --signal=B:USR1@120 # Send the USR1 signal 120 seconds before end of time limit
-#SBATCH --gres=gpu:1
 ##SBATCH --account=bw15b001
 
 function print_usage() {
