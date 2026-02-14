@@ -37,7 +37,7 @@ from matplotlib.patches import Patch
 
 
 ENERGY_UNIT = "eV"
-FORCE_UNIT = r"$\frac{\mathrm{eV}}{\mathrm{\AA}}$"
+FORCE_UNIT = "eV/Å"
 
 SCORE_LABEL = f"Force RMSE ({FORCE_UNIT})"
 COLORMAP_NAME_NUMERICAL = "YlOrRd"
