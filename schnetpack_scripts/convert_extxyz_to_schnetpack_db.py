@@ -16,7 +16,7 @@ DB_FILE = "geoms.db"
 ENERGY_KEY = "ref_energy" # eV
 FORCES_KEY = "ref_force" # eV/Ang
 CHARGES_KEY = "ref_charge" # e
-DIPOLE_KEY: Optional[str] = "ref_dipole" # Debye
+DIPOLE_KEY: Optional[str] = "aaaaaa" # "ref_dipole" # Debye
 ESP_KEY = "esp" # eV/e
 ESP_GRADIENT_KEY = "esp_gradient" # eV/Ang
 
@@ -25,10 +25,24 @@ PROPERTY_UNIT_DICT = {
     "energy": "eV", 
     "forces": "eV/Angstrom",
     "partial_charges": "_e", 
-    "dipole_moment": "Debye",
+    #"dipole_moment": "Debye",
     "esp": "eV/_e",
     "electric_field": "eV/Angstrom/_e",
 }
+
+# Conversion factors
+H_to_eV = 27.211386245988
+eV_to_H = 1.0 / H_to_eV
+B_to_A = 0.52917721067
+A_to_B = 1.0 / B_to_A
+H_B_to_eV_A = H_to_eV / B_to_A
+eV_A_to_H_B = 1.0 / H_B_to_eV_A
+e_to_e = 1.0
+nm_to_A = 10.0
+debye_to_eA = 0.2081943
+eA_to_debye = 1.0 / debye_to_eA
+debye_to_ea0 = 0.3934303
+ea0_to_debye = 1.0 / debye_to_ea0
 
 def parse_args() -> argparse.Namespace:
     # Argument Parser for command line arguments
@@ -49,13 +63,13 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
 
 
     # setting up for creating atomsobject // right format for schnetpack
-    for molecule in molecules: 
+    for molecule in molecules:
 
         energy = molecule.info.get(ENERGY_KEY)
         if energy is None: 
             raise ValueError(f"{molecule} has no energy information with key {ENERGY_KEY}")
         
-        forces = molecule.arrays.get(FORCES_KEY) 
+        forces = molecule.arrays.get(FORCES_KEY)
         if forces is None: 
             raise ValueError(f"{molecule} has no forces information with key {FORCES_KEY}")
 
@@ -71,7 +85,14 @@ def convert_extxyz_to_db(args: argparse.Namespace) -> None:
         else: 
             esp_gradient = np.zeros((len(molecule), 3))
         electric_field = -1*esp_gradient # electric field is negative gradient of esp
-        molecule.arrays["electric_field"] = electric_field
+        
+        # # unit conversions
+        # molecule.positions = molecule.positions * A_to_B  # Angstrom -> Bohr
+        # molecule.cell = molecule.cell * A_to_B  # Angstrom -> Bohr
+        # energy = energy * eV_to_H  # eV -> Hartree
+        # forces = forces * eV_A_to_H_B  # eV/Ang -> Hartree/Bohr
+        # esp = esp * eV_to_H / e_to_e  # eV/e -> Hartree/_e
+        # electric_field = electric_field * eV_A_to_H_B / e_to_e  # eV/Ang/_e -> Hartree/Bohr/_e
 
         properties = {"energy": energy, "forces": forces, "esp": esp, "electric_field": electric_field}
 
