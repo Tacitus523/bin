@@ -801,7 +801,7 @@ def plot_duration_analysis(
         )
         ax.set_title(clean_project_name if do_legend else None)
         ax.set_xlabel("Trial ID")
-        ax.set_ylabel("Duration (minutes)")
+        ax.set_ylabel("Duration (Minutes)")
 
     for i in range(n_projects, len(axes)):
         axes[i].set_visible(False)

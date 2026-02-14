@@ -548,7 +548,7 @@ def plot_duration_analysis(trials_df: pd.DataFrame,
             palette=colors, hue='identifier', legend=False, ax=ax)
         ax.set_title(clean_project_name if do_legend else None)
         ax.set_xlabel('Trial ID')
-        ax.set_ylabel('Duration (minutes)')
+        ax.set_ylabel('Duration (Minutes)')
         # ax.set_xticks(ax.get_xticks())
         # ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha='right')
 
