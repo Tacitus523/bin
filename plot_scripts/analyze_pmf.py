@@ -35,7 +35,7 @@ BLOCK_RADIUS = 10
 # to be considered relevant
 TS_MIN_BARRIER = 3.0
 # Threshold (in CV units, e.g. degrees) for matching to known conformations
-LABEL_RADIUS = 10.0
+LABEL_RADIUS = 30.0
 
 # Plot settings
 PERIODIC_LIMITS = ((-180, 180), (-180, 180))
