@@ -148,7 +148,7 @@ def prepare_ala_data(args: argparse.Namespace) -> pd.DataFrame:
     plot_kwargs = {
         "system": args.system,
         "identifier": "_"+args.identifier.replace(" ", "_").lower() if args.identifier is not None else "",
-        "x": r"$\varphi$ ($\degree$)",
+        "x": r"$\phi$ ($\degree$)",
         "y": r"$\psi$ ($\degree$)",
         "xlim": (-180, 120),
         "ylim": (-100, 240),
