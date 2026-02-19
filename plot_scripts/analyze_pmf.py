@@ -44,26 +44,57 @@ FIGSIZE = (7, 6)
 DPI = 100
 SAVE_PLOT = "PMF_analyzed.png"
 
-# Known conformations for alanine dipeptide (phi, psi in degrees)
-# B3LYP/6-311+G(2d,p)//B3LYP/6-31G(d,p)
-REFERENCE_MINIMA = {
-    "C7eq": (-83.1, 72.6),
-    "C5": (-158.4, 164.6),
-    "aR": (-80.0, -20.0),
-    "aL": (68.4, 26.5),
-    "C7ax": (73.6, -57.7),
-    "b2": (-125.7, 21.6),
-    "a'": (-169.9, -39.2),
-    "aD": (59.8, -136.2),
-}
-REFERENCE_TS = {
-    "TS1": (5.6, 81.4),
-    "TS2": (-1.4, -8.9),
-    "TS3": (2.8, -77.3),
-    "TS4": (112.8, -146.7),
-    "TS5": (135.9, -26.2),
-    "TS6": (79.0, 86.4),
-    "TS7": (-149.8, -87.3),
+# Known conformations for alanine dipeptide in vacuum (phi, psi in degrees)
+# Each system maps to {"minima": {...}, "ts": {...}}
+REFERENCE_SYSTEMS = {
+    # B3LYP/6-311+G(2d,p)//B3LYP/6-31G(d,p) dipetid vacuum
+    # https://pubs.acs.org/doi/10.1021/ct100395n
+    "dipeptid_vacuum": {
+        "minima": {
+            r"C7$_{eq}$": (-83.1, 72.6),
+            r"C$_5$": (-158.4, 164.6),
+            r"$\alpha_R$": (-80.0, -20.0),
+            r"$\alpha_L$": (68.4, 26.5),
+            r"C7$_{ax}$": (73.6, -57.7),
+            r"$\beta_2$": (-125.7, 21.6),
+            r"$\alpha'$": (-169.9, -39.2),
+            r"$\alpha_D$": (59.8, -136.2),
+        },
+        "ts": {
+            "TS1": (5.6, 81.4),
+            "TS2": (-1.4, -8.9),
+            "TS3": (2.8, -77.3),
+            "TS4": (112.8, -146.7),
+            "TS5": (135.9, -26.2),
+            "TS6": (79.0, 86.4),
+            "TS7": (-149.8, -87.3),
+        },
+    },
+    # B3LYP/6-311+G(2d,p)//B3LYP/6-31G(d,p) — dipeptid water
+    # https://pubs.acs.org/doi/10.1021/ct100395n
+    "dipeptid_water": {
+        "minima": {
+            r"C7$_{eq}$": (-85.4, 73.4),
+            r"C$_5$": (-151.6, 147.6),
+            r"$\alpha_R$": (-78.1, -27.2),
+            r"$\beta$": (-75.1, 143.3),
+            r"$\alpha_L$": (61.3, 40.9),
+            r"C7$_{ax}$": (73.4, -53.0),
+            r"$\beta_2$": (-138.5, 27.3),
+            r"$\alpha_D$": (60.1, -147.7),
+            r"$\alpha_D'$": (72.8, 164.8),
+        },
+        "ts": {
+            "TS0": (-129.8, 62.6),
+            "TS1": (0.3, 91.6),
+            "TS2": (-11.0, -11.7),
+            "TS3": (7.3, -92.1),
+            "TS5": (132.2, -28.1),
+            "TS6": (81.3, 104.2),
+            "TS7": (-114.0, -115.6),
+            "TS8": (127.9, 133.7),
+        },
+    },
 }
 
 
@@ -118,6 +149,13 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=LABEL_RADIUS,
         help=f"Max CV distance for matching to reference conformations (default: {LABEL_RADIUS})",
+    )
+    parser.add_argument(
+        "--system",
+        type=str,
+        default="dipeptid_vacuum",
+        choices=list(REFERENCE_SYSTEMS.keys()),
+        help=f"Reference system for labeling (choices: {list(REFERENCE_SYSTEMS.keys())}, default: dipeptid_vacuum)",
     )
     parser.add_argument(
         "--no_reference",
@@ -449,15 +487,17 @@ def assign_literature_labels(
     df: pd.DataFrame,
     cv_names: List[str],
     periodic: List[bool],
+    ref_minima: dict,
+    ref_ts: dict,
     label_radius: float = LABEL_RADIUS,
 ) -> pd.DataFrame:
     """Match found critical points to known reference conformations."""
     for idx, row in df.iterrows():
         point = (row[cv_names[0]], row[cv_names[1]])
         if row["type"] == "minimum":
-            ref_set = REFERENCE_MINIMA
+            ref_set = ref_minima
         else:
-            ref_set = REFERENCE_TS
+            ref_set = ref_ts
 
         best_name = None
         best_dist = float("inf")
@@ -520,12 +560,13 @@ def find_reference_ts(
     cv_names: List[str],
     energy_cutoff: float,
     found_ts_labels: set,
+    ref_ts: dict,
     search_radius: int = BLOCK_RADIUS,
 ) -> pd.DataFrame:
     """Search for saddle points near known TS locations not already found."""
     nr, nc = zz.shape
     rows = []
-    for name, (cv1_ref, cv2_ref) in REFERENCE_TS.items():
+    for name, (cv1_ref, cv2_ref) in ref_ts.items():
         if name in found_ts_labels:
             continue
         center = _find_nearest_grid_point(xx, yy, (cv1_ref, cv2_ref), periodic)
@@ -744,15 +785,20 @@ def main() -> None:
     df = build_results_table(xx, yy, zz, dzdx, dzdy, minima_mask, ts_df, cv_names)
 
     if not args.no_reference:
+        ref_system = REFERENCE_SYSTEMS[args.system]
+        ref_minima = ref_system["minima"]
+        ref_ts = ref_system["ts"]
         # Label found points with literature names
-        df = assign_literature_labels(df, cv_names, periodicity, args.label_radius)
+        df = assign_literature_labels(
+            df, cv_names, periodicity, ref_minima, ref_ts, args.label_radius
+        )
         # Search for reference TS not found by pathfinding
         found_ts_labels = set(
             df.loc[df["type"] == "transition_state", "label"].dropna()
         )
         ref_ts_df = find_reference_ts(
             xx, yy, zz, dzdx, dzdy, periodicity, cv_names,
-            args.energy_cutoff, found_ts_labels,
+            args.energy_cutoff, found_ts_labels, ref_ts,
         )
         if not ref_ts_df.empty:
             df = pd.concat([df, ref_ts_df], ignore_index=True)
