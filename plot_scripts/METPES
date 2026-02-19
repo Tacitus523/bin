@@ -11,10 +11,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-PERIODIC_LIMITS = ((-180, 120), (-100, 240))  # for periodic CVs, in degrees
+PERIODIC_LIMITS = ((-180, 180), (-180, 180))  # for periodic CVs, in degrees
 NON_PERIODIC_LIMITS = ((1.8, 6), (1.8, 6))  # for non-periodic CVs, in Angstrom
 FIGSIZE = (7, 6)
 DPI = 100
+SAVE_FILE = "PMFs.png"
 
 KJ_TO_KCAL = 1/4.184
 
@@ -165,6 +166,14 @@ def plot_single_fes(
 	ax.tick_params(axis='x', labelsize=ticks_fs)
 	ax.tick_params(axis='y', labelsize=ticks_fs)
 	ax.set_aspect('equal')
+	
+	# Set major and minor ticks based on periodicity
+	if periodicity_list[0]:
+		ax.xaxis.set_major_locator(plt.MultipleLocator(60))
+		ax.xaxis.set_minor_locator(plt.MultipleLocator(10))
+	if periodicity_list[1]:
+		ax.yaxis.set_major_locator(plt.MultipleLocator(60))
+		ax.yaxis.set_minor_locator(plt.MultipleLocator(10))
 
 	e_max = args.e_max
 	lines=np.arange(0, e_max+.1, 1.0)
@@ -183,7 +192,7 @@ def plot_single_fes(
 
 	if standalone is True:
 		fig.tight_layout()
-		plt.savefig("PMFs.png", dpi=DPI, bbox_inches='tight')
+		plt.savefig(SAVE_FILE, dpi=DPI, bbox_inches='tight')
 		print("PES figure saved to PMFs.png")
 	else:
 		title = os.path.basename(args.fes_file).replace("fes_", "").replace(".dat", "")
