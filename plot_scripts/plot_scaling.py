@@ -31,25 +31,42 @@ clean_names = {
     "hdnnp4th": "4G-HDNNP",
     "schnet": "SchNet",
     "painn": "PaiNN",
-    "base_mace": "Base MACE (GPU)",
-    "maceqeq": "QEq-MACE (GPU)",
-    #"amp": "AMP (GPU)",
+    "base_mace_cpu": "Base MACE",
+    "base_mace": "Base MACE",
+    "maceqeq_cpu": "QEq-MACE",
+    "maceqeq": "QEq-MACE",
+    #"amp": "AMP",
 }
 
+device_map = {
+    "dftb": "CPU",
+    "hdnnp2nd": "CPU",
+    "hdnnp4th": "CPU",
+    "schnet": "CPU",
+    "painn": "CPU",
+    "base_mace_cpu": "CPU",
+    "base_mace": "GPU",
+    "maceqeq_cpu": "CPU",
+    "maceqeq": "GPU",
+    #"amp": "GPU",
+}
+
+LINESTYLE_MAP = {"CPU": "-", "GPU": "--"}
 
 def prepare_data(filepath: str) -> pd.DataFrame:
     """Load and prepare scaling timing data from CSV file."""
     df = pd.read_csv(filepath)
+    # Assign device before cleaning method names
+    df["Device"] = df["Method"].map(device_map).fillna("CPU")
     # Clean method names
     df["Method"] = df["Method"].map(clean_names).fillna(df["Method"])
-    df ["Method"] = pd.Categorical(df["Method"], categories=clean_names.values(), ordered=True)
+    df["Method"] = pd.Categorical(df["Method"], categories=dict.fromkeys(clean_names.values()), ordered=True)
     df["Atoms"] = df["Molecules"] * ATOMS_PER_MOLECULE
     return df
 
 
 def create_plot(df: pd.DataFrame, output_file: str) -> None:
     """Create and save scaling performance plot."""
-    sns.set_style("whitegrid")
     fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE, dpi=DPI)
 
     # Create line plot with seaborn
@@ -58,6 +75,7 @@ def create_plot(df: pd.DataFrame, output_file: str) -> None:
         x="Atoms",
         y="ns_per_day",
         hue="Method",
+        style="Device",
         marker="o",
         markersize=8,
         linewidth=2,
@@ -79,16 +97,17 @@ def create_plot(df: pd.DataFrame, output_file: str) -> None:
     ax.tick_params(axis="y", which="minor", length=4, width=0.8)
     ax.grid(True, which="minor", alpha=0.3)
 
-    ax.legend(loc="lower left")
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 
     plt.tight_layout()
     plt.savefig(output_file, dpi=DPI)
     plt.close(fig)
-
+    
 
 def main() -> None:
     """Main function to generate scaling performance plot."""
     sns.set_context("talk")
+    sns.set_style("whitegrid")
 
     df = prepare_data(FILEPATH)
     create_plot(df, OUTPUT_PLOT)
