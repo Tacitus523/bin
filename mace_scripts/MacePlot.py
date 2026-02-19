@@ -438,7 +438,6 @@ def main() -> None:
         for key, value in data.items():
             # Skip non-numeric data
             if isinstance(value, np.ndarray) and value.dtype in (np.float32, np.float64, np.int32, np.int64):
-                print(name, key)
                 print(f"{name} {key}: {value.shape} Min Max: {np.min(value): .1f} {np.max(value): .1f}")
 
     metrics_collection = create_metrics_collection(ref_data, model_data)
