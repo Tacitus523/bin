@@ -38,6 +38,7 @@ from matplotlib.patches import Patch
 
 ENERGY_UNIT = "eV"
 FORCE_UNIT = "eV/Å"
+#FORCE_UNIT = r"$\frac{\mathrm{eV}}{\mathrm{\AA}}$"
 
 SCORE_LABEL = f"Force RMSE ({FORCE_UNIT})"
 COLORMAP_NAME_NUMERICAL = "YlOrRd"
@@ -45,6 +46,15 @@ COLORMAP_NAME_CATEGORICAL = "tab10"
 SINGLE_FIG_SIZE = (12, 6)
 MULTIPLOT_FIG_SIZE = (5, 4)
 DPI = 150
+
+# To translate certain parameter names to the desired display names in the plots, we can define a mapping here (only used for hyperband plots)
+PARAM_DISPLAY_NAMES = {
+    "num_radial_basis": "bessel_bins",
+    "num_cutoff_basis": "bessel_envelope_exponent",
+    "num_interactions": "model_depth",
+    "correlation": "correlation_order",
+}
+
 
 # Optuna journal op_codes
 OP_CREATE_STUDY = 0
@@ -243,6 +253,7 @@ def parse_optuna_journal_log(log_path: str) -> Dict[str, Any]:
                     trials[tid]["datetime_start"] = pending_starts.pop(worker_id)
 
                 pname = rec["param_name"]
+                pname = PARAM_DISPLAY_NAMES.get(pname, pname)  # Translate to display name if in mapping
                 pval_internal = rec["param_value_internal"]
                 dist_str = rec.get("distribution", "")
                 trials[tid]["params"][pname] = _decode_param_value(pval_internal, dist_str)
@@ -518,7 +529,9 @@ def save_trials_csv(trials_df: pd.DataFrame, output_path: str) -> None:
 # ---------------------------------------------------------------------------
 # Plotting Helpers
 # ---------------------------------------------------------------------------
-
+def cleanup_project_name(project_name: str):
+    # return clean_project_name = project_name.replace("_", " ").title()
+    return " ".join(project_name.split("_")[1:]).title()
 
 def create_trial_identifiers(
     top_rank_df: pd.DataFrame, verbose: bool = False
@@ -526,7 +539,7 @@ def create_trial_identifiers(
     """Create trial identifiers combining project name and trial ID."""
     identifiers = []
     for _, row in top_rank_df.iterrows():
-        clean_project_name = row["project_name"].replace("_", " ").title()
+        clean_project_name = cleanup_project_name(row["project_name"])
         clean_trial_id = row["trial_id"]
         if verbose:
             identifier = f"{clean_project_name}\n{clean_trial_id}"
@@ -604,7 +617,7 @@ def plot_grid_search_analysis(
         project_df = trials_df[trials_df["project_name"] == project_name]
         param_cols = [col for col in project_df.columns if col.startswith("param_")]
         param_df = project_df[param_cols].dropna(how="all", axis=1)
-        clean_project_name = project_name.replace("_", " ").title()
+        clean_project_name = cleanup_project_name(project_name)
 
         do_legend = target_project_name is not None
 
@@ -783,7 +796,7 @@ def plot_duration_analysis(
 
     for i, project_name in enumerate(project_names):
         project_df = trials_df[trials_df["project_name"] == project_name]
-        clean_project_name = project_name.replace("_", " ").title()
+        clean_project_name = cleanup_project_name(project_name)
         ax = axes[i] if i < len(axes) else None
         if ax is None:
             continue
