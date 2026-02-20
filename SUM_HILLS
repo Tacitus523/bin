@@ -4,6 +4,7 @@ all_hills=$(echo HILLS.* | tr ' ' ',')
 echo "Summing hills $all_hills"
 
 plumed sum_hills --hills $all_hills --kt 2.494339 --mintozero --min 0.18,0.18 --max 1.12,1.12 --bin 94,94 &> sum_hills.log
+#plumed sum_hills --hills $all_hills --kt 2.494339 --mintozero --min 0.18,0.18,0.18 --max 1.12,1.12,1.12 --bin 94,94,94 --idw d2,d3 &> sum_hills.log
 
 plumed_exit_status=$?
 if [ $plumed_exit_status -ne 0 ]; then
