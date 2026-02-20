@@ -29,4 +29,4 @@ submission_script=$(realpath "$(dirname "$(readlink -f "$0")")/../submit_python_
 amp_script=$(which train_amp.py)
 
 
-$submission_script -p $amp_script -c $config_file -e
+$submission_script $amp_script -e -- -c $config_file

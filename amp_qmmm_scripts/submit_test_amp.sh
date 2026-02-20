@@ -53,6 +53,7 @@ output=$($submission_script $amp_test -- -c $results_dir)
 echo "$output"
 job_id=$(echo "$output" | tail -n 1)
 
+source_dir=$PWD
 cd $results_dir
-sbatch --dependency=afterok:$job_id --kill-on-invalid-dep=yes $amp_plot -g amp_qmmm_geoms.extxyz # name hardcoded in the amp_test script
-cd -
+sbatch --dependency=afterok:$job_id --kill-on-invalid-dep=yes $amp_plot -g model_geoms.extxyz # name hardcoded in the amp_test script
+cd $source_dir
