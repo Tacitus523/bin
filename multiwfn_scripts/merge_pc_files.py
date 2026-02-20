@@ -108,6 +108,8 @@ def construct_mm_extxyz(
         if source is not None:
             mm_atoms.info['source'] = source
         mm_atoms_list.append(mm_atoms)
+        if (i+1) % 100 == 0:
+            print(f"Built {i} structures")
     return mm_atoms_list
 
 def calculate_esp(
@@ -150,8 +152,14 @@ def merge_esps_into_mm(
         mm_system.info[f"E_elec_{charge_name}"] = E_elec[i]
     
 def main(args: argparse.Namespace) -> None:
-    mm_positions_in, mm_charges = read_chunked_file(args.multiwfn_input_file)
-    mm_positions, esp_values = read_chunked_file(args.esp_file)
+    try:
+        mm_positions_in, mm_charges = read_chunked_file(args.multiwfn_input_file)
+    except Exception as e:
+        raise RuntimeError(f"Failed to read MM positions and charges from {os.path.abspath(args.multiwfn_input_file)}: {e}")
+    try:
+        mm_positions, esp_values = read_chunked_file(args.esp_file)
+    except Exception as e:
+        raise RuntimeError(f"Failed to read MM positions and ESP values from {os.path.abspath(args.esp_file)}: {e}")
     for i, (pos_in, pos_out) in enumerate(zip(mm_positions_in, mm_positions)):
         if not np.allclose(pos_in, pos_out):
             raise ValueError(f"MM positions in {args.multiwfn_input_file} do not match MM positions in {args.esp_file} for geometry index {i}.")
@@ -160,6 +168,7 @@ def main(args: argparse.Namespace) -> None:
     mm_systems: List[Atoms] = construct_mm_extxyz(mm_positions, mm_charges, esp_values, args.source)
 
     for charge_file in args.charges:
+        print(f"Analyzing {charge_file}")
         charge_name = os.path.splitext(os.path.basename(charge_file))[0]
         qm_charges, total_charges = load_charge_data(charge_file)
         esps = calculate_esp(qm_molecules, mm_systems, qm_charges)

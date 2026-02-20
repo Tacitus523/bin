@@ -36,6 +36,7 @@ KEY_LABEL_MAP = {
     "ESP_charges_resp": r"$\text{ESP}_\text{RESP}$",
     "ESP_charges_eem": r"$\text{ESP}_\text{EEM}$",
     "ESP_charges_mbis": r"$\text{ESP}_\text{MBIS}$",
+    "ESP_charges_mull_dftb": r"$\text{ESP}_\text{Mulliken DFTB}$",
     "E_elec_charge_density": r"$E_\text{elec, Charge density}$",
     "E_elec_charges_hirsh": r"$E_\text{elec, Hirshfeld}$",
     "E_elec_charges_mull": r"$E_\text{elec, Mulliken}$",
@@ -45,6 +46,7 @@ KEY_LABEL_MAP = {
     "E_elec_charges_resp": r"$E_\text{elec, RESP}$",
     "E_elec_charges_eem": r"$E_\text{elec, EEM}$",
     "E_elec_charges_mbis": r"$E_\text{elec, MBIS}$",
+    "E_elec_charges_mull_dftb": r"$E_\text{elec, Mulliken DFTB}$",
     "hirsh": "Hirshfeld",
     "mull": "Mulliken",
     "loew": "Löwdin",
@@ -53,6 +55,7 @@ KEY_LABEL_MAP = {
     "resp": "RESP",
     "eem": "EEM",
     "mbis": "MBIS",
+    "mull_dftb": "Mulliken DFTB"
 }
 
 def parse_args() -> argparse.Namespace:

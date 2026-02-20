@@ -21,8 +21,9 @@ ESP_GRAD_FILE_NAME: str = "esp_gradients.xyz"
 DEFAULT_INPUT_FORMAT: str = "orca"
 
 angstrom_to_bohr = 1.8897259886
+bohr_to_angstrom = 1/angstrom_to_bohr
 atomic_units_to_volt = 27.211386245988
-atomic_units_to_volt_per_angstrom = 51.4220675112 # 27.21... * 1.88...(H/e to V * Bohr to Angstrom), Wikipedia says 5.1422 and is wrong
+atomic_units_to_volt_per_angstrom = atomic_units_to_volt / bohr_to_angstrom
 
 # field_constant = 8.854e-12 # F/m, vacuum permittivity
 # elemental_charge = 1.602176634e-19 # C, elementary charge
@@ -55,6 +56,7 @@ def calculate_esp_and_esp_gradient(
     esps = np.matmul(1/qmmm_distances, mm_charges) # shape: (n_qm_atoms, 1)
     esps = esps.reshape((1,-1)) # shape: (1, n_qm_atoms)
     
+    # CAREFUL: This is likely wrong, as the definition of the direction should be from the charge to the point where the field is calculated. Here I have it the other way around. Worked better this way though...
     directions = (qm_coords[:, np.newaxis, :] - mm_coords[np.newaxis, :, :]) / qmmm_distances[:, :, np.newaxis] # shape: (n_qm_atoms, n_mm_atoms, 3)
     gradient_magnitudes = mm_charges[np.newaxis, :] / qmmm_distances**2 # shape: (n_qm_atoms, n_mm_atoms)
     gradients = -1*np.sum(directions * gradient_magnitudes[:, :, np.newaxis], axis=1) # shape: (n_qm_atoms, 3)

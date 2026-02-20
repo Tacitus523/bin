@@ -362,6 +362,8 @@ def construct_dataframe(
     
     # Concatenate all dataframes into one
     combined_df = pd.concat(data_frames, ignore_index=True)
+    combined_df["Element"] = pd.Categorical(combined_df["Element"], categories=sorted(combined_df["Element"].unique(), key=lambda x: atomic_numbers[x]), ordered=True)
+    combined_df["Atomic number"] = pd.Categorical(combined_df["Atomic number"], categories=sorted(combined_df["Atomic number"].unique()), ordered=True)
 
     # # Molecule with maximal charge on an atom, for figuring out outliers
     # if env_charges_list is not None:
