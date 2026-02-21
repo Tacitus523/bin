@@ -34,6 +34,7 @@ print_usage() {
     echo "  -c config_file : Path to configuration file. Default is 'config.yaml'." >&2
 }
 
+config_file="config.yaml"
 while getopts c: flag
 do
     case "${flag}" in
@@ -42,6 +43,7 @@ do
     esac
 done
 
+echo "Config file: $config_file"
 echo "Starting training: $(date)"
 
 mace_run_train \

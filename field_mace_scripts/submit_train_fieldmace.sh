@@ -62,8 +62,7 @@ then
     data_folder=$(readlink -f $DATA_FOLDER)
     data_folder_flag="-d $data_folder"
     echo "Data folder: $data_folder"
-    yq eval '.train_file = $train_file | .valid_file = $valid_file | .test_file = $test_file' --arg train_file "$data_folder/$TRAIN_FILE" --arg valid_file "$data_folder/$VALID_FILE" --arg test_file "$data_folder/$TEST_FILE" $config_file > temp_config.yaml
-    mv temp_config.yaml $config_file
+    yq e -i ".train_file = \"$data_folder/$TRAIN_FILE\" | .valid_file = \"$data_folder/$VALID_FILE\" | .test_file = \"$data_folder/$TEST_FILE\"" "$config_file"
 else
     data_folder=$(yq eval '.train_file' $config_file)
 fi
@@ -91,7 +90,8 @@ do
             exit 1
         fi
         mkdir -p $submission_dir
-        yq eval '.train_file = "'"$split_data_folder/$TRAIN_FILE"'" | .valid_file = "'"$split_data_folder/$VALID_FILE"'" | .test_file = "'"$split_data_folder/$TEST_FILE"'"' "$config_file" > $submission_dir/$split_config_file
+        cp "$config_file" "$submission_dir/$split_config_file"
+        yq e -i ".train_file = \"$split_data_folder/$TRAIN_FILE\" | .valid_file = \"$split_data_folder/$VALID_FILE\" | .test_file = \"$split_data_folder/$TEST_FILE\"" "$submission_dir/$split_config_file"
     else
         echo "Data folder is required for multiple submissions" >&2
         exit 1
