@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
 		help="Y-column index in XVG data (0=x, 1=first y; default: 1).",
 	)
 	parser.add_argument(
+		"--labels",
+		nargs="+",
+		default=None,
+		help="Optional manual labels for legend entries (same order as plotted files).",
+	)
+	parser.add_argument(
 		"--title",
 		default="Radial Distribution Function",
 		help="Plot title.",
@@ -113,12 +119,19 @@ def parse_xvg(file_path: Path, column: int) -> Tuple[np.ndarray, np.ndarray, Opt
 def main() -> None:
 	args = parse_args()
 	files = collect_files(args.inputs, args.pattern)
+	print(f"Found {len(files)} files to plot: {[str(file) for file in files]}")
 
 	if not files:
 		raise FileNotFoundError("No input XVG files found.")
 
 	if args.column < 1:
 		raise ValueError("Column must be >= 1 for RDF y-values.")
+
+	if args.labels is not None and len(args.labels) != len(files):
+		raise ValueError(
+			"Number of --labels entries must match number of files: "
+			f"{args.labels} != {files}"
+		)
 
 	palette = sns.color_palette("tab10")
 	palette.pop(3)
@@ -128,9 +141,12 @@ def main() -> None:
 
 	for idx, file_path in enumerate(files):
 		x_values, y_values, legend = parse_xvg(file_path, args.column)
-		label = file_path.stem
-		if legend:
-			label = f"{file_path.stem} ({legend})"
+		if args.labels is not None:
+			label = args.labels[idx]
+		else:
+			label = file_path.stem
+			if legend:
+				label = f"{file_path.stem} ({legend})"
 
 		ax.plot(
 			x_values,
