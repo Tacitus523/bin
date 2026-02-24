@@ -144,6 +144,8 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
         # Last index might be incomplete
         try:
             molecules: List[ase.Atoms] = read(args.file, index=":-1")
+            if len(molecules) % 2 != 0:
+                molecules = molecules[:-1]  # Ensure even number of entries for mean/std pairing
             print(f"Warning: Last index in {os.path.join(os.getcwd(),args.file)} is damaged", file=sys.stderr)
         except Exception as e:
             print(e, file=sys.stderr)
