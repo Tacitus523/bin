@@ -136,7 +136,7 @@ def plot_boxplot(summary_df: pd.DataFrame, output_path: Path, dpi: int) -> None:
         ax=ax
     )
     ax.set_xlabel("Method")
-    ax.set_ylabel(f"Abs. Force Difference ({FORCE_UNIT})")
+    ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
     ax.grid(alpha=0.3, axis="y")
     ax.legend(title=f"Cutoff ({DISTANCE_UNIT})", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
     fig.tight_layout()
@@ -164,7 +164,7 @@ def plot_mean_barplot(summary_df: pd.DataFrame, output_path: Path, dpi: int) -> 
         ax=ax,
     )
     ax.set_xlabel(f"Cutoff ({DISTANCE_UNIT})")
-    ax.set_ylabel(f"Mean Max. |Δ Force| ({FORCE_UNIT})")
+    ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
     ax.grid(alpha=0.3, axis="y")
 
     for container in ax.containers:

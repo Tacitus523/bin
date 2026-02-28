@@ -42,9 +42,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--alpha", type=float, default=ALPHA, help="Transparency level for the violins")
     args = parser.parse_args()
 
-    for key, value in vars(args).items():
-        print(key, value)
-
     if args.labels is not None and len(args.labels) != len(args.files):
         raise ValueError("Number of labels must match number of files.")
     if args.labels is None:
