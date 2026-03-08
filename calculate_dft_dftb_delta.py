@@ -29,6 +29,7 @@ DFTB_ENERGY_KEY = "dftb_energy"
 DFT_FORCE_KEY = "dft_force"
 DFTB_FORCE_KEY = "dftb_force"
 DELTA_ATOMIZATION_ENERGY_KEY = "delta_atomization_energy"
+DELTA_FORCE_KEY = "delta_force"
 DEFAULT_OUTPUT = "geoms_delta.extxyz"
 E0_FILE_OUTPUT = "delta_E0s.yaml"
 
@@ -219,7 +220,7 @@ def create_delta_file(
         delta_energy = dft_energy - dftb_energy
         delta_atoms.info[DFT_ENERGY_KEY] = dft_energy
         delta_atoms.info[DFTB_ENERGY_KEY] = dftb_energy
-        # delta_atoms.info[ENERGY_KEY] = delta_energy # Just please don't write it under the same key to avoid confusion with the original energies
+        # delta_atoms.info[ENERGY_KEY] = delta_energy # Just do yourself a favor and never write the delta energy directly
 
         # Calculate atomization energy delta
         atomic_energy_sum = np.sum([
@@ -234,7 +235,7 @@ def create_delta_file(
         delta_forces = dft_forces - dftb_forces
         delta_atoms.arrays[DFT_FORCE_KEY] = dft_forces
         delta_atoms.arrays[DFTB_FORCE_KEY] = dftb_forces
-        delta_atoms.arrays[FORCES_KEY] = delta_forces
+        delta_atoms.arrays[DELTA_FORCE_KEY] = delta_forces
 
         # Set dummy charges to zero
         delta_atoms.arrays[CHARGES_KEY] = np.zeros_like(atomic_numbers, dtype=float)
