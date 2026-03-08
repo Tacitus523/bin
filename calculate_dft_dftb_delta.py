@@ -219,7 +219,7 @@ def create_delta_file(
         delta_energy = dft_energy - dftb_energy
         delta_atoms.info[DFT_ENERGY_KEY] = dft_energy
         delta_atoms.info[DFTB_ENERGY_KEY] = dftb_energy
-        delta_atoms.info[ENERGY_KEY] = delta_energy
+        # delta_atoms.info[ENERGY_KEY] = delta_energy # Just please don't write it under the same key to avoid confusion with the original energies
 
         # Calculate atomization energy delta
         atomic_energy_sum = np.sum([
