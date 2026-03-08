@@ -437,5 +437,9 @@ def main() -> None:
         args=args
     )
 
+    # Save data to CSV files
+    #combined_df.to_csv("force_comparison_detailed.csv", index=False)
+    max_force_differences.to_csv("force_differences_summary.csv", index=False)
+
 if __name__ == '__main__':
     main()
