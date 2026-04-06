@@ -48,8 +48,8 @@ echo "Starting training: $(date)"
 
 mace_run_train \
     --config $config_file \
-    --seed=$RANDOM \
     --wandb_name=$WANDB_NAME
+#--seed=$RANDOM \
 
 training_exit_status=$?
 

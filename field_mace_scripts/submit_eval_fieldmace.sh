@@ -9,15 +9,14 @@
 #SBATCH --gres=gpu:1
 
 DATA_FOLDER=""
-MODEL_FILE="FieldMace_stagetwo.model"
 TEST_FILE="test.xyz"
 OUTPUT_FILE="model_geoms.extxyz"
 CONFIG_FILE="config.yaml"
 MAIL="$MY_MAIL"
-model_file="FieldMace_stagetwo.model"
+model_name="FieldMace_stagetwo"
 
 print_usage() {
-    echo "Usage: $0 [-d data_folder] [-m model_file] [-c config_file]" >&2
+    echo "Usage: $0 [-d data_folder] [-m model_name] [-c config_file]" >&2
     echo "  -d: Data folder containing test file" >&2
     echo "  -m: Model file to use for evaluation" >&2
     echo "  -c: YAML config file to read test_file path from (used if -d not given)" >&2
@@ -27,7 +26,7 @@ while getopts ":d:m:c:" flag
 do
     case "${flag}" in
         d) DATA_FOLDER=${OPTARG};;
-        m) model_file=${OPTARG};;
+        m) model_name=${OPTARG};;
         c) CONFIG_FILE=${OPTARG};;
         *) print_usage; exit 1;;
     esac
@@ -39,7 +38,6 @@ config_file_flag=""
 
 # If DATA_FOLDER not provided, try to read test_file from config
 if [ -z "$DATA_FOLDER" ]; then
-    echo "Data folder not specified. Please provide a data folder."
     if [ -z "$CONFIG_FILE" ]; then
         echo "Error: Either -d (data_folder) or -c (config_file) must be provided" >&2
         print_usage
@@ -72,16 +70,17 @@ then
     exit 1
 fi
 
-if [ -z "$model_file" ]
+if [ -z "$model_name" ]
 then
     model_name=$(yq e '.name' $CONFIG_FILE)
-    model_file="${model_name}_stagetwo.model"
-    if ! [ -f "$model_file" ]
-    then
-        echo "SWA model file not found: $model_file" >&2
-        echo "Falling back to regular model file." >&2
-        model_file="${model_name}.model"
-    fi
+fi
+
+model_file="${model_name}.model"
+if ! [ -f "$model_file" ]
+then
+    echo "SWA model file not found: $model_file" >&2
+    echo "Falling back to regular model file." >&2
+    model_file="${model_name}.model"
 fi
 
 if [ ! -f "$model_file" ]
@@ -89,7 +88,7 @@ then
     echo "Model file not found: $model_file" >&2
     exit 1
 fi
-model_file_flag="-m $model_file"
+model_name_flag="-m $model_name"
 
 EVAL_SCRIPT=$(which mace_eval_configs)
 if [ -z "$EVAL_SCRIPT" ]; then
