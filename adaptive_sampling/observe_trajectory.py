@@ -17,7 +17,7 @@ import numpy as np
 
 MAX_WAIT_TIME_INITIALIZATION = 120 # seconds to wait for initialization
 SLEEP_TIME = 300 # seconds to sleep between checks
-EXPLOSION_THRESHOLD = 2.5 # Angstroms, threshold for explosion detection
+EXPLOSION_THRESHOLD = 12.0 # Angstroms, threshold for explosion detection
 DEFAULT_BASENAME = "run"
 DEFAULT_TRAJECTORY = "{}.xtc"
 DEFAULT_TOPOLOGY = "{}.tpr"
@@ -91,7 +91,7 @@ def observe_trajectory(trajectory: str, topology: str) -> bool:
         return False
     last_frame: mda.coordinates.base.Timestep = universe.trajectory[-2]  # Second last frame, as last might be still being written
     all_atoms: mda.AtomGroup = universe.select_atoms("all")
-    all_atoms.unwrap()  # Unwrap the atoms to avoid periodic boundary issues
+    all_atoms.unwrap(reference="cog")  # Unwrap the atoms to avoid periodic boundary issues, center of geometry
     unique_edge_indices, elements_bonds, atomic_numbers_bonds = get_atomic_numbers_and_elements(all_atoms)
     bond_distances = mda.lib.distances.calc_bonds(
         all_atoms.positions[unique_edge_indices[:, 0]],
