@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument(
 		"--title",
-		default="Radial Distribution Function",
+		default=None,
 		help="Plot title.",
 	)
 	parser.add_argument(
@@ -76,7 +76,7 @@ def collect_files(inputs: List[str], pattern: str) -> List[Path]:
 		if path.is_file():
 			collected.append(path)
 
-	return sorted({path.resolve() for path in collected if path.is_file()})
+	return [path.resolve() for path in collected if path.is_file()]
 
 
 def parse_xvg(file_path: Path, column: int) -> Tuple[np.ndarray, np.ndarray, Optional[str]]:
@@ -116,6 +116,45 @@ def parse_xvg(file_path: Path, column: int) -> Tuple[np.ndarray, np.ndarray, Opt
 	return np.array(x_values), np.array(y_values), legend
 
 
+def plot_rdf_overlay(
+	files: List[Path],
+	column: int,
+	labels: Optional[List[str]] = None,
+	title: Optional[str] = None,
+) -> plt.Figure:
+	palette = sns.color_palette("tab10")
+	palette.pop(3)
+
+	sns.set_context("talk")
+	fig, ax = plt.subplots(figsize=(9, 6))
+
+	for idx, file_path in enumerate(files):
+		x_values, y_values, legend = parse_xvg(file_path, column)
+		if labels is not None:
+			label = labels[idx]
+		else:
+			label = file_path.stem
+			if legend:
+				label = f"{file_path.stem} ({legend})"
+
+		ax.plot(
+			x_values,
+			y_values,
+			linewidth=2.0,
+			label=label,
+			color=palette[idx % len(palette)],
+		)
+
+	if title is not None:
+		ax.set_title(title)
+	ax.set_xlabel("r (nm)")
+	ax.set_ylabel("Radial distribution function g(r)")
+	ax.grid(True, alpha=0.3)
+	ax.legend(frameon=True, loc="upper right")
+
+	return fig
+
+
 def main() -> None:
 	args = parse_args()
 	files = collect_files(args.inputs, args.pattern)
@@ -133,34 +172,12 @@ def main() -> None:
 			f"{args.labels} != {files}"
 		)
 
-	palette = sns.color_palette("tab10")
-	palette.pop(3)
-
-	sns.set_context("talk")
-	fig, ax = plt.subplots(figsize=(9, 6))
-
-	for idx, file_path in enumerate(files):
-		x_values, y_values, legend = parse_xvg(file_path, args.column)
-		if args.labels is not None:
-			label = args.labels[idx]
-		else:
-			label = file_path.stem
-			if legend:
-				label = f"{file_path.stem} ({legend})"
-
-		ax.plot(
-			x_values,
-			y_values,
-			linewidth=2.0,
-			label=label,
-			color=palette[idx % len(palette)],
-		)
-
-	ax.set_title(args.title)
-	ax.set_xlabel("r (nm)")
-	ax.set_ylabel("g(r)")
-	ax.grid(True, alpha=0.3)
-	ax.legend(frameon=True)
+	fig = plot_rdf_overlay(
+		files=files,
+		column=args.column,
+		labels=args.labels,
+		title=args.title,
+	)
 
 	output_path = Path(args.output).resolve()
 	output_path.parent.mkdir(parents=True, exist_ok=True)
