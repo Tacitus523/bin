@@ -114,7 +114,7 @@ def main() -> None:
         walker_force_dfs = pd.concat(walker_force_dfs, ignore_index=True)
     else:
         print("No valid walker dataframes found, exiting.")
-        sys.exit(0)
+        sys.exit(1)
         
     if args.collection_folder_name is not None:
         os.chdir(args.collection_folder_name)
@@ -147,6 +147,8 @@ def create_walker_force_df(args: argparse.Namespace) -> pd.DataFrame:
             if len(molecules) % 2 != 0:
                 molecules = molecules[:-1]  # Ensure even number of entries for mean/std pairing
             print(f"Warning: Last index in {os.path.join(os.getcwd(),args.file)} is damaged", file=sys.stderr)
+            print(f"Reparing by overwriting with shortened trajectory", file=sys.stderr)
+            ase.io.write(args.file, molecules, format="extxyz")
         except Exception as e:
             print(e, file=sys.stderr)
             return None
