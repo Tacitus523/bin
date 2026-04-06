@@ -8,8 +8,9 @@
 ##SBATCH --open-mode=append
 
 #PYTHON_ENV=amp_qmmm
-PYTHON_ENV=kgcnn_new
-#PYTHON_ENV=mace_env
+#PYTHON_ENV=kgcnn_new
+PYTHON_ENV=mace_env
+#PYTHON_ENV=schnetpack
 
 
 pythonfile="$1"
