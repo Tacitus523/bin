@@ -91,10 +91,10 @@ EXTXYZ_KEYS = {
 }
 
 # EXTXYZ_KEYS = {
-#     "energy": "pred_energy",
-#     "forces": "pred_force",
-#     "dipole": "pred_dipole",
-#     "quadrupole": "pred_quadrupole"
+#     "energy": "gromacs_energy",
+#     "forces": "gromacs_force",
+#     "dipole": "gromacs_dipole",
+#     "quadrupole": "gromacs_quadrupole"
 # }
 
 # Expected like this in train_amp.py
@@ -103,8 +103,8 @@ VALIDATION_DIRECTORY = "validation"
 TEST_DIRECTORY = "test"
 
 OUTPUTDIR = os.getcwd()
-SYSTEM_NAME = "dalanine"
 
+DEFAULT_SPLITS = (0.8, 0.1, 0.1)
 BATCH_SIZE = 1000  # Default batch size for unpacking
 
 H_to_eV = 27.211386245988
@@ -126,8 +126,8 @@ def parse_arguments() -> argparse.Namespace:
     unpack_parser.add_argument("-o", "--output_dir", required=False, default=OUTPUTDIR, type=str, help="Output directory for .npy files. Default is the current directory.")
     unpack_parser.add_argument("-i", "--indices", nargs="+", type=int, default=None, help="Indices of the datasets to unpack(space-separated integers). Default is all datasets/first dataset if --single_system is specified.")
     unpack_parser.add_argument("-s", "--single_system", action="store_true", help="Unpack only the one dataset.")
-    unpack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
-    unpack_parser.add_argument("--splits", nargs=3, type=float, default=None, help="Split each system into training, validation, and test sets. Provide the split ratios as three floats.")
+    unpack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is the filename without extension.")
+    unpack_parser.add_argument("--splits", nargs=3, type=float, default=DEFAULT_SPLITS, help=f"Split each system into training, validation, and test sets. Provide the split ratios as three floats. Default: {DEFAULT_SPLITS}")
     unpack_parser.add_argument("--n_splits", type=int, default=1, help="Number of train-valid-test splits. Default is 1.")
     unpack_parser.add_argument("-c", "--conversion", choices=["orca", "xtb"], default="orca", help="Conversion type: 'orca' or 'xtb'. Default is 'orca'.")
 
@@ -136,7 +136,7 @@ def parse_arguments() -> argparse.Namespace:
     pack_parser.add_argument("hdf5_file_path", type=str, help="Path to the output HDF5 file.")
     pack_parser.add_argument("-e", "--extxyz", type=str, required=False, help="Path to the extxyz file for conversion to .hdf5.")
     pack_parser.add_argument("-o", "--output_dir", required=False, default=OUTPUTDIR, type=str, help="Output directory for the HDF5 file. Default is the current directory.")
-    pack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is %s." % SYSTEM_NAME)
+    pack_parser.add_argument("-n", "--name", type=str, default=None, help="Name of the system. Default is the filename without extension.")
     pack_parser.add_argument("--pc", type=str, default=None, help="Path to the concatenated pointcharges files. Optional")
     pack_parser.add_argument("--pcgrad", type=str, default=None, help="Path to the concatenated pointcharges gradient files. Optional")
     pack_parser.add_argument("-c", "--config", type=str, default=None, help="Path to the configuration file. Terminal commands have priority over this file.")
@@ -169,7 +169,7 @@ def parse_arguments() -> argparse.Namespace:
             parser.error(f"The file {args.hdf5_file_path} is not a valid HDF5 file.")
 
     if hasattr(args, "name") and args.name is None:
-        args.name = SYSTEM_NAME
+        args.name = args.hdf5_file_path.split("/")[-1].split(".")[0] # Use the filename without extension as the default name
 
     if hasattr(args, "output_dir") and args.output_dir is not None:
         args.output_dir = os.path.abspath(args.output_dir)
