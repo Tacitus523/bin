@@ -41,8 +41,13 @@ export OMP_NUM_THREADS=1
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
 export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none
 
+TENSORFLOW_lib="/lustre/home/ka/ka_ipc/ka_he8978/sw/tensorflow_prebuilt/lib"
+JSON_CPP_lib="/lustre/home/ka/ka_ipc/ka_he8978/sw/jsoncpp_exe/lib64"
+BLAS_dir="/lustre/home/ka/ka_ipc/ka_dk5684/sw/OpenBLAS-0.3.20-release"
+ARPACK_dir="/lustre/home/ka/ka_ipc/ka_dk5684/sw/arpack-ng-3.9.0-release"
+
 case "$simulation_type" in
-    "pytorch"*|"tensorflow"*)
+    *"pytorch"*|*"tensorflow"*)
         if [[ $simulation_type == "pytorch" ]]
         then
             echo "Using PyTorch simulation type"
@@ -57,8 +62,21 @@ case "$simulation_type" in
         then
             echo "Using TensorFlow simulation type"
             GROMACS_PATH="/home/ka/ka_ipc/ka_he8978/gromacs-tensorflow/bin/GMXRC"
-            export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/tensorflow_prebuilt/lib:$LD_LIBRARY_PATH"
-            export LD_LIBRARY_PATH="/lustre/home/ka/ka_ipc/ka_he8978/sw/jsoncpp_exe/lib64:$LD_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="$TENSORFLOW_lib:$JSON_CPP_lib:$LD_LIBRARY_PATH"
+        elif [[ $simulation_type == "dftb_tensorflow" ]]
+        then
+            echo "Using DFTB+Tensorflow simulation type"
+            GROMACS_PATH="/home/ka/ka_ipc/ka_he8978/gromacs_dftb_tensorflow/bin/GMXRC"
+            module load compiler/gnu/10.2
+            export LD_LIBRARY_PATH="$TENSORFLOW_lib:$JSON_CPP_lib:$LD_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="$ARPACK_dir/lib:$BLAS_dir/lib64:$LD_LIBRARY_PATH"
+        elif [[ $simulation_type == "dftb_pytorch" ]]
+        then
+            echo "Using DFTB+Pytorch simulation type"
+            module load compiler/gnu/10.2
+            GROMACS_PATH="/home/ka/ka_ipc/ka_he8978/gromacs_dftb_pytorch/bin/GMXRC"
+            PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
+            export LD_LIBRARY_PATH="$ARPACK_dir/lib:$BLAS_dir/lib64:$LD_LIBRARY_PATH"
         else
             echo "Unknown PyTorch simulation type: $simulation_type"
             exit 1
@@ -73,6 +91,7 @@ case "$simulation_type" in
         export GMX_NN_EVAL_FREQ=100 # Frequency of evaluation of the neural network, 1 means every step
         export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp2nd, hdnnp4th, schnet or painn for tensorflow, or mace, maceqeq, amp for pytorch
         export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
+        export GMX_NN_R_MAX=25.0 # Cutoff radius for the neural network, only requiered with tensorflow models, in Bohr
         export GMX_NN_EXTXYZ=1000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
 
         #OBSERVATION_SCRIPT=observe_trajectory.py # Used to recognize explosions in the simulation
@@ -89,7 +108,9 @@ case "$simulation_type" in
         # basename set in submit_single_walker_justus.sh
         ;;
     "dftb")
+        module load compiler/gnu/10.2
         GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/gromacs-machine-learning/release/bin/GMXRC"
+        export LD_LIBRARY_PATH="$ARPACK_dir/lib:$BLAS_dir/lib64:$LD_LIBRARY_PATH"
         parallel_flag=""
         #export GMX_DFTB_ESP=1
         #export GMX_DFTB_CHARGES=100
@@ -102,6 +123,11 @@ case "$simulation_type" in
         exit 1
 esac
 
+# For adding and overwriting environment variables from a file
+if [ -f "GMX_VARS.sh" ]; then
+    source GMX_VARS.sh
+fi
+
 source $GROMACS_PATH
 if which gmx > /dev/null 2>&1; then
     gmx_command=$(which gmx)
@@ -110,11 +136,6 @@ elif which gmx_d > /dev/null 2>&1; then
 else
     echo "GROMACS command not found. Please check your GROMACS installation."
     exit 1
-fi
-
-# For adding and overwriting environment variables from a file
-if [ -f "GMX_VARS.sh" ]; then
-    source GMX_VARS.sh
 fi
 
 # Check if mandatory argument is set
@@ -156,7 +177,7 @@ finalize_job()
 
 # Handles rerun identification and rerun command generation.
 # Checks if .xtc/.trr file is present
-generate_rerun_command() {
+generate_rerun_append_command() {
     local files=("$@")
     
     local rerun_command=""
@@ -168,6 +189,19 @@ generate_rerun_command() {
             break
         fi
     done
+
+    if [ -n "$rerun_command" ]
+    then
+        for file in "${files[@]}"
+        do
+            if [ -f "$file" ] && [[ $file == *.cpt ]]
+            then
+                cpt_file=$(basename $file)
+                rerun_command="-cpi $cpt_file -append "
+                break
+            fi
+        done
+    fi
 
     echo $rerun_command
 }
@@ -226,7 +260,7 @@ done
 additional_files=("${local_additional_files[@]}")
 
 # Rerun existing simulation?
-rerun_command=$(generate_rerun_command "${additional_files[@]}")
+rerun_command=$(generate_rerun_append_command "${additional_files[@]}")
 if [ -n "$rerun_command" ]
 then
     echo "Reruning existing simulation!"

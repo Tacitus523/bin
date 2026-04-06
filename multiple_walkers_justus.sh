@@ -17,7 +17,7 @@ GROMACS_PATH="/lustre/home/ka/ka_ipc/ka_he8978/gromacs-pytorch-cuda/bin/GMXRC"
 PLUMED_PATH="/lustre/home/ka/ka_ipc/ka_dk5684/sw/plumed-2.5.1-gcc-8.2.0-openblas-release/bin"
 PYTORCH_ENV="/home/ka/ka_ipc/ka_he8978/miniconda3/envs/pytorch_cuda"
 
-OBSERVATION_SCRIPT=observe_trajectory.py
+OBSERVATION_SCRIPT="" #"observe_trajectory.py"
 
 source $GROMACS_PATH
 module load system/parallel
@@ -45,6 +45,7 @@ export GMX_FORCE_PREDICTION_STD_THRESHOLD=-1 # Threshold for the force standard 
 export GMX_NN_EVAL_FREQ=1 # Frequency of evaluation of the neural network, 1 means every step
 export GMX_NN_ARCHITECTURE="maceqeq" # Architecture of the neural network, hdnnp2nd, hdnnp4th, schnet or painn for tensorflow, or mace, maceqeq, amp for pytorch
 export GMX_NN_SCALER="" # Scaler file for the neural network, optional, empty string if not applicable
+export GMX_NN_R_MAX=25.0 # Cutoff radius for the neural network, in Bohr
 export GMX_NN_EXTXYZ=2000 # Frequency of writing the extended xyz file, 1 means every step, 0 means never
 export GMX_MAXBACKUP=-1 # Maximum number of backups for the checkpoint file, -1 means none
 export PLUMED_MAXBACKUP=-1 # Maximum number of backups for the plumed file, -1 means none

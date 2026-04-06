@@ -31,7 +31,7 @@ while getopts ":t:p:e:g:" opt; do
                 exit 1
             fi
             if [ $OPTARG -eq 0 ]; then
-                resource_flag=""
+                resource_flag="--gres=scratch:250"
             else
                 resource_flag="--gres=gpu:$OPTARG"
             fi
