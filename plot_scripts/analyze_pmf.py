@@ -27,7 +27,7 @@ NEIGHBORHOOD_SIZE = 25
 # Energy cutoff: ignore points above this (kcal/mol) as likely unsampled
 ENERGY_CUTOFF = 20.0
 # Number of paths to find per pair of minima
-N_PATHS = 3
+N_PATHS = 1
 # Radius (in grid points) to block around a found TS when searching for
 # alternative paths
 BLOCK_RADIUS = 10
@@ -39,7 +39,7 @@ LABEL_RADIUS = 30.0
 
 # Plot settings
 PERIODIC_LIMITS = ((-180, 180), (-180, 180))
-NON_PERIODIC_LIMITS = ((1.8, 6), (1.8, 6))
+NON_PERIODIC_LIMITS = ((1.8, 4), (1.8, 4))
 FIGSIZE = (7, 6)
 DPI = 100
 SAVE_PLOT = "PMF_analyzed.png"
@@ -94,6 +94,15 @@ REFERENCE_SYSTEMS = {
             "TS7": (-114.0, -115.6),
             "TS8": (127.9, 133.7),
         },
+    },
+    "thiol_disulfide_water": {
+            "minima": {
+                "Educt": (2.2, 3.2),
+                "Product": (3.2, 2.2),
+            },
+            "ts": {
+                "TS": (2.5, 2.5),
+            },
     },
 }
 
@@ -172,6 +181,11 @@ def parse_args() -> argparse.Namespace:
         "--no_plot",
         action="store_true",
         help="Disable PMF plot generation",
+    )
+    parser.add_argument(
+        "--one_minimum_per_label",
+        action="store_true",
+        help="Keep only the lowest-energy minimum for each assigned reference label.",
     )
     args = parser.parse_args()
     assert os.path.isfile(args.fes_file), f"Error: {args.fes_file} not found."
@@ -414,6 +428,14 @@ def _minimax_path(
                (0, -1),          (0, 1),
                (1, -1),  (1, 0), (1, 1)]
 
+    def _is_forbidden_nonperiodic_boundary(cell: Tuple[int, int]) -> bool:
+        row, col = cell
+        on_row_boundary = (row == 0 or row == nr - 1)
+        on_col_boundary = (col == 0 or col == nc - 1)
+        forbidden_row = (not periodic[0]) and on_row_boundary
+        forbidden_col = (not periodic[1]) and on_col_boundary
+        return forbidden_row or forbidden_col
+
     while heap:
         cost, r, c = heapq.heappop(heap)
         if (r, c) == end:
@@ -431,6 +453,10 @@ def _minimax_path(
             if periodic[1]:
                 nc2 = nc2 % nc
             elif nc2 < 0 or nc2 >= nc:
+                continue
+
+            candidate = (nr2, nc2)
+            if candidate != start and candidate != end and _is_forbidden_nonperiodic_boundary(candidate):
                 continue
 
             new_cost = max(cost, float(zz[nr2, nc2]))
@@ -511,6 +537,21 @@ def assign_literature_labels(
             df.at[idx, "label"] = best_name
     return df
 
+def _deduplicate_minima_by_label(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    minima = df[df["type"] == "minimum"].copy()
+    others = df[df["type"] != "minimum"].copy()
+
+    labeled = minima[minima["label"].notna() & (minima["label"] != "")]
+    unlabeled = minima[~(minima["label"].notna() & (minima["label"] != ""))]
+
+    labeled = labeled.sort_values("energy_kcal_mol").drop_duplicates(
+        subset=["label"], keep="first"
+    )
+
+    out = pd.concat([labeled, unlabeled, others], ignore_index=True)
+    return out.sort_values("energy_kcal_mol").reset_index(drop=True)
 
 def _is_saddle_point(
     zz: np.ndarray,
@@ -719,7 +760,7 @@ def plot_pmf(
                     (cv1, cv2),
                     textcoords="offset points",
                     xytext=(6, 6),
-                    fontsize=9,
+                    fontsize=14,
                     fontweight="bold",
                     color="white",
                     path_effects=[
@@ -775,12 +816,13 @@ def main() -> None:
     zz -= zz.min()
 
     minima_mask = find_local_minima(zz, args.neighborhood, args.energy_cutoff, periodicity)
-    # ts_df = find_transition_states(
-    #     xx, yy, zz, minima_mask, periodicity, cv_names,
-    #     n_paths=args.n_paths, block_radius=args.block_radius,
-    #     energy_cutoff=args.energy_cutoff, ts_min_barrier=args.ts_min_barrier,
-    # )
-    ts_df = pd.DataFrame()
+    ts_df = find_transition_states(
+        xx, yy, zz, dzdx, dzdy,
+        minima_mask, periodicity, cv_names,
+        n_paths=args.n_paths, block_radius=args.block_radius,
+        energy_cutoff=args.energy_cutoff, ts_min_barrier=args.ts_min_barrier,
+    )
+    ts_df = pd.DataFrame() # Reset TS results for pathfinding free analysis
 
     df = build_results_table(xx, yy, zz, dzdx, dzdy, minima_mask, ts_df, cv_names)
 
@@ -788,11 +830,13 @@ def main() -> None:
         ref_system = REFERENCE_SYSTEMS[args.system]
         ref_minima = ref_system["minima"]
         ref_ts = ref_system["ts"]
-        # Label found points with literature names
         df = assign_literature_labels(
             df, cv_names, periodicity, ref_minima, ref_ts, args.label_radius
         )
-        # Search for reference TS not found by pathfinding
+
+        if args.one_minimum_per_label:
+            df = _deduplicate_minima_by_label(df)
+
         found_ts_labels = set(
             df.loc[df["type"] == "transition_state", "label"].dropna()
         )
