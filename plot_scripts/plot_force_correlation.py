@@ -343,13 +343,20 @@ def plot_max_force_difference_boxplot(
         y="Abs. Force Difference",
         hue="Method",
         palette=PALETTE,
-        ax=ax
+        ax=ax,
+        showfliers=False,
     )
     
     ax.set_xlabel("Method")
     ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
     ax.tick_params(axis='x', rotation=45)
     ax.set_ylim(bottom=0)
+
+    # for label in ax.get_xticklabels():
+    #     if label.get_text() == "Base MACE":
+    #         label.set_bbox({"boxstyle": "square,pad=0.2", "facecolor": "none", "edgecolor": "gray", "linewidth": 1.2, "linestyle": "dashed"})
+    #     if label.get_text() in ("4G-HDNNP", "QEq-MACE"):
+    #         label.set_bbox({"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "edgecolor": "goldenrod", "linewidth": 1.2})
 
     plt.grid(alpha=0.3, axis='y')
     plt.tight_layout()

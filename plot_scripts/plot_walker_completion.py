@@ -227,7 +227,7 @@ def compare_command(args: argparse.Namespace) -> None:
     
     # Calculate mean completion per model
     model_completion = combined_df.groupby("model")["percentage"].mean().reset_index()
-    model_completion = model_completion.sort_values("percentage", ascending=False)
+    model_completion = model_completion.sort_values(["percentage", "model"], ascending=[False, True])
 
     combined_df["model"] = pd.Categorical(combined_df["model"], ordered=True, categories=model_completion["model"])
     
@@ -247,7 +247,7 @@ def compare_command(args: argparse.Namespace) -> None:
         "x": "model",
         "y": "percentage",
         "ax": ax,
-        "errorbar": "sd",
+        "errorbar": ("pi", 95),
         "edgecolor": "black",
         "linewidth": 1.5,
     }
@@ -273,7 +273,7 @@ def compare_command(args: argparse.Namespace) -> None:
     
     # Add reference line at 100%
     ax.axhline(y=100, color="red", linestyle="--", linewidth=2, alpha=0.7)
-    
+
     # Formatting
     ax.set_xlabel("Model")
     ax.set_ylabel("Mean Completion (%)")
@@ -283,7 +283,13 @@ def compare_command(args: argparse.Namespace) -> None:
     # Set y-axis limits
     max_pct = combined_df["percentage"].max() if len(combined_df) > 0 else 100
     ax.set_ylim(0, max(110, max_pct * 1.1))
-    
+
+    # for label in ax.get_xticklabels():
+    #     if label.get_text() == "Base MACE":
+    #         label.set_bbox({"boxstyle": "square,pad=0.2", "facecolor": "none", "edgecolor": "gray", "linewidth": 1.2, "linestyle": "dashed"})
+    #     if label.get_text() in ("4G-HDNNP", "QEq-MACE"):
+    #         label.set_bbox({"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "edgecolor": "goldenrod", "linewidth": 1.2})
+
     plt.tight_layout()
     plt.savefig(args.output, dpi=DPI, bbox_inches="tight")
     print(f"\nSaved comparison plot to: {args.output}")

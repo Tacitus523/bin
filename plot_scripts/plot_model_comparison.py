@@ -103,6 +103,27 @@ def create_dataframe(args: argparse.Namespace) -> pd.DataFrame:
     
     # Combine all metrics
     plot_df = pd.concat(metrics, ignore_index=True)
+
+    # Only keep entries with values for the final label, e.g. drop values drop 2G-HDNNP from plot_df if it only has Vacuum label, when Vacuum and Water labels are present
+    has_final_label_filter = plot_df['dataset'] == args.labels[-1]
+    entries_with_final_label = plot_df[has_final_label_filter]['model_name'].unique()
+    plot_df_filter = plot_df['model_name'].isin(entries_with_final_label)
+    plot_df = plot_df[plot_df_filter].reset_index(drop=True)
+    assert len(plot_df) > 0, "No data available for plotting after filtering to models with final label"
+
+    # Make model_name ordered categorical, with "Base MACE" first if present
+    all_models = list(dict.fromkeys(plot_df["model_name"]))  # preserve insertion order
+    if "Base MACE" in all_models:
+        all_models.remove("Base MACE")
+        all_models.insert(0, "Base MACE")
+    plot_df["model_name"] = pd.Categorical(plot_df["model_name"], categories=all_models, ordered=True)
+
+    # Make dataset ordered categorical, preserving the label order from args
+    unique_labels = list(dict.fromkeys(args.labels))
+    plot_df["dataset"] = pd.Categorical(plot_df["dataset"], categories=unique_labels, ordered=True)
+
+    plot_df = plot_df.sort_values(["model_name", "dataset"]).reset_index(drop=True)
+
     return plot_df
 
 def plot_swarm_plots(
@@ -193,6 +214,83 @@ def plot_swarm_plots(
     print(f"\nSaved plot to: {args.output}")
     plt.close()
 
+def plot_mean_errorbars(
+        args: argparse.Namespace,
+        data: pd.DataFrame
+    ) -> None:
+    """Create a simplified plot showing mean RMSE with std error bars, hued by dataset label."""
+    available_metrics = ['Energy RMSE']
+    n_metrics = len(available_metrics)
+
+    all_datasets = data['dataset'].unique()
+    n_datasets = len(all_datasets)
+
+    fig, axes = plt.subplots(1, n_metrics, figsize=(FIGURE_SIZE[0]*n_metrics, FIGURE_SIZE[1]), dpi=DPI)
+    if n_metrics == 1:
+        axes = [axes]
+
+    for idx, metric in enumerate(available_metrics):
+        metric_data = data[data['metric'] == metric].copy()
+        if metric_data.empty:
+            continue
+        unit = metric_data['unit'].iloc[0]
+        ax = axes[idx]
+
+        # Order models by their maximum mean error across all datasets (ascending)
+        max_mean = (
+            metric_data.groupby(['model_name', 'dataset'], observed=True)['value']
+            .mean()
+            .groupby('model_name', observed=True)
+            .max()
+            .sort_values(ascending=False)
+        )
+        ordered_models = max_mean.index.tolist()
+        metric_data['model_name'] = pd.Categorical(
+            metric_data['model_name'], categories=ordered_models, ordered=True
+        )
+        metric_data = metric_data.sort_values('model_name')
+
+        sns.barplot(
+            data=metric_data,
+            x="model_name",
+            y="value",
+            hue="dataset" if n_datasets > 1 else None,
+            errorbar="sd",
+            capsize=0.10,
+            ax=ax,
+        )
+
+        ax.set_ylim(bottom=0)
+        ax.set_xlabel("")
+        ax.set_ylabel(f"{metric} ({unit})")
+        if n_metrics > 1:
+            ax.set_title(metric.replace(" RMSE", ""))
+        ax.set_xticks(ax.get_xticks())
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha="right")
+        ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+        if unit == ENERGY_UNIT:
+            kcal_per_mol_to_ev = 1 / 23.0609
+            ax.axhline(y=kcal_per_mol_to_ev, color="red", linestyle=":", linewidth=1.5, label="Chem. accuracy (1 kcal/mol)")
+
+        if n_datasets > 1 and idx == n_metrics - 1:
+            ax.legend(title="Training Data")
+        elif ax.get_legend():
+            ax.get_legend().remove()
+
+        for label in ax.get_xticklabels():
+            if label.get_text() == "Base MACE":
+                label.set_bbox({"boxstyle": "square,pad=0.2", "facecolor": "none", "edgecolor": "gray", "linewidth": 1.2, "linestyle": "dashed"})
+            if label.get_text() in ("4G-HDNNP", "QEq-MACE"):
+                label.set_bbox({"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "edgecolor": "goldenrod", "linewidth": 1.2})
+
+    plt.tight_layout()
+    output = args.output.replace(".png", "_mean.png")
+    plt.savefig(output, dpi=DPI, bbox_inches="tight")
+    print(f"Saved mean+errorbar plot to: {output}")
+    plt.close()
+
+
 def plot_method_ranking(
     data: pd.DataFrame,
     output_path: str = "charge_method_ranking.png",
@@ -210,10 +308,12 @@ def plot_method_ranking(
 
     # Sort data by the order of the data means
     data = data.copy()
-    data_means = data.groupby('model_name')['value'].mean().reset_index().sort_values('value', ascending=True) 
+    data["model_name"] = data["model_name"].cat.remove_unused_categories()
+    data_means = data.groupby('model_name', observed=True)['value'].mean().reset_index().sort_values('value', ascending=True)
+    sorted_models = data_means['model_name'].tolist()
     data['model_name'] = pd.Categorical(
         data['model_name'],
-        categories=data_means['model_name'], 
+        categories=sorted_models, 
         ordered=True
     )
     data = data.sort_values('model_name').reset_index(drop=True)
@@ -267,16 +367,10 @@ def main():
         args.labels = ["Default"] * len(args.input)
     
     plot_df = create_dataframe(args)
-
-    # Only keep entries with values for the final label, e.g. drop values drop 2G-HDNNP from plot_df if it only has Vacuum label, when Vacuum and Water labels are present
-    has_final_label_filter = plot_df['dataset'] == args.labels[-1]
-    entries_with_final_label = plot_df[has_final_label_filter]['model_name'].unique()
-    plot_df_filter = plot_df['model_name'].isin(entries_with_final_label)
-    plot_df = plot_df[plot_df_filter].reset_index(drop=True)
-    assert len(plot_df) > 0, "No data available for plotting after filtering to models with final label"
     
     sns.set_context("talk")
     plot_swarm_plots(args, plot_df)
+    plot_mean_errorbars(args, plot_df)
     for metric in plot_df['metric'].unique():
         df_filter = ((plot_df['metric'] == metric) & (plot_df['dataset'] == args.labels[-1])) # Filter to last dataset only
         metric_df = plot_df[df_filter]

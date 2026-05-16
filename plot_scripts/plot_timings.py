@@ -24,7 +24,7 @@ DPI = 150
 
 clean_names = {
     "amber99sb-ildn": "Amber99SB-ILDN",
-    "dftb": "DFTB3",
+    "dftb": "DFTB",
     "hdnnp2nd": "2G-HDNNP",
     "hdnnp4th": "4G-HDNNP",
     "schnet": "SchNet",
@@ -37,7 +37,7 @@ clean_names = {
 def prepare_data(filepath: str) -> pd.DataFrame:
     """Load and prepare timing data from CSV file."""
     df = pd.read_csv(filepath)
-    df["Method"] = df["Method"].map(clean_names).fillna(df["Method"])
+    df["Method"] = df["Method"].map(clean_names).dropna() #.fillna(df["Method"])
     df["Method"] = pd.Categorical(df["Method"], categories=clean_names.values(), ordered=True)
     return df
 
@@ -77,8 +77,14 @@ def create_plot(df: pd.DataFrame, output_file: str) -> None:
     ax.tick_params(axis="y", which="minor", length=4, width=0.8)
     ax.grid(True, which="minor", alpha=0.3)
     ax.set_ylim(bottom=0.1, top=30)
-    
     plt.xticks(rotation=30, ha="right")
+    
+    # for label in ax.get_xticklabels():
+    #     if label.get_text() == "DFTB":
+    #         label.set_bbox({"boxstyle": "square,pad=0.2", "facecolor": "none", "edgecolor": "gray", "linewidth": 1.2, "linestyle": "dashed"})
+    #     if label.get_text() in ("4G-HDNNP", "QEq-MACE"):
+    #         label.set_bbox({"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "edgecolor": "goldenrod", "linewidth": 1.2})
+
     plt.tight_layout()
     plt.savefig(output_file, dpi=DPI)
     plt.close(fig)

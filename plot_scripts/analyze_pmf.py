@@ -95,9 +95,18 @@ REFERENCE_SYSTEMS = {
             "TS8": (127.9, 133.7),
         },
     },
+    "thiol_disulfide_vacuum": {
+            "minima": {
+                "Reactant": (2.1, 3.1),
+                "Product": (3.1, 2.1),
+            },
+            "ts": {
+                "TS": (2.5, 2.5),
+            },
+    },
     "thiol_disulfide_water": {
             "minima": {
-                "Educt": (2.2, 3.2),
+                "Reactant": (2.2, 3.2),
                 "Product": (3.2, 2.2),
             },
             "ts": {
@@ -304,7 +313,7 @@ def find_transition_states(
         zz_work = zz.copy()
 
         for path_idx in range(n_paths):
-            ts_ij, ts_energy, path = _minimax_path(zz_work, min_a, min_b, periodic)
+            ts_ij, ts_energy, path = _compute_mep(zz_work, min_a, min_b, periodic)
             if ts_ij is None:
                 break
             # Skip if TS energy exceeds cutoff
@@ -485,6 +494,97 @@ def _minimax_path(
     ts_ij = path[ts_idx]
     ts_energy = energies[ts_idx]
     return ts_ij, ts_energy, path
+
+
+def _downhill_path_to(
+    zz: np.ndarray,
+    start: Tuple[int, int],
+    end: Tuple[int, int],
+    periodic: List[bool],
+) -> List[Tuple[int, int]]:
+    """
+    Find the path from start to end that minimizes total cumulative uphill cost
+    (Dijkstra where cost = sum of max(0, dE) for each step).
+    Strongly prefers downhill moves but always reaches the target.
+    """
+    nr, nc = zz.shape
+    offsets = [(-1, -1), (-1, 0), (-1, 1),
+               (0, -1),           (0, 1),
+               (1, -1),  (1, 0),  (1, 1)]
+    heap: list = [(0.0, start[0], start[1])]
+    best = np.full((nr, nc), np.inf)
+    best[start] = 0.0
+    parent = np.full((nr, nc, 2), -1, dtype=int)
+
+    while heap:
+        cost, r, c = heapq.heappop(heap)
+        if (r, c) == end:
+            break
+        if cost > best[r, c]:
+            continue
+        for dr, dc in offsets:
+            r2 = r + dr
+            c2 = c + dc
+            if periodic[0]:
+                r2 = r2 % nr
+            elif r2 < 0 or r2 >= nr:
+                continue
+            if periodic[1]:
+                c2 = c2 % nc
+            elif c2 < 0 or c2 >= nc:
+                continue
+            step_cost = max(0.0, float(zz[r2, c2]) - float(zz[r, c]))
+            new_cost = cost + step_cost
+            if new_cost < best[r2, c2]:
+                best[r2, c2] = new_cost
+                parent[r2, c2] = [r, c]
+                heapq.heappush(heap, (new_cost, r2, c2))
+
+    # Reconstruct path
+    path = []
+    cur = list(end)
+    while cur[0] != -1:
+        path.append((cur[0], cur[1]))
+        if (cur[0], cur[1]) == start:
+            break
+        pr, pc = parent[cur[0], cur[1]]
+        cur = [pr, pc]
+    path.reverse()
+    return path
+
+
+def _compute_mep(
+    zz: np.ndarray,
+    start: Tuple[int, int],
+    end: Tuple[int, int],
+    periodic: List[bool],
+) -> Tuple:
+    """
+    Compute the minimum energy path (MEP) from start to end.
+    Uses minimax to locate the TS (bottleneck), then least-uphill Dijkstra
+    from the TS to each endpoint to trace the valley floors correctly.
+    Returns (ts_grid_index, ts_energy, path) or (None, None, None).
+    """
+    ts_ij, ts_energy, mm_path = _minimax_path(zz, start, end, periodic)
+    if mm_path is None:
+        return None, None, None
+
+    ts_idx = next(i for i, p in enumerate(mm_path) if p == ts_ij)
+
+    # Least-uphill path from start to cell just before TS (reversed)
+    if ts_idx > 0:
+        pre_path = _downhill_path_to(zz, start, mm_path[ts_idx - 1], periodic)
+    else:
+        pre_path = []
+
+    # Least-uphill path from cell just after TS to end
+    if ts_idx < len(mm_path) - 1:
+        post_path = _downhill_path_to(zz, mm_path[ts_idx + 1], end, periodic)
+    else:
+        post_path = []
+
+    full_path = pre_path + [ts_ij] + post_path
+    return ts_ij, ts_energy, full_path
 
 
 def _pad_periodic(
@@ -674,6 +774,7 @@ def plot_pmf(
     df: pd.DataFrame,
     e_max: float,
     save_file: str = SAVE_PLOT,
+    mep_path: List[Tuple[int, int]] = None,
 ) -> None:
     """Plot the PMF contour with minima and transition states marked."""
     # Tile periodic data for seamless plotting
@@ -741,6 +842,13 @@ def plot_pmf(
     )
     cb.ax.tick_params(labelsize=ticks_fs)
 
+    # Draw MEP path if provided
+    if mep_path is not None:
+        path_cv1 = np.array([float(xx[p]) for p in mep_path])
+        path_cv2 = np.array([float(yy[p]) for p in mep_path])
+        ax.plot(path_cv1, path_cv2, color="white", linewidth=1.5,
+                linestyle="--", zorder=4, alpha=0.8)
+
     # Mark critical points
     if not df.empty:
         marker_cfg = {
@@ -773,6 +881,98 @@ def plot_pmf(
     fig.tight_layout()
     plt.savefig(save_file, dpi=DPI, bbox_inches="tight")
     print(f"Plot saved to {save_file}")
+    plt.close(fig)
+
+
+def plot_reaction_coordinate(
+    xx: np.ndarray,
+    yy: np.ndarray,
+    zz: np.ndarray,
+    df: pd.DataFrame,
+    cv_names: List[str],
+    periodic: List[bool],
+    save_file: str = "reaction_coordinate.png",
+    mep_path: List[Tuple[int, int]] = None,
+) -> None:
+    """Project 2D PMF onto the MEP between 2 minima, plot energy vs reaction coordinate."""
+    minima = df[df["type"] == "minimum"].reset_index(drop=True)
+    ts_rows = df[df["type"].isin(["transition_state", "reference_ts"])].reset_index(drop=True)
+
+    idx_a = _find_nearest_grid_point(
+        xx, yy,
+        (float(minima.iloc[0][cv_names[0]]), float(minima.iloc[0][cv_names[1]])),
+        periodic,
+    )
+    idx_b = _find_nearest_grid_point(
+        xx, yy,
+        (float(minima.iloc[1][cv_names[0]]), float(minima.iloc[1][cv_names[1]])),
+        periodic,
+    )
+
+    _, _, path = _compute_mep(zz, idx_a, idx_b, periodic)
+    if path is None:
+        print("Could not find MEP for reaction coordinate projection.")
+        return
+
+    mep_path = mep_path if mep_path is not None else path
+
+    energies = np.array([float(zz[p]) for p in mep_path])
+    coords_x = np.array([float(xx[p]) for p in mep_path])
+    coords_y = np.array([float(yy[p]) for p in mep_path])
+
+    dx = np.diff(coords_x)
+    dy = np.diff(coords_y)
+    if periodic[0]:
+        dx = np.where(np.abs(dx) > 180, dx - np.sign(dx) * 360, dx)
+    if periodic[1]:
+        dy = np.where(np.abs(dy) > 180, dy - np.sign(dy) * 360, dy)
+    arc = np.concatenate([[0.0], np.cumsum(np.sqrt(dx**2 + dy**2))])
+
+    ts_path_idx = int(np.argmax(energies))
+    e_a, e_b, e_ts = energies[0], energies[-1], energies[ts_path_idx]
+
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=DPI)
+    ax.plot(arc, energies, color="steelblue", linewidth=2, zorder=2)
+
+    # Horizontal dashed reference lines at minima and TS
+    for e_level in (e_a, e_b, e_ts):
+        ax.axhline(e_level, color="gray", linewidth=0.8, linestyle="--", alpha=0.5)
+
+    # Minima markers
+    for i, (path_edge_idx, min_row) in enumerate([(0, minima.iloc[0]), (-1, minima.iloc[1])]):
+        lbl = str(min_row.get("label", f"min{i}"))
+        pos_x, pos_y = arc[path_edge_idx], energies[path_edge_idx]
+        ax.scatter(pos_x, pos_y, marker="*", s=300, color="white", edgecolor="black", zorder=5)
+        ax.annotate(lbl, (pos_x, pos_y), textcoords="offset points",
+                    xytext=(6, 8), fontsize=12, fontweight="bold")
+
+    # TS marker
+    lbl_ts = str(ts_rows.iloc[0]["label"]) if len(ts_rows) > 0 else "TS"
+    ax.scatter(arc[ts_path_idx], e_ts, marker="^", s=150, color="red", edgecolor="black", zorder=5)
+    ax.annotate(lbl_ts, (arc[ts_path_idx], e_ts),
+                textcoords="offset points", xytext=(6, 8), fontsize=12, fontweight="bold")
+
+    # Forward barrier annotation (A -> TS)
+    x_fwd = (arc[0] + arc[ts_path_idx]) / 2
+    ax.annotate("", xy=(x_fwd, e_ts), xytext=(x_fwd, e_a),
+                arrowprops=dict(arrowstyle="<->", color="black", lw=1.2))
+    ax.text(x_fwd + 0.01 * arc[-1], (e_a + e_ts) / 2,
+            f"{e_ts - e_a:.1f} kcal/mol", fontsize=10, va="center")
+
+    # Backward barrier annotation (B -> TS)
+    x_bwd = (arc[ts_path_idx] + arc[-1]) / 2
+    ax.annotate("", xy=(x_bwd, e_ts), xytext=(x_bwd, e_b),
+                arrowprops=dict(arrowstyle="<->", color="black", lw=1.2))
+    ax.text(x_bwd + 0.01 * arc[-1], (e_b + e_ts) / 2,
+            f"{e_ts - e_b:.1f} kcal/mol", fontsize=10, va="center")
+
+    ax.set_xlabel(f"Reaction Coordinate", fontsize=14)
+    ax.set_ylabel(r"$\Delta$G (kcal/mol)", fontsize=14)
+    ax.set_ylim(bottom=0, top=10)
+    ax.grid(True, alpha=0.3, linestyle="--")
+    plt.tight_layout()
+    plt.savefig(save_file, dpi=DPI, bbox_inches="tight")
+    print(f"Reaction coordinate plot saved to {save_file}")
     plt.close(fig)
 
 
@@ -858,12 +1058,54 @@ def main() -> None:
     print(f"Found {n_min} minima, {n_ts} transition states"
           f"{f', {n_ref} reference TS' if n_ref else ''}.")
     print(f"Results saved to {args.output}")
-    print()
     print(df.to_string(index=False))
+
+    # # drop transition states for plotting
+    # df = df[df["type"] == "minimum"].reset_index(drop=True)
 
     if not args.no_plot:
         e_max = args.e_max if args.e_max is not None else args.energy_cutoff
-        plot_pmf(xx, yy, zz, periodicity, cv_names, df, e_max)
+        mep_path = None
+        if not args.no_reference:
+            ref_system = REFERENCE_SYSTEMS[args.system]
+            if len(ref_system["minima"]) == 2 and len(ref_system["ts"]) == 1:
+                minima_df = df[df["type"] == "minimum"].reset_index(drop=True)
+
+                idx_a = _find_nearest_grid_point(
+                    xx, yy,
+                    list(ref_system["minima"].values())[0],
+                    periodicity,
+                )
+                idx_b = _find_nearest_grid_point(
+                    xx, yy,
+                    list(ref_system["minima"].values())[1],
+                    periodicity,
+                )
+
+                # idx_a = _find_nearest_grid_point(
+                #     xx, yy,
+                #     (float(minima_df.iloc[0][cv_names[0]]), float(minima_df.iloc[0][cv_names[1]])),
+                #     periodicity,
+                # )
+                # idx_b = _find_nearest_grid_point(
+                #     xx, yy,
+                #     (float(minima_df.iloc[1][cv_names[0]]), float(minima_df.iloc[1][cv_names[1]])),
+                #     periodicity,
+                # )
+                _, _, mep_path = _compute_mep(zz, idx_a, idx_b, periodicity)
+                rc_file = SAVE_PLOT.replace(".png", "_rc.png")
+                plot_reaction_coordinate(xx, yy, zz, df, cv_names, periodicity,
+                                         save_file=rc_file, mep_path=mep_path)
+        plot_pmf(xx, yy, zz, periodicity, cv_names, df, e_max, mep_path=mep_path)
+        # Save the MEP path as a separate CSV for potential further analysis
+        if mep_path is not None:
+            mep_df = pd.DataFrame({
+                cv_names[0]: [float(xx[p]) for p in mep_path],
+                cv_names[1]: [float(yy[p]) for p in mep_path],
+                "energy_kcal_mol": [float(zz[p]) for p in mep_path],
+            })
+            mep_df.to_csv("mep_path.csv", index=False)
+            print("MEP path saved to mep_path.csv")
 
 
 if __name__ == "__main__":

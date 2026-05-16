@@ -108,8 +108,9 @@ def load_summary_dataframe(base_dir: Path) -> pd.DataFrame:
         raise ValueError(f"No {SUMMARY_FILENAME} found in {base_dir}/*_cutoff")
 
     summary_df = pd.concat(frames, ignore_index=True)
-    ordered_cutoffs = [label for _, label in sorted(set(cutoff_levels), key=lambda item: item[0])]
+    ordered_cutoffs = [label for _, label in sorted(set(cutoff_levels), key=lambda item: item[0], reverse=True)]
     summary_df["Cutoff"] = pd.Categorical(summary_df["Cutoff"], categories=ordered_cutoffs, ordered=True)
+    print(f"Cutoff levels found: {ordered_cutoffs}")
     return summary_df
 
 
@@ -137,6 +138,13 @@ def plot_boxplot(summary_df: pd.DataFrame, output_path: Path, dpi: int) -> None:
     )
     ax.set_xlabel("Method")
     ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
+
+    # for label in ax.get_xticklabels():
+    #     if label.get_text() == "Base MACE":
+    #         label.set_bbox({"boxstyle": "square,pad=0.2", "facecolor": "none", "edgecolor": "gray", "linewidth": 1.2, "linestyle": "dashed"})
+    #     if label.get_text() in ("4G-HDNNP", "QEq-MACE"):
+    #         label.set_bbox({"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "edgecolor": "goldenrod", "linewidth": 1.2})
+
     ax.grid(alpha=0.3, axis="y")
     ax.legend(title=f"Cutoff ({DISTANCE_UNIT})", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
     fig.tight_layout()
@@ -146,31 +154,44 @@ def plot_boxplot(summary_df: pd.DataFrame, output_path: Path, dpi: int) -> None:
 
 
 def plot_mean_barplot(summary_df: pd.DataFrame, output_path: Path, dpi: int) -> None:
-    mean_df = (
-        summary_df.groupby(["Cutoff", "Method"], observed=True, as_index=False)["Abs. Force Difference"]
-        .mean()
-        .rename(columns={"Abs. Force Difference": "Mean_Max_Abs_Force_Diff"})
-    )
-    method_order = get_method_order_by_median(summary_df)
+    # mean_df = (
+    #     summary_df.groupby(["Cutoff", "Method"], observed=True, as_index=False)["Abs. Force Difference"]
+    #     .mean()
+    #     .rename(columns={"Abs. Force Difference": "Mean_Max_Abs_Force_Diff"})
+    # )
+    # method_order = get_method_order_by_median(summary_df)
+
+    summary_df = summary_df.copy()
+    target_cutoffs = {"20.0", "10.0", "5.0", "0.0"}
+    summary_df = summary_df[summary_df["Cutoff"].isin(target_cutoffs)]
+    ordered_cutoffs = sorted(target_cutoffs, key=lambda item: float(item), reverse=True)
+    ordered_cutoffs = ordered_cutoffs[:-1] + ["Vacuum"]  # Move "Vacuum" to the end
+    summary_df["Cutoff"] = summary_df["Cutoff"].replace("0.0", "Vacuum")
+    summary_df["Cutoff"] = pd.Categorical(summary_df["Cutoff"], categories=ordered_cutoffs, ordered=True)
 
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(
-        data=mean_df,
-        x="Cutoff",
-        y="Mean_Max_Abs_Force_Diff",
-        hue="Method",
-        hue_order=method_order,
+        data=summary_df,
+        x="Method",
+        y="Abs. Force Difference",
+        hue="Cutoff",
         palette=PALETTE,
         ax=ax,
     )
-    ax.set_xlabel(f"Cutoff ({DISTANCE_UNIT})")
+    #ax.set_xlabel(f"Cutoff ({DISTANCE_UNIT})")
     ax.set_ylabel(r"Max. |$\Delta$ Force|" + f" ({FORCE_UNIT})")
     ax.grid(alpha=0.3, axis="y")
 
     for container in ax.containers:
         ax.bar_label(container, fmt="%.3f", fontsize=10)
+    # for label in ax.get_xticklabels():
+    #     if label.get_text() == "Base MACE":
+    #         label.set_bbox({"boxstyle": "square,pad=0.2", "facecolor": "none", "edgecolor": "gray", "linewidth": 1.2, "linestyle": "dashed"})
+    #     if label.get_text() in ("4G-HDNNP", "QEq-MACE"):
+    #         label.set_bbox({"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "edgecolor": "goldenrod", "linewidth": 1.2})
 
     fig.tight_layout()
+    ax.legend(title=f"Cluster radius ({DISTANCE_UNIT})")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
