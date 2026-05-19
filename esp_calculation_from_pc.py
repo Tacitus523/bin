@@ -56,7 +56,7 @@ def calculate_esp_and_esp_gradient(
     esps = np.matmul(1/qmmm_distances, mm_charges) # shape: (n_qm_atoms, 1)
     esps = esps.reshape((1,-1)) # shape: (1, n_qm_atoms)
     
-    # CAREFUL: This is likely wrong, as the definition of the direction should be from the charge to the point where the field is calculated. Here I have it the other way around. Worked better this way though...
+    # CAREFUL: This is likely wrong, as the definition of the direction should be from the charge to the point where the field is calculated. Here I have it the other way around. Worked better this way though.... Maybe I got another sign wrong somewhere down the line. 
     directions = (qm_coords[:, np.newaxis, :] - mm_coords[np.newaxis, :, :]) / qmmm_distances[:, :, np.newaxis] # shape: (n_qm_atoms, n_mm_atoms, 3)
     gradient_magnitudes = mm_charges[np.newaxis, :] / qmmm_distances**2 # shape: (n_qm_atoms, n_mm_atoms)
     gradients = -1*np.sum(directions * gradient_magnitudes[:, :, np.newaxis], axis=1) # shape: (n_qm_atoms, 3)
